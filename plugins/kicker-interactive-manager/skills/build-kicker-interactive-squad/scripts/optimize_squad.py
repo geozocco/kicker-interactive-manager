@@ -33,9 +33,15 @@ if str(SCRIPT_DIRECTORY) not in sys.path:
 from news_snapshot import NewsSnapshotError, load_snapshot, snapshot_audit
 from market_snapshot import (
     MarketSnapshotError,
+    canonical_sha256 as market_canonical_sha256,
     csv_rows as market_csv_rows,
     load_snapshot as load_market_snapshot,
     snapshot_audit as market_snapshot_audit,
+)
+from quality_snapshot import (
+    QualitySnapshotError,
+    load_snapshot as load_quality_snapshot,
+    snapshot_audit as quality_snapshot_audit,
 )
 
 
@@ -84,6 +90,16 @@ DEFAULT_MARKET_FEEDS = {
     ("3. Liga", "2026/27"): (
         "https://geozocco.github.io/kicker-interactive-manager/"
         "v1/market/3-liga.json"
+    ),
+}
+DEFAULT_QUALITY_FEEDS = {
+    ("2. Bundesliga", "2026/27"): (
+        "https://geozocco.github.io/kicker-interactive-manager/"
+        "v1/quality/2-bundesliga.json"
+    ),
+    ("3. Liga", "2026/27"): (
+        "https://geozocco.github.io/kicker-interactive-manager/"
+        "v1/quality/3-liga.json"
     ),
 }
 CLUB_IDENTITY_STOPWORDS = {
@@ -2864,6 +2880,24 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Stop unless a fresh, matching central market snapshot is available",
     )
+    parser.add_argument(
+        "--quality-snapshot",
+        default=os.environ.get("KICKER_QUALITY_FEED_URL"),
+        help=(
+            "Central multi-season quality JSON path or HTTPS URL; defaults by "
+            "competition and season when no local CSV is supplied"
+        ),
+    )
+    parser.add_argument(
+        "--quality-token-env",
+        default="KICKER_QUALITY_FEED_TOKEN",
+        help="Environment variable containing an optional quality feed token",
+    )
+    parser.add_argument(
+        "--require-quality-snapshot",
+        action="store_true",
+        help="Stop unless a fresh quality pool matching market and season is available",
+    )
     parser.add_argument("--annotations", type=Path, help="Current player annotations JSON")
     parser.add_argument(
         "--competition",
@@ -3021,6 +3055,15 @@ def parse_args() -> argparse.Namespace:
         args.news_snapshot = DEFAULT_NEWS_FEEDS.get(
             (args.competition, args.season)
         )
+    if (
+        not args.players
+        and not args.quality_snapshot
+        and args.competition
+        and args.season
+    ):
+        args.quality_snapshot = DEFAULT_QUALITY_FEEDS.get(
+            (args.competition, args.season)
+        )
     args.profile = PROFILE_ALIASES[args.profile]
     args.maintenance = MAINTENANCE_ALIASES[args.maintenance]
     args.variation = VARIATION_ALIASES[args.variation]
@@ -3034,6 +3077,14 @@ def parse_args() -> argparse.Namespace:
     if args.require_market_snapshot and not args.market_snapshot:
         parser.error(
             "--require-market-snapshot cannot be used with only a local CSV"
+        )
+    if args.require_quality_snapshot and not args.quality_snapshot:
+        parser.error(
+            "--require-quality-snapshot needs a central quality snapshot"
+        )
+    if args.players and args.quality_snapshot:
+        parser.error(
+            "--quality-snapshot can only be combined with --market-snapshot"
         )
     if args.max_outfield_per_club is None:
         args.max_outfield_per_club = DEFAULT_CLUB_CAP[args.profile]
@@ -3151,6 +3202,10 @@ def main() -> int:
         )
     local_annotations = load_annotations(args.annotations)
     annotations = local_annotations
+    quality_audit: dict[str, Any] = {
+        "status": "not_configured",
+        "required": bool(args.require_quality_snapshot),
+    }
     market_audit: dict[str, Any]
     if args.market_snapshot:
         try:
@@ -3183,10 +3238,54 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
-        annotations = merge_annotations(
-            market_payload.get("annotations", {}),
-            local_annotations,
-        )
+        annotations = dict(market_payload.get("annotations", {}))
+        if args.quality_snapshot:
+            try:
+                quality_payload = load_quality_snapshot(
+                    args.quality_snapshot,
+                    token_env=args.quality_token_env,
+                )
+            except (QualitySnapshotError, OSError) as error:
+                print(
+                    f"Central quality loading stopped optimization: {error}",
+                    file=sys.stderr,
+                )
+                return 2
+            if quality_payload["competition"] != market_payload["competition"]:
+                print(
+                    "Central quality loading stopped optimization: competition "
+                    "does not match the market snapshot.",
+                    file=sys.stderr,
+                )
+                return 2
+            if quality_payload["season"] != market_payload["season"]:
+                print(
+                    "Central quality loading stopped optimization: season does "
+                    "not match the market snapshot.",
+                    file=sys.stderr,
+                )
+                return 2
+            current_market_sha = market_canonical_sha256(market_payload)
+            if quality_payload["market_sha256"] != current_market_sha:
+                print(
+                    "Central quality loading stopped optimization: quality pool "
+                    "was built for a different market snapshot.",
+                    file=sys.stderr,
+                )
+                return 2
+            annotations = merge_annotations(
+                annotations,
+                quality_payload["annotations"],
+            )
+            quality_audit = quality_snapshot_audit(quality_payload)
+            quality_audit["required"] = bool(args.require_quality_snapshot)
+        elif args.require_quality_snapshot:
+            print(
+                "Final optimization requires a fresh central quality snapshot.",
+                file=sys.stderr,
+            )
+            return 2
+        annotations = merge_annotations(annotations, local_annotations)
         players, annotated_count, annotated_by_position = (
             load_players_from_rows(
                 market_csv_rows(market_payload),
@@ -3277,6 +3376,7 @@ def main() -> int:
             args.slots,
             market_audit,
         )
+        payload["quality_audit"] = quality_audit
         rendered = json.dumps(payload, ensure_ascii=False, indent=2)
         if args.output:
             args.output.write_text(rendered, encoding="utf-8")
@@ -3540,6 +3640,7 @@ def main() -> int:
         portfolio_audit=portfolio_audit,
         market_audit=market_audit,
     )
+    payload["quality_audit"] = quality_audit
     payload["variation_identity"] = {
         "mode": variation_source,
         "generation": variation_generation,

@@ -62,6 +62,29 @@ jobs:
             --output public/v1/news/3-liga.json \
             --provider api_sports
 
+      - name: Respect API-Sports minute limit before quality history
+        run: sleep 65
+
+      - name: Refresh 2. Bundesliga quality pool
+        env:
+          API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
+        run: |
+          python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_quality_snapshot.py \
+            --market public/v1/market/2-bundesliga.json \
+            --news public/v1/news/2-bundesliga.json \
+            --mapping config/quality/2-bundesliga.json \
+            --output public/v1/quality/2-bundesliga.json
+
+      - name: Refresh 3. Liga quality pool
+        env:
+          API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
+        run: |
+          python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_quality_snapshot.py \
+            --market public/v1/market/3-liga.json \
+            --news public/v1/news/3-liga.json \
+            --mapping config/quality/3-liga.json \
+            --output public/v1/quality/3-liga.json
+
       - name: Validate generated snapshots
         run: |
           python - <<'PY'
@@ -75,6 +98,7 @@ jobs:
           sys.path.insert(0, str(scripts))
           from news_snapshot import load_snapshot
           from market_snapshot import load_snapshot as load_market_snapshot
+          from quality_snapshot import load_snapshot as load_quality_snapshot
 
           for path in sorted(Path("public/v1/news").glob("*.json")):
               snapshot = load_snapshot(path)
@@ -91,6 +115,19 @@ jobs:
                   snapshot["competition"],
                   snapshot["season"],
                   len(snapshot["players"]),
+              )
+          for path in sorted(Path("public/v1/quality").glob("*.json")):
+              snapshot = load_quality_snapshot(path)
+              anchors = sum(
+                  item["reliable_anchor"]
+                  for item in snapshot["annotations"].values()
+              )
+              print(
+                  path,
+                  snapshot["competition"],
+                  snapshot["season"],
+                  len(snapshot["annotations"]),
+                  anchors,
               )
           PY
 

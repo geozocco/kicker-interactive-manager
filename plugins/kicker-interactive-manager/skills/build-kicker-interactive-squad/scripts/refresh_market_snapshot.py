@@ -143,6 +143,7 @@ def parse_players(raw: bytes) -> list[dict[str, Any]]:
                 "club": club,
                 "position": position,
                 "market_value": market_value,
+                "available": market_value < 100_000_000,
                 "points": numeric(row.get("Punkte")),
                 "average_grade": numeric(
                     row.get("Notendurchschnitt")

@@ -778,7 +778,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--require-market-snapshot", action="store_true")
     parser.add_argument("--roster", type=Path, required=True)
-    parser.add_argument("--annotations", type=Path, required=True)
+    parser.add_argument("--annotations", type=Path)
+    parser.add_argument(
+        "--quality-snapshot",
+        default=os.environ.get("KICKER_QUALITY_FEED_URL"),
+    )
+    parser.add_argument(
+        "--quality-token-env",
+        default="KICKER_QUALITY_FEED_TOKEN",
+    )
+    parser.add_argument("--require-quality-snapshot", action="store_true")
     parser.add_argument(
         "--competition",
         choices=("Bundesliga", "2. Bundesliga", "3. Liga"),
@@ -839,6 +848,10 @@ def parse_args() -> argparse.Namespace:
         args.market_snapshot = optimizer.DEFAULT_MARKET_FEEDS.get(
             (args.competition, args.season)
         )
+    if not args.players and not args.quality_snapshot:
+        args.quality_snapshot = optimizer.DEFAULT_QUALITY_FEEDS.get(
+            (args.competition, args.season)
+        )
     if not args.players and not args.market_snapshot:
         parser.error(
             "set --players or use a competition and season with a configured "
@@ -849,6 +862,12 @@ def parse_args() -> argparse.Namespace:
     if args.require_market_snapshot and not args.market_snapshot:
         parser.error(
             "--require-market-snapshot cannot be used with only a local CSV"
+        )
+    if args.require_quality_snapshot and not args.quality_snapshot:
+        parser.error("--require-quality-snapshot needs a quality snapshot")
+    if args.players and args.quality_snapshot:
+        parser.error(
+            "--quality-snapshot can only be combined with --market-snapshot"
         )
     return args
 
@@ -890,6 +909,10 @@ def main() -> int:
     args = parse_args()
     local_annotations = optimizer.load_annotations(args.annotations)
     annotations = local_annotations
+    quality_audit: dict[str, Any] = {
+        "status": "not_configured",
+        "required": bool(args.require_quality_snapshot),
+    }
     if args.market_snapshot:
         try:
             market_payload = optimizer.load_market_snapshot(
@@ -912,10 +935,47 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
-        annotations = optimizer.merge_annotations(
-            market_payload.get("annotations", {}),
-            local_annotations,
-        )
+        annotations = dict(market_payload.get("annotations", {}))
+        if args.quality_snapshot:
+            try:
+                quality_payload = optimizer.load_quality_snapshot(
+                    args.quality_snapshot,
+                    token_env=args.quality_token_env,
+                )
+                if (
+                    quality_payload["competition"]
+                    != market_payload["competition"]
+                    or quality_payload["season"] != market_payload["season"]
+                ):
+                    raise optimizer.QualitySnapshotError(
+                        "quality snapshot competition or season does not match"
+                    )
+                if (
+                    quality_payload["market_sha256"]
+                    != optimizer.market_canonical_sha256(market_payload)
+                ):
+                    raise optimizer.QualitySnapshotError(
+                        "quality snapshot was built for a different market"
+                    )
+            except (optimizer.QualitySnapshotError, OSError) as error:
+                print(
+                    f"Central quality loading stopped squad evaluation: {error}",
+                    file=sys.stderr,
+                )
+                return 2
+            annotations = optimizer.merge_annotations(
+                annotations,
+                quality_payload["annotations"],
+            )
+            quality_audit = optimizer.quality_snapshot_audit(quality_payload)
+            quality_audit["required"] = bool(args.require_quality_snapshot)
+        elif args.require_quality_snapshot:
+            print(
+                "Squad evaluation requires a fresh central quality snapshot.",
+                file=sys.stderr,
+            )
+            return 2
+        annotations = optimizer.merge_annotations(annotations, local_annotations)
         market_audit = optimizer.market_snapshot_audit(market_payload)
         market_audit["required"] = bool(args.require_market_snapshot)
         players, _, _ = optimizer.load_players_from_rows(
@@ -1030,6 +1090,7 @@ def main() -> int:
         today=datetime.now(timezone.utc).date(),
     )
     payload["market_audit"] = market_audit
+    payload["quality_audit"] = quality_audit
     rendered = (
         json.dumps(payload, ensure_ascii=False, indent=2)
         if args.format == "json"

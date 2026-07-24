@@ -132,6 +132,7 @@ def validate_snapshot(
         club = str(player.get("club", "")).strip()
         position = str(player.get("position", "")).strip()
         market_value = player.get("market_value")
+        available = player.get("available", True)
         if not player_id or player_id in ids:
             raise MarketSnapshotError(
                 "market snapshot contains a missing or duplicate player id"
@@ -151,6 +152,10 @@ def validate_snapshot(
         ):
             raise MarketSnapshotError(
                 f"market snapshot player {player_id!r} has invalid market_value"
+            )
+        if not isinstance(available, bool):
+            raise MarketSnapshotError(
+                f"market snapshot player {player_id!r} has invalid availability"
             )
         for numeric_field in ("points", "average_grade"):
             value = player.get(numeric_field)
@@ -290,6 +295,7 @@ def csv_rows(payload: dict[str, Any]) -> list[dict[str, str]]:
             "Notendurchschnitt": str(player["average_grade"]),
         }
         for player in payload["players"]
+        if player.get("available", True)
     ]
 
 
@@ -305,6 +311,10 @@ def snapshot_audit(payload: dict[str, Any]) -> dict[str, Any]:
         "source_url": payload["source"]["url"],
         "source_csv_sha256": payload["source"]["csv_sha256"],
         "player_count": len(payload["players"]),
+        "available_player_count": sum(
+            player.get("available", True)
+            for player in payload["players"]
+        ),
         "club_count": len(
             {player["club"] for player in payload["players"]}
         ),

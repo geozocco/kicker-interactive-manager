@@ -168,6 +168,24 @@ class MarketSnapshotTests(unittest.TestCase):
         self.assertEqual("fresh", output["market_audit"]["status"])
         self.assertEqual(2, output["market_audit"]["player_count"])
 
+    def test_unavailable_kicker_sentinel_is_not_an_optimizable_player(self) -> None:
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        source = CSV_BYTES.replace(
+            b"200000;45;3.25",
+            b"999000000;45;3.25",
+        )
+        value = refresh.build_snapshot(
+            config(),
+            source,
+            now=now,
+        )
+        rows = market_snapshot.csv_rows(value)
+        self.assertEqual(["p1"], [row["ID"] for row in rows])
+        self.assertEqual(
+            1,
+            market_snapshot.snapshot_audit(value)["available_player_count"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,7 +10,7 @@ description: Plane, optimiere, bewerte und ändere Kader im kicker Managerspiel 
 - Ausschließlich die bereits angemeldete Chrome-Sitzung verwenden. Keine Passwörter, Cookies, Tokens oder Browser-Speicher lesen oder exportieren.
 - Vor jeder Browsersteuerung den verfügbaren Chrome-Control-Skill vollständig laden und dessen Interaktions- und Finalisierungsregeln befolgen.
 - Aktuelle Informationen zu Transfers, Verletzungen, Vorbereitung, Trainer und Rollen im Web verifizieren. Offizielle Vereins- und Ligaseiten bevorzugen.
-- Für die 2. Bundesliga und 3. Liga 2026/27 den im Optimierer hinterlegten zentralen News-Feed als erstes maschinenlesbares Aktualitäts-Gate verwenden. Eine lokale `KICKER_NEWS_FEED_URL` darf diesen Standard für Tests oder einen internen Spiegel überschreiben. Der Feed ersetzt die gezielte Prüfung von Lücken, Konflikten und folgenreichen Meldungen in Primärquellen nicht.
+- Für die 2. Bundesliga und 3. Liga 2026/27 die im Optimierer hinterlegten zentralen Markt-, Qualitäts- und News-Feeds als erstes maschinenlesbares Gate verwenden. Lokale Feed-URLs dürfen diesen Standard für Tests oder einen internen Spiegel überschreiben. Der News-Feed ersetzt die gezielte Prüfung von Lücken, Konflikten und folgenreichen Meldungen in Primärquellen nicht.
 - Keine Vorjahrespunkte als Prognose behandeln. Wiederholbarkeit, Rolle, Einsatzwahrscheinlichkeit, Umfeld und Preis getrennt bewerten.
 - Berücksichtigen, dass nur die am Spieltag aufgestellte Elf Punkte sammelt. Reservequalität ist Absicherung und darf insbesondere bei geringem Betreuungsaufwand nicht genauso viel Budgetgewicht erhalten wie der wahrscheinliche Kern.
 - Nie „Alle verkaufen“ verwenden. Änderungen einzeln ausführen und nach jeder Phase Kadergröße, Positionen und Budget prüfen.
@@ -111,7 +111,7 @@ Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüf
 - Für jeden final geprüften Kandidaten zusätzlich `reliable_anchor`, `proven_seasons`, `anchor_reason`, `benchmark` und belastbare `evidence` erfassen. `proven_seasons` zählt nur Spielzeiten mit belastbarer Leistung auf vergleichbarem oder höherem Niveau; eine einzelne starke Vorsaison reicht nicht.
 - Den Ankerpool ligaweit und ergebnisoffen recherchieren. Er muss Rollen aus mehreren Vereinen und Preisklassen enthalten. Namen, die der Nutzer als Beispiele, frühere Gedanken oder Kritik erwähnt hat, sind Vergleichskandidaten und dürfen weder den Pool definieren noch einen Auswahlbonus erhalten. Nur ein ausdrückliches „Spieler X muss in den Kader“ ist eine harte Vorgabe.
 - `scripts/optimize_squad.py` mit zentralem Marktbestand, Profil, Variabilität, Betreuungsaufwand, Budget und Annotationen ausführen.
-- Für einen finalen Lauf `--require-market-snapshot` verlangen. `market_audit` muss frisch sein und zur sichtbaren Liga und Saison passen. Nur beim dokumentierten manuellen Fallback eine aktuelle lokale Kicker-CSV mit `--players` verwenden.
+- Für einen finalen Lauf `--require-market-snapshot --require-quality-snapshot` verlangen. `market_audit` und `quality_audit` müssen frisch sein, zusammengehören und zur sichtbaren Liga und Saison passen. Der Qualitätsbestand muss mindestens 60 Kandidaten, 20 ligaweit unterschiedliche Anker und 15 offensive Anker enthalten. Nur beim dokumentierten manuellen Fallback eine aktuelle lokale Kicker-CSV mit `--players` verwenden.
 - Den eingebauten zentralen Feed anhand von Wettbewerb und Saison verwenden. `KICKER_NEWS_FEED_URL` und optional `KICKER_NEWS_FEED_TOKEN` aus der Laufzeit überschreiben ihn nur, wenn sie ausdrücklich zentral eingerichtet sind. Die Werte nicht ausgeben. Niemals nach `SPORTMONKS_API_TOKEN` oder `API_SPORTS_KEY` auf einem Kollegenrechner suchen; diese gehören ausschließlich in den zentralen Aktualisierungslauf.
 - Beim zentralen Feed immer Wettbewerb und Saison gegen die sichtbare Kicker-Seite prüfen und für den finalen Lauf `--require-news-snapshot --require-news-coverage` verwenden.
 - Ist kein zentraler Feed eingerichtet oder erreichbar, den in `news-hardening.md` beschriebenen manuellen Tagescheck für jeden möglichen Zielspieler und entscheidenden Near-Miss durchführen. Ein abgelaufenes Snapshot niemals als aktuellen Beleg verwenden.
@@ -127,7 +127,7 @@ Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüf
 Beispiel:
 
 ```text
-<python-3-command> scripts/optimize_squad.py --annotations <annotations-json-path> --competition "2. Bundesliga" --season "2026/27" --require-market-snapshot --require-news-snapshot --require-news-coverage --profile reliable --variation medium --maintenance low --min-reliable-anchors 4 --min-attacking-anchors 3 --min-core-budget-share 0.70 --budget 10000000 --goalkeepers 3 --defenders 7 --midfielders 7 --forwards 5 --format json
+<python-3-command> scripts/optimize_squad.py --competition "2. Bundesliga" --season "2026/27" --require-market-snapshot --require-quality-snapshot --require-news-snapshot --require-news-coverage --profile reliable --variation medium --maintenance low --min-reliable-anchors 4 --min-attacking-anchors 3 --min-core-budget-share 0.70 --budget 10000000 --goalkeepers 3 --defenders 7 --midfielders 7 --forwards 5 --format json
 ```
 
 Beispiel für eine ausdrücklich gewünschte neue persönliche Variante:
@@ -150,6 +150,7 @@ Wettbewerb, Saison und vier Positionsargumente immer mit den zuvor von der sicht
 - Transfergefahr vor Saisonstart gesondert prüfen
 - `news_audit` muss frisch sein, zum Wettbewerb und zur Saison passen und darf bei ausgewählten Spielern weder fehlende Provider-Zuordnungen noch offene Konflikte enthalten
 - `market_audit` muss frisch sein, zum Wettbewerb und zur Saison passen und die vollständige zentrale Spielerliste ausweisen
+- `quality_audit` muss frisch sein, dieselbe Markt-Prüfsumme tragen und die Mindestwerte von 60 Kandidaten, 20 Ankern und 15 offensiven Ankern erreichen
 - Für `verlässlich` plus `gering` standardmäßig 11 bis 14 Kernspieler, wenige günstige direkte Vertreter und anschließend preiswerte einsatzfähige Ergänzungen bilden. Eine gleichmäßig teure Bank ist kein Qualitätsmerkmal und erschwert die Finanzierung von Ausnahmespielern.
 - Für `verlässlich` plus `gering` müssen mindestens 70 Prozent des gesamten Kaderwerts in der stärksten legalen Startelf liegen. Ein niedrigerer Wert ist ein Abbruchgrund: Bank verbilligen, nachgewiesene Scorer und Kreativspieler finanzieren und neu rechnen.
 - Variabilität darf einzelne Kernentscheidungen und günstige Ergänzungen verändern, aber nicht die Kaderarchitektur in 22 gleichwertige Alternativen auflösen.
