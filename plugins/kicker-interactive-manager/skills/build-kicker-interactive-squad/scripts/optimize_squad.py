@@ -13,12 +13,19 @@ import csv
 import itertools
 import json
 import math
+import os
 import random
 import secrets
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterable
+
+SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+if str(SCRIPT_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIRECTORY))
+
+from news_snapshot import NewsSnapshotError, load_snapshot, snapshot_audit
 
 
 DEFAULT_SLOTS = {
@@ -385,6 +392,165 @@ def load_players(
             )
         )
     return players, annotated_count, annotated_by_position
+
+
+def apply_news_snapshot(
+    players: list[Player],
+    payload: dict[str, Any],
+) -> tuple[list[Player], dict[str, Any], list[dict[str, Any]]]:
+    """Apply only conservative, non-downgrading news overrides."""
+
+    entries = payload.get("players", {})
+    updated: list[Player] = []
+    excluded: list[dict[str, Any]] = []
+    applied_ids: list[str] = []
+    provider_mapped_ids: list[str] = []
+    conflicts: dict[str, list[str]] = {}
+    csv_ids = {player.player_id for player in players}
+
+    for player in players:
+        entry = entries.get(player.player_id)
+        if not isinstance(entry, dict):
+            updated.append(player)
+            continue
+        mapping = entry.get("mapping", {})
+        if not isinstance(mapping, dict):
+            mapping = {}
+        mapping_confidence = str(
+            mapping.get("confidence", "")
+        ).strip().lower()
+        has_provider_mapping = (
+            mapping_confidence in {"verified", "high"}
+            and any(
+                mapping.get(player_key) is not None
+                and mapping.get(team_key) is not None
+                for player_key, team_key in (
+                    (
+                        "api_sports_player_id",
+                        "api_sports_team_id",
+                    ),
+                    (
+                        "sportsmonks_player_id",
+                        "sportsmonks_team_id",
+                    ),
+                )
+            )
+        )
+        if has_provider_mapping:
+            provider_mapped_ids.append(player.player_id)
+
+        entry_conflicts = list(entry.get("consensus", {}).get("conflicts", []))
+        entry_name = str(entry.get("name", "")).strip()
+        entry_club = str(entry.get("club", "")).strip()
+        if entry_name and entry_name.casefold() != player.name.casefold():
+            entry_conflicts.append(
+                f"Kicker-ID maps to snapshot name {entry_name!r}, not {player.name!r}"
+            )
+        if entry_club and entry_club.casefold() != player.club.casefold():
+            entry_conflicts.append(
+                f"Kicker-ID maps to snapshot club {entry_club!r}, not {player.club!r}"
+            )
+        if entry_conflicts:
+            conflicts[player.player_id] = sorted(set(entry_conflicts))
+
+        consensus = entry.get("consensus", {})
+        components = dict(player.components)
+        risks = dict(player.risks)
+        risks["injury"] = max(
+            risks["injury"],
+            clamp(consensus.get("injury"), 0.0),
+        )
+        risks["transfer"] = max(
+            risks["transfer"],
+            clamp(consensus.get("transfer"), 0.0),
+        )
+        risks["rotation"] = max(
+            risks["rotation"],
+            clamp(consensus.get("rotation"), 0.0),
+        )
+        components["fitness"] = min(
+            components["fitness"],
+            clamp(consensus.get("fitness_cap"), 100.0),
+        )
+
+        signal_evidence = []
+        for signal in entry.get("signals", []):
+            if not isinstance(signal, dict):
+                continue
+            source_url = str(signal.get("source_url", "")).strip()
+            observed_at = str(signal.get("observed_at", "")).strip()
+            if not source_url or not observed_at:
+                continue
+            signal_evidence.append(
+                {
+                    "claim": (
+                        f"{signal.get('kind', 'news')}: "
+                        f"{signal.get('detail', signal.get('status', ''))}"
+                    ).strip(),
+                    "source_url": source_url,
+                    "checked_at": observed_at,
+                    "source_provider": str(
+                        signal.get("source_provider", "")
+                    ).strip(),
+                }
+            )
+        evidence = tuple((*player.evidence, *signal_evidence))
+        news_note = (
+            f"Central news snapshot {payload['generated_at']}: "
+            f"injury={risks['injury']:.0f}, transfer={risks['transfer']:.0f}, "
+            f"fitness<={components['fitness']:.0f}."
+        )
+        note = " ".join(part for part in (player.note, news_note) if part)
+        anchor_safe = (
+            components["fitness"] >= 60
+            and risks["transfer"] <= 35
+            and risks["injury"] <= 50
+            and risks["rotation"] <= 35
+        )
+        refreshed = replace(
+            player,
+            components=components,
+            risks=risks,
+            note=note,
+            reliable_anchor=player.reliable_anchor and anchor_safe,
+            evidence=evidence,
+        )
+        applied_ids.append(player.player_id)
+        should_exclude = bool(consensus.get("exclude", False))
+        confidence = str(consensus.get("confidence", "low"))
+        if (
+            should_exclude
+            and confidence in {"medium", "high"}
+            and not entry_conflicts
+        ):
+            excluded.append(
+                {
+                    "annotation_key": player.player_id,
+                    "player": player.name,
+                    "reason": (
+                        "Central news consensus marks the player unavailable "
+                        f"(confidence={confidence})."
+                    ),
+                    "benchmark": player.benchmark,
+                    "evidence": signal_evidence,
+                    "source": "central_news_snapshot",
+                }
+            )
+            continue
+        updated.append(refreshed)
+
+    audit = snapshot_audit(payload)
+    audit.update(
+        {
+            "applied_player_ids": sorted(applied_ids),
+            "provider_mapped_player_ids": sorted(provider_mapped_ids),
+            "unmapped_csv_player_ids": sorted(csv_ids - set(provider_mapped_ids)),
+            "snapshot_only_player_ids": sorted(set(entries) - csv_ids),
+            "conflicts": conflicts,
+            "hard_exclusions": len(excluded),
+        }
+    )
+    return updated, audit, excluded
 
 
 def classify_reliable_anchor(
@@ -1312,7 +1478,12 @@ def output_payload(
     annotation_requirements: dict[str, int],
     annotated_goalkeeper_blocks: int,
     hard_exclusions: list[dict[str, Any]],
+    news_audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    news_audit = news_audit or {
+        "status": "not_configured",
+        "required": False,
+    }
     squad_score = sum(utility_scores[player.player_id] for player in squad.players)
     optimum_score = sum(utility_scores[player.player_id] for player in optimum.players)
     raw_squad_score = sum(
@@ -1648,6 +1819,7 @@ def output_payload(
         "comparison_candidates": comparison_candidates,
         "benchmark_audit": benchmark_audit,
         "hard_exclusions": hard_exclusions,
+        "news_audit": news_audit,
         "warnings": warnings,
         "squad": [
             serialize_player(
@@ -1776,6 +1948,43 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--players", type=Path, required=True, help="Official Kicker semicolon CSV")
     parser.add_argument("--annotations", type=Path, help="Current player annotations JSON")
+    parser.add_argument(
+        "--competition",
+        choices=("Bundesliga", "2. Bundesliga", "3. Liga"),
+        help="Competition used to verify the central news snapshot",
+    )
+    parser.add_argument(
+        "--season",
+        help="Season label used to verify the central news snapshot, for example 2026/27",
+    )
+    parser.add_argument(
+        "--news-snapshot",
+        default=os.environ.get("KICKER_NEWS_FEED_URL"),
+        help=(
+            "Local JSON path or HTTPS URL; defaults to KICKER_NEWS_FEED_URL. "
+            "Bearer token is read from KICKER_NEWS_FEED_TOKEN."
+        ),
+    )
+    parser.add_argument(
+        "--news-token-env",
+        default="KICKER_NEWS_FEED_TOKEN",
+        help="Environment variable containing the optional central feed bearer token",
+    )
+    parser.add_argument(
+        "--require-news-snapshot",
+        action="store_true",
+        help="Stop unless a fresh central news snapshot is available",
+    )
+    parser.add_argument(
+        "--require-news-coverage",
+        action="store_true",
+        help="Stop unless every selected player has a provider mapping",
+    )
+    parser.add_argument(
+        "--allow-news-conflicts",
+        action="store_true",
+        help="Technical override after conflicts were manually resolved; never use silently",
+    )
     parser.add_argument("--budget", type=int, required=True, help="Budget in whole euros")
     parser.add_argument(
         "--min-spend-ratio",
@@ -1887,6 +2096,49 @@ def main() -> int:
         args.players,
         annotations,
     )
+    news_audit: dict[str, Any] = {
+        "status": "not_configured",
+        "required": bool(args.require_news_snapshot),
+    }
+    if not args.news_snapshot and args.require_news_snapshot:
+        print(
+            "Final optimization requires a fresh central news snapshot. Set "
+            "--news-snapshot or KICKER_NEWS_FEED_URL.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.news_snapshot:
+        try:
+            news_payload = load_snapshot(
+                args.news_snapshot,
+                token_env=args.news_token_env,
+            )
+        except (NewsSnapshotError, OSError) as error:
+            print(f"News hardening stopped optimization: {error}", file=sys.stderr)
+            return 2
+        if (
+            args.competition
+            and news_payload["competition"] != args.competition
+        ):
+            print(
+                "News hardening stopped optimization: snapshot competition "
+                f"{news_payload['competition']!r} does not match "
+                f"{args.competition!r}.",
+                file=sys.stderr,
+            )
+            return 2
+        if args.season and news_payload["season"] != args.season:
+            print(
+                "News hardening stopped optimization: snapshot season "
+                f"{news_payload['season']!r} does not match {args.season!r}.",
+                file=sys.stderr,
+            )
+            return 2
+        players, news_audit, news_exclusions = apply_news_snapshot(
+            players,
+            news_payload,
+        )
+        hard_exclusions.extend(news_exclusions)
     raw_scores = score_players(players, args.profile, args.maintenance)
     if args.shortlist_only:
         payload = shortlist_payload(
@@ -2030,6 +2282,33 @@ def main() -> int:
     except ValueError as error:
         print(f"Optimization stopped: {error}", file=sys.stderr)
         return 2
+    selected_ids = squad.ids
+    news_conflicts = {
+        player_id: reasons
+        for player_id, reasons in news_audit.get("conflicts", {}).items()
+        if player_id in selected_ids
+    }
+    if news_conflicts and not args.allow_news_conflicts:
+        print(
+            "News hardening stopped optimization: selected players have unresolved "
+            f"provider or identity conflicts: {news_conflicts}. Verify them in "
+            "current primary sources before changing Chrome.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.require_news_coverage:
+        provider_mapped = set(
+            news_audit.get("provider_mapped_player_ids", [])
+        )
+        missing_news_coverage = sorted(selected_ids - provider_mapped)
+        if missing_news_coverage:
+            print(
+                "News hardening stopped optimization: selected players lack a "
+                f"verified provider mapping: {missing_news_coverage}. Research "
+                "them manually or extend the central mapping before changing Chrome.",
+                file=sys.stderr,
+            )
+            return 2
     if args.profile == "reliable" and args.min_reliable_anchors > 0:
         _, core_ids = best_starting_lineup(
             squad.players,
@@ -2065,6 +2344,7 @@ def main() -> int:
         annotation_requirements=required_annotations,
         annotated_goalkeeper_blocks=annotated_goalkeeper_blocks,
         hard_exclusions=hard_exclusions,
+        news_audit=news_audit,
     )
     rendered = (
         json.dumps(payload, ensure_ascii=False, indent=2)

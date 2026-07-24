@@ -2,6 +2,8 @@
 
 Die Annotationen ergänzen die Kicker-CSV um aktuelle Informationen, die nicht zuverlässig in Vorjahrespunkten oder Preisen stecken.
 
+Ein konfiguriertes zentrales News-Snapshot wird anschließend konservativ darübergelegt: Es darf Transfer-, Verletzungs- und Rotationsrisiken nur erhöhen und Fitness nur begrenzen. Manuelle aktuelle Primärquellen bleiben maßgeblich, wenn Provider-Zuordnung oder Meldungen fehlen beziehungsweise kollidieren. Den vollständigen Vertrag in [news-hardening.md](news-hardening.md) beachten.
+
 ## Format
 
 ```json

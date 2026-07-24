@@ -20,16 +20,17 @@
 Eine ausdrückliche Aufforderung wie „stelle auf“, „optimiere“ oder „ändere meinen Kader“ autorisiert die dafür notwendigen Kaderänderungen.
 
 1. Zielkader vor dem ersten Klick vollständig berechnen.
-2. Zu verkaufende Spieler einzeln über den Kaderbereich lokalisieren.
-3. Vor jedem Klick:
+2. Unmittelbar davor den News-Gate erneut prüfen: Snapshot frisch, richtige Liga und Saison, vollständige Zuordnung aller Zielspieler, keine offenen Konflikte.
+3. Zu verkaufende Spieler einzeln über den Kaderbereich lokalisieren.
+4. Vor jedem Klick:
    - frischen DOM-Snapshot erfassen
    - Spieler anhand Name, Verein, Position und Preis prüfen
    - Locator auf genau einen Treffer begrenzen
-4. Verkauf ausführen und aktualisierten Zustand abwarten.
-5. Kaufkandidaten über das sichtbare Suchfeld suchen. Nachname verwenden, wenn die Vollnamensuche keinen Treffer liefert.
-6. Marktkarte anhand vollständigem Namen, Verein, Position und Preis prüfen.
-7. Kauf nur bei genau einem passenden Treffer ausführen.
-8. Nach jeder Positionsgruppe Kaderzahl und Budget kontrollieren.
+5. Verkauf ausführen und aktualisierten Zustand abwarten.
+6. Kaufkandidaten über das sichtbare Suchfeld suchen. Nachname verwenden, wenn die Vollnamensuche keinen Treffer liefert.
+7. Marktkarte anhand vollständigem Namen, Verein, Position und Preis prüfen.
+8. Kauf nur bei genau einem passenden Treffer ausführen.
+9. Nach jeder Positionsgruppe Kaderzahl und Budget kontrollieren.
 
 Nie verwenden:
 

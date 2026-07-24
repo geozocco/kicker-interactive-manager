@@ -73,6 +73,10 @@ Codex/ChatGPT fragt bei Bedarf nach Spielklasse, Risikoprofil und gewünschtem B
 
 Bei **verlässlich und wartungsarm** konzentriert das Plugin das Budget auf einen starken Aufstellungskern mit mindestens drei bestätigten Leistungsträgern. Die Bank wird günstiger, aber mit realistischen Einsatzchancen besetzt. Im Ergebnis erklärt Codex die wichtigsten Spieler einzeln und vergleicht bewusst ausgelassene etablierte Alternativen samt Budget- und Risikogründen.
 
+Vor dem Umbau prüft das Plugin außerdem aktuelle Verletzungs- und Transfermeldungen. Wenn euer Team einen zentralen News-Feed eingerichtet hat, werden SportsMonks und API-Sports automatisch als zusätzlicher Frühwarnkanal verwendet. Veraltete Daten, falsche Liga- oder Saisonangaben, fehlende Spielerzuordnungen und widersprüchliche Meldungen stoppen den automatischen Umbau, bis Codex die betroffenen Spieler in aktuellen Quellen geprüft hat. Ohne zentralen Feed recherchiert Codex diese Informationen weiterhin individuell im Web.
+
+Die Provider-Zugangsdaten werden nur auf dem zentralen Aktualisierungsrechner benötigt und nie an Kollegen verteilt. Die technische Einrichtung für den Team-Administrator steht in der Plugin-Referenz `references/news-hardening.md`; für normale Nutzer ändert sich am oben beschriebenen Ablauf nichts.
+
 Falls Codex nicht auf Chrome zugreifen kann, prüfe zuerst, ob:
 
 - Google Chrome geöffnet ist,

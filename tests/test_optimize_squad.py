@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from collections import Counter
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -28,6 +29,7 @@ if SPEC is None or SPEC.loader is None:
 optimizer = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = optimizer
 SPEC.loader.exec_module(optimizer)
+import news_snapshot
 
 
 def player(
@@ -907,6 +909,232 @@ class ReliableCorePolicyTests(unittest.TestCase):
         self.assertTrue(anchor_ids.issubset(constrained_ids))
         self.assertEqual(11, len(constrained_ids))
         self.assertIn(formation, {"3-4-3", "3-5-2", "4-3-3", "4-4-2", "4-5-1", "5-3-2", "5-4-1"})
+
+
+class NewsHardeningIntegrationTests(unittest.TestCase):
+    def test_cli_accepts_fresh_fully_mapped_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            csv_path = root / "players.csv"
+            csv_path.write_text(
+                "ID;Angezeigter Name;Angezeigter Name (kurz);Verein;"
+                "Position;Marktwert;Punkte;Notendurchschnitt\n"
+                "g;Goalkeeper;GK;Club G;GOALKEEPER;100;0;0\n"
+                "d;Defender;D;Club D;DEFENDER;100;0;0\n"
+                "m;Midfielder;M;Club M;MIDFIELDER;100;0;0\n"
+                "f;Forward;F;Club F;FORWARD;100;0;0\n",
+                encoding="utf-8",
+            )
+            now = datetime.now(timezone.utc)
+            generated_at = (now - timedelta(minutes=1)).replace(
+                microsecond=0
+            ).isoformat().replace("+00:00", "Z")
+            expires_at = (now + timedelta(hours=1)).replace(
+                microsecond=0
+            ).isoformat().replace("+00:00", "Z")
+            players = {}
+            for index, (player_id, name, club) in enumerate(
+                (
+                    ("g", "Goalkeeper", "Club G"),
+                    ("d", "Defender", "Club D"),
+                    ("m", "Midfielder", "Club M"),
+                    ("f", "Forward", "Club F"),
+                ),
+                start=1,
+            ):
+                players[player_id] = {
+                    "name": name,
+                    "club": club,
+                    "mapping": {
+                        "api_sports_player_id": index,
+                        "api_sports_team_id": 100 + index,
+                        "sportsmonks_player_id": None,
+                        "sportsmonks_team_id": None,
+                        "confidence": "verified",
+                    },
+                    "signals": [],
+                    "consensus": {
+                        "injury": 0,
+                        "transfer": 0,
+                        "rotation": 0,
+                        "fitness_cap": 100,
+                        "exclude": False,
+                        "confidence": "medium",
+                        "conflicts": [],
+                    },
+                }
+            snapshot = {
+                "schema_version": 1,
+                "generated_at": generated_at,
+                "expires_at": expires_at,
+                "competition": "2. Bundesliga",
+                "season": "2026/27",
+                "providers": {
+                    "api_sports": {
+                        "status": "ok",
+                        "fetched_at": generated_at,
+                        "records": 0,
+                    }
+                },
+                "players": players,
+            }
+            snapshot["content_sha256"] = news_snapshot.canonical_sha256(
+                snapshot
+            )
+            snapshot_path = root / "news.json"
+            snapshot_path.write_text(
+                json.dumps(snapshot),
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT_PATH),
+                    "--players",
+                    str(csv_path),
+                    "--budget",
+                    "400",
+                    "--goalkeepers",
+                    "1",
+                    "--defenders",
+                    "1",
+                    "--midfielders",
+                    "1",
+                    "--forwards",
+                    "1",
+                    "--profile",
+                    "balanced",
+                    "--variation",
+                    "none",
+                    "--allow-unannotated",
+                    "--competition",
+                    "2. Bundesliga",
+                    "--season",
+                    "2026/27",
+                    "--news-snapshot",
+                    str(snapshot_path),
+                    "--require-news-snapshot",
+                    "--require-news-coverage",
+                    "--format",
+                    "json",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+        payload = json.loads(completed.stdout)
+        self.assertEqual("fresh", payload["news_audit"]["status"])
+        self.assertEqual(4, len(payload["squad"]))
+
+    def test_news_only_increases_risk_and_removes_unsafe_anchor_status(self) -> None:
+        candidate = player(
+            "m1",
+            "Current Club",
+            "MIDFIELDER",
+            100,
+            reliable_anchor=True,
+        )
+        candidate = optimizer.replace(
+            candidate,
+            risks={**candidate.risks, "injury": 40.0},
+            components={**candidate.components, "fitness": 80.0},
+        )
+        snapshot = {
+            "schema_version": 1,
+            "generated_at": "2026-07-24T10:00:00Z",
+            "expires_at": "2026-07-25T04:00:00Z",
+            "competition": "2. Bundesliga",
+            "season": "2026/27",
+            "providers": {"sportsmonks": {"status": "ok"}},
+            "players": {
+                "m1": {
+                    "name": candidate.name,
+                    "club": candidate.club,
+                    "mapping": {
+                        "sportsmonks_player_id": 123,
+                        "sportsmonks_team_id": 321,
+                        "api_sports_player_id": None,
+                        "api_sports_team_id": None,
+                        "confidence": "verified",
+                    },
+                    "signals": [
+                        {
+                            "kind": "transfer_rumour",
+                            "status": "rumour",
+                            "severity": 45,
+                            "source_provider": "sportsmonks",
+                            "source_url": "https://example.com/rumour",
+                            "observed_at": "2026-07-24T10:00:00Z",
+                            "detail": "possible move",
+                        }
+                    ],
+                    "consensus": {
+                        "injury": 10,
+                        "transfer": 45,
+                        "rotation": 0,
+                        "fitness_cap": 95,
+                        "exclude": False,
+                        "confidence": "low",
+                        "conflicts": [],
+                    },
+                }
+            },
+        }
+
+        updated, audit, exclusions = optimizer.apply_news_snapshot(
+            [candidate],
+            snapshot,
+        )
+
+        self.assertEqual([], exclusions)
+        self.assertEqual(40.0, updated[0].risks["injury"])
+        self.assertEqual(45.0, updated[0].risks["transfer"])
+        self.assertEqual(80.0, updated[0].components["fitness"])
+        self.assertFalse(updated[0].reliable_anchor)
+        self.assertEqual(["m1"], audit["provider_mapped_player_ids"])
+
+    def test_confirmed_high_confidence_unavailability_excludes_player(self) -> None:
+        candidate = player("f1", "Current Club", "FORWARD", 100)
+        snapshot = {
+            "schema_version": 1,
+            "generated_at": "2026-07-24T10:00:00Z",
+            "expires_at": "2026-07-25T04:00:00Z",
+            "competition": "2. Bundesliga",
+            "season": "2026/27",
+            "providers": {"api_sports": {"status": "ok"}},
+            "players": {
+                "f1": {
+                    "name": candidate.name,
+                    "club": candidate.club,
+                    "mapping": {
+                        "api_sports_player_id": 456,
+                        "api_sports_team_id": 654,
+                        "confidence": "verified",
+                    },
+                    "signals": [],
+                    "consensus": {
+                        "injury": 95,
+                        "transfer": 0,
+                        "rotation": 0,
+                        "fitness_cap": 5,
+                        "exclude": True,
+                        "confidence": "medium",
+                        "conflicts": [],
+                    },
+                }
+            },
+        }
+
+        updated, audit, exclusions = optimizer.apply_news_snapshot(
+            [candidate],
+            snapshot,
+        )
+
+        self.assertEqual([], updated)
+        self.assertEqual(1, audit["hard_exclusions"])
+        self.assertEqual("f1", exclusions[0]["annotation_key"])
 
 
 if __name__ == "__main__":
