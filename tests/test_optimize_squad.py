@@ -366,6 +366,110 @@ class DistanceOptimizerTests(unittest.TestCase):
         self.assertNotIn("Variation seed", completed.stdout)
 
 
+class CentralNewsIdentityTests(unittest.TestCase):
+    def test_provider_roster_matches_kicker_nickname_and_club_variant(self) -> None:
+        kicker_player = optimizer.replace(
+            player("kicker-17", "Hamburg", "MIDFIELDER", 100),
+            name="Maxi Mustermann",
+        )
+        payload = {
+            "schema_version": 1,
+            "generated_at": "2026-07-24T08:00:00Z",
+            "expires_at": "2026-07-25T02:00:00Z",
+            "competition": "2. Bundesliga",
+            "season": "2026/27",
+            "providers": {"api_sports": {"status": "ok"}},
+            "players": {
+                "api_sports:101": {
+                    "name": "Maximilian Mustermann",
+                    "club": "Hamburger SV",
+                    "mapping": {
+                        "api_sports_player_id": 101,
+                        "api_sports_team_id": 10,
+                        "confidence": "verified",
+                    },
+                    "signals": [],
+                    "consensus": {
+                        "injury": 0,
+                        "transfer": 0,
+                        "rotation": 0,
+                        "fitness_cap": 100,
+                        "exclude": False,
+                        "confidence": "low",
+                        "conflicts": [],
+                    },
+                }
+            },
+        }
+
+        updated, audit, exclusions = optimizer.apply_news_snapshot(
+            [kicker_player],
+            payload,
+        )
+
+        self.assertEqual(1, len(updated))
+        self.assertEqual([], exclusions)
+        self.assertEqual(
+            ["kicker-17"],
+            audit["provider_mapped_player_ids"],
+        )
+        self.assertEqual(
+            "api_sports:101",
+            audit["identity_bindings"]["kicker-17"],
+        )
+
+    def test_ambiguous_provider_identity_is_reported_as_conflict(self) -> None:
+        kicker_player = optimizer.replace(
+            player("kicker-18", "Teststadt", "DEFENDER", 100),
+            name="Max Mustermann",
+        )
+        entry = {
+            "name": "Max Mustermann",
+            "club": "FC Teststadt",
+            "mapping": {
+                "api_sports_player_id": 101,
+                "api_sports_team_id": 10,
+                "confidence": "verified",
+            },
+            "signals": [],
+            "consensus": {
+                "injury": 0,
+                "transfer": 0,
+                "rotation": 0,
+                "fitness_cap": 100,
+                "exclude": False,
+                "confidence": "low",
+                "conflicts": [],
+            },
+        }
+        payload = {
+            "schema_version": 1,
+            "generated_at": "2026-07-24T08:00:00Z",
+            "expires_at": "2026-07-25T02:00:00Z",
+            "competition": "2. Bundesliga",
+            "season": "2026/27",
+            "providers": {"api_sports": {"status": "ok"}},
+            "players": {
+                "api_sports:101": entry,
+                "api_sports:102": {
+                    **entry,
+                    "mapping": {
+                        **entry["mapping"],
+                        "api_sports_player_id": 102,
+                    },
+                },
+            },
+        }
+
+        _, audit, _ = optimizer.apply_news_snapshot(
+            [kicker_player],
+            payload,
+        )
+
+        self.assertIn("kicker-18", audit["conflicts"])
+        self.assertEqual([], audit["provider_mapped_player_ids"])
+
+
 class ReliableCorePolicyTests(unittest.TestCase):
     def test_final_annotation_requires_anchor_benchmark_and_evidence_fields(
         self,

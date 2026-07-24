@@ -73,9 +73,11 @@ Codex/ChatGPT fragt bei Bedarf nach Spielklasse, Risikoprofil und gewünschtem B
 
 Bei **verlässlich und wartungsarm** konzentriert das Plugin das Budget auf einen starken Aufstellungskern mit mindestens drei bestätigten Leistungsträgern. Die Bank wird günstiger, aber mit realistischen Einsatzchancen besetzt. Im Ergebnis erklärt Codex die wichtigsten Spieler einzeln und vergleicht bewusst ausgelassene etablierte Alternativen samt Budget- und Risikogründen.
 
-Vor dem Umbau prüft das Plugin außerdem aktuelle Verletzungs- und Transfermeldungen. Wenn euer Team einen zentralen News-Feed eingerichtet hat, werden SportsMonks und API-Sports automatisch als zusätzlicher Frühwarnkanal verwendet. Veraltete Daten, falsche Liga- oder Saisonangaben, fehlende Spielerzuordnungen und widersprüchliche Meldungen stoppen den automatischen Umbau, bis Codex die betroffenen Spieler in aktuellen Quellen geprüft hat. Ohne zentralen Feed recherchiert Codex diese Informationen weiterhin individuell im Web.
+Vor dem Umbau prüft das Plugin außerdem aktuelle Verletzungs- und Transfermeldungen. Für die 2. Bundesliga und 3. Liga der Saison 2026/27 verwendet das Plugin automatisch den zentralen API-Sports-Feed dieses Projekts. Dafür müssen Kollegen weder einen API-Key noch eine Feed-Adresse einrichten. Der Feed wird viermal täglich aktualisiert und enthält nur normalisierte Spieler-, Verletzungs- und Transferdaten; der geheime Provider-Schlüssel bleibt im geschützten GitHub-Secret-Speicher.
 
-Die Provider-Zugangsdaten werden nur auf dem zentralen Aktualisierungsrechner benötigt und nie an Kollegen verteilt. Die technische Einrichtung für den Team-Administrator steht in der Plugin-Referenz `references/news-hardening.md`; für normale Nutzer ändert sich am oben beschriebenen Ablauf nichts.
+Veraltete Daten, falsche Liga- oder Saisonangaben, fehlende Spielerzuordnungen und widersprüchliche Meldungen stoppen den automatischen Umbau, bis Codex die betroffenen Spieler in aktuellen Primärquellen geprüft hat. API-Sports ist ein zusätzlicher Frühwarnkanal und ersetzt diese gezielte Gegenprüfung nicht. Für normale Nutzer ändert sich am oben beschriebenen Ablauf nichts.
+
+Der technische Betrieb und die Feed-Endpunkte sind in der Plugin-Referenz `references/news-hardening.md` dokumentiert. Provider-Zugangsdaten werden nie an Kollegen verteilt.
 
 Falls Codex nicht auf Chrome zugreifen kann, prüfe zuerst, ob:
 

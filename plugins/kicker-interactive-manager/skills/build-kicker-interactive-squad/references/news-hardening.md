@@ -4,12 +4,12 @@
 
 Die News-Prüfung ist hybrid:
 
-1. Ein zentraler täglicher Lauf liest SportsMonks und API-Sports mit den geheimen Provider-Schlüsseln aus.
+1. Ein zentraler Lauf liest API-Sports viermal täglich mit dem geheimen Provider-Schlüssel aus. SportsMonks kann später als zweiter Provider ergänzt werden.
 2. Er veröffentlicht ausschließlich ein normalisiertes Snapshot ohne Schlüssel und ohne vollständige Rohantworten.
 3. Jeder Optimierungslauf lädt dieses Snapshot, prüft Alter, Wettbewerb, Saison, Prüfsumme, Spielerzuordnung und Provider-Konflikte.
 4. Offizielle Vereins-, Liga- und Transfermeldungen bleiben der gezielte Fallback für fehlende Zuordnungen, Konflikte und besonders folgenreiche Meldungen.
 
-Provider-Schlüssel niemals in das Plugin, in Annotationen, in das Snapshot, in Browseraktionen oder in eine Antwort an den Nutzer schreiben. Auf Kollegenrechnern werden nur `KICKER_NEWS_FEED_URL` und optional `KICKER_NEWS_FEED_TOKEN` benötigt.
+Provider-Schlüssel niemals in das Plugin, in Annotationen, in das Snapshot, in Browseraktionen oder in eine Antwort an den Nutzer schreiben. Die offiziellen Team-Feeds für 2. Bundesliga und 3. Liga 2026/27 sind im Optimierer hinterlegt; Kollegen benötigen weder Provider-Schlüssel noch lokale Feed-Konfiguration.
 
 ## Sicherheitsregeln
 
@@ -22,9 +22,20 @@ Provider-Schlüssel niemals in das Plugin, in Annotationen, in das Snapshot, in 
 - Für jeden ausgewählten Spieler muss bei mindestens einem Provider ein verifiziertes Paar aus Spieler- und aktuellem Team-ID vorliegen. Nur so lässt sich die Richtung eines Transfers sicher bewerten. Fehlt es, den Spieler am selben Tag manuell in Primärquellen prüfen und die zentrale Zuordnung ergänzen, bevor Chrome geändert wird.
 - Direkt vor dem ersten Verkauf Snapshot erneut laden. Liegt die letzte Prüfung mehr als zwei Stunden zurück oder gab es neue Meldungen, finalen Lauf mit demselben Seed wiederholen.
 
-## Zentralen Aktualisierungslauf einrichten
+## Zentraler GitHub-Aktualisierungslauf
 
-Die Mapping-Datei verbindet Kicker-IDs mit Provider-IDs:
+Der Workflow `.github/workflows/update-news-feed.yml` läuft um 02:17, 08:17, 14:17 und 20:17 UTC sowie manuell. Der API-Sports-Schlüssel liegt ausschließlich als Repository-Secret `API_SPORTS_KEY` vor. GitHub Pages veröffentlicht danach:
+
+```text
+https://geozocco.github.io/kicker-interactive-manager/v1/news/2-bundesliga.json
+https://geozocco.github.io/kicker-interactive-manager/v1/news/3-liga.json
+```
+
+Die Konfigurationen in `config/news/` enthalten nur Wettbewerb, Saison und öffentliche Provider-IDs. Der Lauf ermittelt alle aktuellen Teams und Spieler automatisch, verlangt die erwartete Teamzahl und bricht bei unvollständigen Ligadaten ab. Snapshots werden als Pages-Artefakt veröffentlicht und nicht in Git eingecheckt.
+
+Für eine manuelle zentrale Ausführung gilt weiterhin:
+
+Eine optionale Mapping-Datei kann einzelne Kicker-IDs ausdrücklich mit Provider-IDs verbinden:
 
 ```json
 {
@@ -60,15 +71,15 @@ Die Mapping-Datei verbindet Kicker-IDs mit Provider-IDs:
 }
 ```
 
-Die Liga- und Team-IDs sind providerabhängig und müssen vor dem ersten Lauf gegen den aktuellen Wettbewerb geprüft werden. `competition_team_ids_complete` erst dann auf `true` setzen, wenn wirklich alle aktuellen Vereine der Liga in `team_ids` oder `competition_team_ids` enthalten sind. Nur dann darf ein Zielverein außerhalb dieser Menge als bestätigter Abgang aus dem Wettbewerb gewertet werden. Ein Wechsel innerhalb der Ligamenge erhöht dagegen lediglich Rollen- und Transferrisiko. Anschließend zentral ausführen:
+Die Liga- und Team-IDs sind providerabhängig und müssen vor dem ersten Lauf gegen den aktuellen Wettbewerb geprüft werden. Bei `auto_discover_players: true` setzt das Skript `competition_team_ids_complete` nur nach erfolgreicher Prüfung der erwarteten Teamzahl. Ohne automatische Erkennung darf das Feld erst dann auf `true` gesetzt werden, wenn wirklich alle aktuellen Vereine enthalten sind. Nur dann darf ein Zielverein außerhalb dieser Menge als bestätigter Abgang aus dem Wettbewerb gewertet werden. Ein Wechsel innerhalb der Ligamenge erhöht dagegen lediglich Rollen- und Transferrisiko. Anschließend zentral ausführen:
 
 ```text
 SPORTMONKS_API_TOKEN=<secret> API_SPORTS_KEY=<secret> <python-3-command> scripts/refresh_news_snapshot.py --mapping <mapping-json> --output <snapshot-directory>/2-bundesliga.json
 ```
 
-Der Lauf ist für eine tägliche Ausführung gedacht. Er verwendet begrenzte Wiederholungen mit Backoff, vollständige Pagination, API-Sports-Batches bis 20 Spieler, vereinsweise statt spielerweise Transferabfragen, die SportsMonks-Gerüchte der letzten höchstens 31 Tage, providerseitige Aktualitätsdaten und atomaren Dateiaustausch. Nach einem fehlgeschlagenen Refresh bleibt die vorige Datei erhalten, läuft aber regulär ab und wird danach vom Optimierer abgelehnt.
+Der Lauf ist für mehrere Aktualisierungen pro Tag gedacht. Er verwendet begrenzte Wiederholungen mit Backoff, vollständige Pagination, API-Sports-Batches bis 20 Spieler, vereinsweise statt spielerweise Transferabfragen, bei optionalem SportsMonks-Betrieb nur Gerüchte der letzten höchstens 31 Tage, providerseitige Aktualitätsdaten und atomaren Dateiaustausch. Nach einem fehlgeschlagenen Refresh bleibt im selbst gehosteten Modus die vorige Datei erhalten, läuft aber regulär ab und wird danach vom Optimierer abgelehnt; GitHub Pages veröffentlicht bei einem fehlgeschlagenen Workflow gar kein neues Artefakt.
 
-## Feed bereitstellen
+## Alternativen zur GitHub-Pages-Bereitstellung
 
 Das Snapshot über einen internen HTTPS-Endpunkt ausliefern. Dafür kann `scripts/serve_news_feed.py` hinter einem TLS-Reverse-Proxy verwendet werden:
 
@@ -84,7 +95,7 @@ https://intern.example.org/v1/news/2-bundesliga.json
 
 Er muss HTTPS erzwingen und den Backend-Port nicht öffentlich freigeben. Der mitgelieferte Server prüft Bearer-Token, sichere Dateinamen, Snapshot-Gültigkeit und ETags. Alternativ ist jeder interne HTTPS-Speicher zulässig, der dieselbe JSON-Datei unverändert und zugriffsgeschützt ausliefert.
 
-Auf jedem Kollegenrechner werden URL und optional Feed-Token als lokale Umgebungsvariablen gesetzt. Niemals die Provider-Schlüssel verteilen:
+Für einen ausdrücklich gewünschten internen Spiegel können URL und optional Feed-Token als lokale Umgebungsvariablen gesetzt werden. Sie überschreiben den eingebauten Team-Feed. Niemals die Provider-Schlüssel verteilen:
 
 ```text
 KICKER_NEWS_FEED_URL=https://intern.example.org/v1/news/2-bundesliga.json

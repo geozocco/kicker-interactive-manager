@@ -10,7 +10,7 @@ description: Plane, optimiere und ändere Kader im kicker Managerspiel Interacti
 - Ausschließlich die bereits angemeldete Chrome-Sitzung verwenden. Keine Passwörter, Cookies, Tokens oder Browser-Speicher lesen oder exportieren.
 - Vor jeder Browsersteuerung den verfügbaren Chrome-Control-Skill vollständig laden und dessen Interaktions- und Finalisierungsregeln befolgen.
 - Aktuelle Informationen zu Transfers, Verletzungen, Vorbereitung, Trainer und Rollen im Web verifizieren. Offizielle Vereins- und Ligaseiten bevorzugen.
-- Wenn ein zentraler News-Feed konfiguriert ist, ihn als erstes maschinenlesbares Aktualitäts-Gate verwenden. Er ersetzt die gezielte Prüfung von Lücken, Konflikten und folgenreichen Meldungen in Primärquellen nicht.
+- Für die 2. Bundesliga und 3. Liga 2026/27 den im Optimierer hinterlegten zentralen News-Feed als erstes maschinenlesbares Aktualitäts-Gate verwenden. Eine lokale `KICKER_NEWS_FEED_URL` darf diesen Standard für Tests oder einen internen Spiegel überschreiben. Der Feed ersetzt die gezielte Prüfung von Lücken, Konflikten und folgenreichen Meldungen in Primärquellen nicht.
 - Keine Vorjahrespunkte als Prognose behandeln. Wiederholbarkeit, Rolle, Einsatzwahrscheinlichkeit, Umfeld und Preis getrennt bewerten.
 - Berücksichtigen, dass nur die am Spieltag aufgestellte Elf Punkte sammelt. Reservequalität ist Absicherung und darf insbesondere bei geringem Betreuungsaufwand nicht genauso viel Budgetgewicht erhalten wie der wahrscheinliche Kern.
 - Nie „Alle verkaufen“ verwenden. Änderungen einzeln ausführen und nach jeder Phase Kadergröße, Positionen und Budget prüfen.
@@ -95,7 +95,7 @@ Die Kombination `verlässlich` und `gering` ist das konservative Kollegenprofil:
 - Komponenten und Risiken nach [references/annotation-schema.md](references/annotation-schema.md) erfassen.
 - Für jeden final geprüften Kandidaten zusätzlich `reliable_anchor`, `anchor_reason`, `benchmark` und belastbare `evidence` erfassen.
 - `scripts/optimize_squad.py` mit CSV, Profil, Variabilität, Betreuungsaufwand, Budget und Annotationen ausführen.
-- `KICKER_NEWS_FEED_URL` und optional `KICKER_NEWS_FEED_TOKEN` aus der Laufzeit verwenden, wenn sie zentral eingerichtet sind. Die Werte nicht ausgeben. Niemals nach `SPORTMONKS_API_TOKEN` oder `API_SPORTS_KEY` auf einem Kollegenrechner suchen; diese gehören ausschließlich in den zentralen Aktualisierungslauf.
+- Den eingebauten zentralen Feed anhand von Wettbewerb und Saison verwenden. `KICKER_NEWS_FEED_URL` und optional `KICKER_NEWS_FEED_TOKEN` aus der Laufzeit überschreiben ihn nur, wenn sie ausdrücklich zentral eingerichtet sind. Die Werte nicht ausgeben. Niemals nach `SPORTMONKS_API_TOKEN` oder `API_SPORTS_KEY` auf einem Kollegenrechner suchen; diese gehören ausschließlich in den zentralen Aktualisierungslauf.
 - Beim zentralen Feed immer Wettbewerb und Saison gegen die sichtbare Kicker-Seite prüfen und für den finalen Lauf `--require-news-snapshot --require-news-coverage` verwenden.
 - Ist kein zentraler Feed eingerichtet oder erreichbar, den in `news-hardening.md` beschriebenen manuellen Tagescheck für jeden möglichen Zielspieler und entscheidenden Near-Miss durchführen. Ein abgelaufenes Snapshot niemals als aktuellen Beleg verwenden.
 - Im finalen Lauf werden ausschließlich vollständig aktuell annotierte Spieler berücksichtigt.
@@ -107,7 +107,7 @@ Die Kombination `verlässlich` und `gering` ist das konservative Kollegenprofil:
 Beispiel:
 
 ```text
-<python-3-command> scripts/optimize_squad.py --players <players-csv-path> --annotations <annotations-json-path> --competition "2. Bundesliga" --season "2026/27" --news-snapshot <feed-url-or-local-snapshot> --require-news-snapshot --require-news-coverage --profile reliable --variation medium --maintenance low --min-reliable-anchors 3 --seed <seed> --budget 10000000 --goalkeepers 3 --defenders 7 --midfielders 7 --forwards 5 --format json
+<python-3-command> scripts/optimize_squad.py --players <players-csv-path> --annotations <annotations-json-path> --competition "2. Bundesliga" --season "2026/27" --require-news-snapshot --require-news-coverage --profile reliable --variation medium --maintenance low --min-reliable-anchors 3 --seed <seed> --budget 10000000 --goalkeepers 3 --defenders 7 --midfielders 7 --forwards 5 --format json
 ```
 
 Wettbewerb, Saison und vier Positionsargumente immer mit den zuvor von der sichtbaren Kicker-Seite erfassten Werten belegen; die gezeigten Werte sind nur ein Beispiel. Für das Profil `verlässlich` mindestens drei `reliable_anchor` verlangen. Ist das mit aktuell auswählbaren Spielern nicht möglich, den Pool erweitern oder die Einschränkung offen erklären; die Mindestzahl nicht still absenken.

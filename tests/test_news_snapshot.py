@@ -259,5 +259,102 @@ class ProviderPagingTests(unittest.TestCase):
             )
 
 
+class ApiSportsRosterDiscoveryTests(unittest.TestCase):
+    @patch.object(refresh, "api_sports_pages")
+    def test_discovers_verified_players_and_complete_team_set(
+        self,
+        api_sports_pages,
+    ) -> None:
+        api_sports_pages.side_effect = [
+            iter(
+                [
+                    {
+                        "response": [
+                            {"team": {"id": 10, "name": "Club One"}},
+                            {"team": {"id": 20, "name": "Club Two"}},
+                        ]
+                    }
+                ]
+            ),
+            iter(
+                [
+                    {
+                        "response": [
+                            {
+                                "team": {"id": 10, "name": "Club One"},
+                                "players": [
+                                    {"id": 101, "name": "Max Player"}
+                                ],
+                            }
+                        ]
+                    }
+                ]
+            ),
+            iter(
+                [
+                    {
+                        "response": [
+                            {
+                                "team": {"id": 20, "name": "Club Two"},
+                                "players": [],
+                            }
+                        ]
+                    }
+                ]
+            ),
+        ]
+
+        discovered, audit = refresh.discover_api_sports_roster(
+            {
+                "api_sports": {
+                    "league_id": 79,
+                    "season": 2026,
+                    "expected_team_count": 2,
+                    "auto_discover_players": True,
+                },
+                "players": {},
+            },
+            "secret",
+        )
+
+        self.assertEqual("discovered", audit["status"])
+        self.assertEqual(2, audit["teams"])
+        self.assertEqual(
+            {
+                "name": "Max Player",
+                "club": "Club One",
+                "api_sports_player_id": 101,
+                "api_sports_team_id": 10,
+                "mapping_confidence": "verified",
+            },
+            discovered["players"]["api_sports:101"],
+        )
+        self.assertTrue(
+            discovered["api_sports"]["competition_team_ids_complete"]
+        )
+
+    @patch.object(refresh, "api_sports_pages")
+    def test_incomplete_team_discovery_fails_closed(
+        self,
+        api_sports_pages,
+    ) -> None:
+        api_sports_pages.return_value = iter(
+            [{"response": [{"team": {"id": 10, "name": "Club One"}}]}]
+        )
+        with self.assertRaisesRegex(RuntimeError, "expected 2"):
+            refresh.discover_api_sports_roster(
+                {
+                    "api_sports": {
+                        "league_id": 79,
+                        "season": 2026,
+                        "expected_team_count": 2,
+                        "auto_discover_players": True,
+                    },
+                    "players": {},
+                },
+                "secret",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

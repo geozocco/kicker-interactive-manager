@@ -15,8 +15,10 @@ import json
 import math
 import os
 import random
+import re
 import secrets
 import sys
+import unicodedata
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterable
@@ -55,6 +57,28 @@ COMPONENTS = (
     "value",
 )
 RISKS = ("transfer", "injury", "rotation", "outlier", "unknown_role")
+DEFAULT_NEWS_FEEDS = {
+    ("2. Bundesliga", "2026/27"): (
+        "https://geozocco.github.io/kicker-interactive-manager/"
+        "v1/news/2-bundesliga.json"
+    ),
+    ("3. Liga", "2026/27"): (
+        "https://geozocco.github.io/kicker-interactive-manager/"
+        "v1/news/3-liga.json"
+    ),
+}
+CLUB_IDENTITY_STOPWORDS = {
+    "1",
+    "fc",
+    "sc",
+    "sv",
+    "tsv",
+    "vfb",
+    "vfl",
+    "bsc",
+    "spvgg",
+    "ev",
+}
 
 PROFILE_ALIASES = {
     "reliable": "reliable",
@@ -394,6 +418,98 @@ def load_players(
     return players, annotated_count, annotated_by_position
 
 
+def identity_words(value: str) -> tuple[str, ...]:
+    folded = unicodedata.normalize(
+        "NFKD",
+        value.replace("ß", "ss"),
+    ).encode("ascii", "ignore").decode("ascii").casefold()
+    return tuple(re.findall(r"[a-z0-9]+", folded))
+
+
+def player_name_match_score(left: str, right: str) -> int:
+    left_words = identity_words(left)
+    right_words = identity_words(right)
+    if not left_words or not right_words:
+        return 0
+    if left_words == right_words or (
+        len(left_words) == len(right_words)
+        and sorted(left_words) == sorted(right_words)
+    ):
+        return 3
+    if len(left_words) < 2 or len(right_words) < 2:
+        return 0
+    if left_words[-1] != right_words[-1]:
+        return 0
+    left_first = left_words[0]
+    right_first = right_words[0]
+    if min(len(left_first), len(right_first)) >= 3 and (
+        left_first.startswith(right_first)
+        or right_first.startswith(left_first)
+    ):
+        return 2
+    return 0
+
+
+def clubs_match(left: str, right: str) -> bool:
+    left_words = {
+        word
+        for word in identity_words(left)
+        if word not in CLUB_IDENTITY_STOPWORDS
+    }
+    right_words = {
+        word
+        for word in identity_words(right)
+        if word not in CLUB_IDENTITY_STOPWORDS
+    }
+    if not left_words or not right_words:
+        return False
+    if left_words == right_words or left_words.issubset(right_words) or right_words.issubset(left_words):
+        return True
+    return any(
+        min(len(left_word), len(right_word)) >= 5
+        and (
+            left_word.startswith(right_word)
+            or right_word.startswith(left_word)
+        )
+        for left_word in left_words
+        for right_word in right_words
+    )
+
+
+def resolve_snapshot_entry(
+    player: Player,
+    entries: dict[str, Any],
+) -> tuple[str | None, dict[str, Any] | None, list[str]]:
+    direct = entries.get(player.player_id)
+    if isinstance(direct, dict):
+        return player.player_id, direct, []
+
+    candidates: list[tuple[int, str, dict[str, Any]]] = []
+    for snapshot_key, raw_entry in entries.items():
+        if not isinstance(raw_entry, dict):
+            continue
+        name_score = player_name_match_score(
+            player.name,
+            str(raw_entry.get("name", "")),
+        )
+        if name_score == 0 or not clubs_match(
+            player.club,
+            str(raw_entry.get("club", "")),
+        ):
+            continue
+        candidates.append((name_score, str(snapshot_key), raw_entry))
+    if not candidates:
+        return None, None, []
+    best_score = max(item[0] for item in candidates)
+    best = [item for item in candidates if item[0] == best_score]
+    if len(best) != 1:
+        return None, None, [
+            "multiple central news identities match this Kicker player"
+        ]
+    _, snapshot_key, entry = best[0]
+    return snapshot_key, entry, []
+
+
 def apply_news_snapshot(
     players: list[Player],
     payload: dict[str, Any],
@@ -406,13 +522,23 @@ def apply_news_snapshot(
     applied_ids: list[str] = []
     provider_mapped_ids: list[str] = []
     conflicts: dict[str, list[str]] = {}
+    identity_bindings: dict[str, str] = {}
+    matched_snapshot_keys: set[str] = set()
     csv_ids = {player.player_id for player in players}
 
     for player in players:
-        entry = entries.get(player.player_id)
+        snapshot_key, entry, identity_conflicts = resolve_snapshot_entry(
+            player,
+            entries,
+        )
+        if identity_conflicts:
+            conflicts[player.player_id] = identity_conflicts
         if not isinstance(entry, dict):
             updated.append(player)
             continue
+        if snapshot_key is not None:
+            identity_bindings[player.player_id] = snapshot_key
+            matched_snapshot_keys.add(snapshot_key)
         mapping = entry.get("mapping", {})
         if not isinstance(mapping, dict):
             mapping = {}
@@ -442,11 +568,11 @@ def apply_news_snapshot(
         entry_conflicts = list(entry.get("consensus", {}).get("conflicts", []))
         entry_name = str(entry.get("name", "")).strip()
         entry_club = str(entry.get("club", "")).strip()
-        if entry_name and entry_name.casefold() != player.name.casefold():
+        if entry_name and not player_name_match_score(entry_name, player.name):
             entry_conflicts.append(
                 f"Kicker-ID maps to snapshot name {entry_name!r}, not {player.name!r}"
             )
-        if entry_club and entry_club.casefold() != player.club.casefold():
+        if entry_club and not clubs_match(entry_club, player.club):
             entry_conflicts.append(
                 f"Kicker-ID maps to snapshot club {entry_club!r}, not {player.club!r}"
             )
@@ -545,7 +671,10 @@ def apply_news_snapshot(
             "applied_player_ids": sorted(applied_ids),
             "provider_mapped_player_ids": sorted(provider_mapped_ids),
             "unmapped_csv_player_ids": sorted(csv_ids - set(provider_mapped_ids)),
-            "snapshot_only_player_ids": sorted(set(entries) - csv_ids),
+            "snapshot_only_player_ids": sorted(
+                set(entries) - matched_snapshot_keys
+            ),
+            "identity_bindings": identity_bindings,
             "conflicts": conflicts,
             "hard_exclusions": len(excluded),
         }
@@ -2038,6 +2167,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--format", choices=("json", "text"), default="text")
     parser.add_argument("--output", type=Path, help="Optional output file")
     args = parser.parse_args()
+    if not args.news_snapshot and args.competition and args.season:
+        args.news_snapshot = DEFAULT_NEWS_FEEDS.get(
+            (args.competition, args.season)
+        )
     args.profile = PROFILE_ALIASES[args.profile]
     args.maintenance = MAINTENANCE_ALIASES[args.maintenance]
     args.variation = VARIATION_ALIASES[args.variation]

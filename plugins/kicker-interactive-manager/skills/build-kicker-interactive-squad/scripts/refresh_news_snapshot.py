@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import time
@@ -186,6 +187,117 @@ def competition_team_ids(
         if (team_id := optional_int(raw_id)) is not None
     }
     return normalized, bool(section.get("competition_team_ids_complete", False))
+
+
+def discover_api_sports_roster(
+    config: dict[str, Any],
+    token: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Discover the current league roster without storing provider secrets."""
+
+    section = config.get("api_sports", {})
+    if not section.get("auto_discover_players", False):
+        return copy.deepcopy(config), {
+            "status": "configured",
+            "players": len(config.get("players", {})),
+            "teams": len(section.get("team_ids", {})),
+            "requests": 0,
+        }
+
+    league_id = optional_int(section.get("league_id"))
+    season = optional_int(section.get("season"))
+    if league_id is None or season is None:
+        raise RuntimeError(
+            "API-Sports roster discovery requires league_id and season"
+        )
+
+    headers = {"x-apisports-key": token}
+    requests = 0
+    teams: dict[int, str] = {}
+    for response in api_sports_pages(
+        "https://v3.football.api-sports.io/teams",
+        query={"league": league_id, "season": season},
+        headers=headers,
+    ):
+        requests += 1
+        for item in response.get("response", []):
+            if not isinstance(item, dict):
+                continue
+            team = item.get("team", {})
+            if not isinstance(team, dict):
+                continue
+            team_id = optional_int(team.get("id"))
+            if team_id is not None:
+                teams[team_id] = str(team.get("name", "")).strip()
+
+    expected_team_count = optional_int(section.get("expected_team_count"))
+    if not teams:
+        raise RuntimeError(
+            f"API-Sports returned no teams for league {league_id}, season {season}"
+        )
+    if expected_team_count is not None and len(teams) != expected_team_count:
+        raise RuntimeError(
+            "API-Sports roster discovery returned "
+            f"{len(teams)} teams, expected {expected_team_count}"
+        )
+
+    players: dict[str, dict[str, Any]] = {}
+    for requested_team_id, requested_team_name in sorted(teams.items()):
+        for response in api_sports_pages(
+            "https://v3.football.api-sports.io/players/squads",
+            query={"team": requested_team_id},
+            headers=headers,
+        ):
+            requests += 1
+            for squad in response.get("response", []):
+                if not isinstance(squad, dict):
+                    continue
+                team = squad.get("team", {})
+                if not isinstance(team, dict):
+                    continue
+                team_id = optional_int(team.get("id"))
+                if team_id != requested_team_id:
+                    continue
+                team_name = (
+                    str(team.get("name", "")).strip()
+                    or requested_team_name
+                )
+                for player in squad.get("players", []):
+                    if not isinstance(player, dict):
+                        continue
+                    player_id = optional_int(player.get("id"))
+                    if player_id is None:
+                        continue
+                    players[f"api_sports:{player_id}"] = {
+                        "name": str(player.get("name", "")).strip(),
+                        "club": team_name,
+                        "api_sports_player_id": player_id,
+                        "api_sports_team_id": team_id,
+                        "mapping_confidence": "verified",
+                    }
+
+    if not players:
+        raise RuntimeError(
+            f"API-Sports returned no players for league {league_id}, season {season}"
+        )
+
+    discovered = copy.deepcopy(config)
+    discovered_section = discovered.setdefault("api_sports", {})
+    discovered_section["competition_team_ids"] = sorted(teams)
+    discovered_section["competition_team_ids_complete"] = True
+    discovered_section["team_ids"] = {
+        name: team_id for team_id, name in sorted(teams.items())
+    }
+    configured_players = discovered.get("players", {})
+    if not isinstance(configured_players, dict):
+        configured_players = {}
+    discovered["players"] = {**players, **configured_players}
+    return discovered, {
+        "status": "discovered",
+        "players": len(players),
+        "teams": len(teams),
+        "requests": requests,
+    }
 
 
 def classify_transfer_impact(
@@ -666,6 +778,7 @@ def build_snapshot(
     ttl_hours: int,
 ) -> dict[str, Any]:
     observed_at = iso_now()
+    runtime_config = copy.deepcopy(config)
     all_signals: dict[str, list[dict[str, Any]]] = defaultdict(list)
     provider_audit: dict[str, Any] = {}
     for provider in providers:
@@ -673,12 +786,25 @@ def build_snapshot(
             token = os.environ.get("API_SPORTS_KEY", "").strip()
             if not token:
                 raise RuntimeError("API_SPORTS_KEY is required")
-            signals, audit = api_sports_signals(config, token, observed_at)
+            runtime_config, roster_audit = discover_api_sports_roster(
+                runtime_config,
+                token,
+            )
+            signals, audit = api_sports_signals(
+                runtime_config,
+                token,
+                observed_at,
+            )
+            audit["roster"] = roster_audit
         elif provider == "sportsmonks":
             token = os.environ.get("SPORTMONKS_API_TOKEN", "").strip()
             if not token:
                 raise RuntimeError("SPORTMONKS_API_TOKEN is required")
-            signals, audit = sportsmonks_signals(config, token, observed_at)
+            signals, audit = sportsmonks_signals(
+                runtime_config,
+                token,
+                observed_at,
+            )
         else:
             raise RuntimeError(f"unsupported provider: {provider}")
         provider_audit[provider] = audit
@@ -686,7 +812,7 @@ def build_snapshot(
             all_signals[kicker_id].extend(items)
 
     players: dict[str, Any] = {}
-    for kicker_id, mapping in config.get("players", {}).items():
+    for kicker_id, mapping in runtime_config.get("players", {}).items():
         if not isinstance(mapping, dict):
             continue
         deduplicated: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
@@ -772,8 +898,15 @@ def main() -> int:
         )
     if not str(config.get("season", "")).strip():
         raise SystemExit("mapping season is required")
-    if not isinstance(config.get("players"), dict) or not config["players"]:
-        raise SystemExit("mapping players must be a non-empty object")
+    players = config.get("players", {})
+    auto_discover = bool(
+        config.get("api_sports", {}).get("auto_discover_players", False)
+    )
+    if not isinstance(players, dict) or (not players and not auto_discover):
+        raise SystemExit(
+            "mapping players must be a non-empty object unless "
+            "api_sports.auto_discover_players is enabled"
+        )
     payload = build_snapshot(
         config,
         providers=list(dict.fromkeys(args.providers)),
