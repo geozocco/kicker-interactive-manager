@@ -98,8 +98,11 @@ Variabilität darf keine blinde Zufallsauswahl sein. Zuerst das beste Ergebnis i
 - Beim Profil `ausbruch` die Qualitätsgrenze mit Faktor 1,20 erweitern.
 - Einen zufälligen Seed lokal erzeugen, wenn der Nutzer keinen nennt. Keine personenbezogenen Daten als Seed verwenden.
 - Den Seed im Ergebnis ausgeben, damit ein Kader reproduzierbar bleibt.
-- Bei bekannten Kollegenkadern Überschneidungen über `--avoid-roster` bestrafen. Niemals einen klar schlechteren Spieler allein zur Abgrenzung wählen.
-- Innerhalb einer Gruppe darf ein gemeinsamer Ankerkern bestehen. Unterschiedliche Seeds sollen vor allem mittlere Preisklassen, Bankplätze und ähnlich bewertete Alternativen variieren.
+- Bei bekannten Kollegenkadern Überschneidungen über `--avoid-roster` nach Auswahlhäufigkeit bestrafen. Niemals einen klar schlechteren Spieler allein zur Abgrenzung wählen.
+- Für eine vorab bekannte Gruppe `--portfolio-size` und eindeutige `--portfolio-index`-Werte mit demselben Gruppenseed verwenden. Der Optimierer berechnet die Slots gemeinsam und verteilt wiederholt gewählte Spieler zunehmend weniger attraktiv.
+- Portfolio-Diversität umfasst auch Anker und Premiumspieler. Ein Spieler darf in allen Slots stehen, wenn sein Qualitätsvorsprung innerhalb des Korridors nicht ersetzbar ist; eine frühere Erwähnung durch den Nutzer ist kein solcher Qualitätsvorsprung.
+- `benchmark: true` besitzt keinerlei Scorebonus. Es erzwingt nur, dass ein Kandidat recherchiert, verglichen und bei Nichtauswahl erklärt wird.
+- Innerhalb einer Gruppe darf ein sportlich begründeter gemeinsamer Ankerkern bestehen. Die Portfolio-Slots sollen mittlere Preisklassen, Bankplätze und ähnlich bewertete Anker beziehungsweise Premiumspieler variieren.
 - Technische Läufe mit `--allow-unannotated` begrenzen bei sehr großen Rohpools nur die Variationssuche auf das globale Optimum, Anker/Benchmarks sowie starke und günstige Positionsalternativen. Vollständig recherchierte Endläufe bleiben exakt und berechnen weiterhin die Gegenfaktual-Begründungen.
 
 ## Portfolioregeln

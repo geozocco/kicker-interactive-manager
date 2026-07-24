@@ -371,6 +371,96 @@ class DistanceOptimizerTests(unittest.TestCase):
         }
         self.assertGreater(len(squads), 1)
 
+    def test_five_member_portfolio_is_reproducible_and_balances_exposure(
+        self,
+    ) -> None:
+        players, scores = varied_pool()
+        slots = {
+            "GOALKEEPER": 3,
+            "DEFENDER": 2,
+            "MIDFIELDER": 2,
+            "FORWARD": 2,
+        }
+
+        first = optimizer.varied_portfolio(
+            players=players,
+            budget=900,
+            base_scores=scores,
+            profile="balanced",
+            variation="medium",
+            seed=20260724,
+            club_cap=1,
+            minimum_spend=900,
+            slots=slots,
+            avoid_exposure=Counter(),
+            portfolio_size=5,
+            portfolio_index=3,
+        )
+        second = optimizer.varied_portfolio(
+            players=players,
+            budget=900,
+            base_scores=scores,
+            profile="balanced",
+            variation="medium",
+            seed=20260724,
+            club_cap=1,
+            minimum_spend=900,
+            slots=slots,
+            avoid_exposure=Counter(),
+            portfolio_size=5,
+            portfolio_index=3,
+        )
+
+        squad, optimum, distance, target_met, audit = first
+        self.assertEqual(squad.ids, second[0].ids)
+        self.assertEqual(audit, second[4])
+        self.assertEqual(5, audit["size"])
+        self.assertEqual(3, audit["index"])
+        self.assertEqual(5, audit["unique_rosters"])
+        self.assertLessEqual(audit["common_player_count"], 2)
+        self.assertLess(audit["max_player_exposure"], audit["size"])
+        self.assertIn("common_starting_player_count", audit)
+        self.assertIn("common_reliable_anchor_ids", audit)
+        self.assertIn("common_benchmark_ids", audit)
+        self.assertEqual(4, distance)
+        self.assertTrue(target_met)
+        for slot in audit["slots"]:
+            self.assertEqual(4, slot["distance_from_optimum"])
+            self.assertTrue(slot["variation_target_met"])
+
+    def test_benchmark_flag_does_not_increase_player_score(self) -> None:
+        baseline = player("m1", "Club A", "MIDFIELDER", 100)
+        benchmark = optimizer.Player(
+            **{**baseline.__dict__, "player_id": "m2", "benchmark": True}
+        )
+
+        scores = optimizer.score_players(
+            [baseline, benchmark],
+            "reliable",
+            "low",
+        )
+
+        self.assertEqual(scores["m1"], scores["m2"])
+
+    def test_avoid_rosters_count_repeated_player_exposure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            first = Path(directory) / "first.json"
+            second = Path(directory) / "second.json"
+            first.write_text(
+                json.dumps({"squad": [{"id": "m1"}, {"id": "m2"}]}),
+                encoding="utf-8",
+            )
+            second.write_text(
+                json.dumps({"squad": [{"id": "m1"}, {"id": "m3"}]}),
+                encoding="utf-8",
+            )
+
+            exposure = optimizer.load_avoid_exposure([first, second])
+
+        self.assertEqual(2, exposure["m1"])
+        self.assertEqual(1, exposure["m2"])
+        self.assertEqual(1, exposure["m3"])
+
     def test_unreachable_quality_distance_falls_back_inside_corridor(self) -> None:
         players, scores = varied_pool()
         slots = {
@@ -1229,6 +1319,16 @@ class ReliableCorePolicyTests(unittest.TestCase):
         )
 
         self.assertTrue(payload["comparison_candidates"])
+        self.assertEqual(
+            "technical_unannotated_smoke_pool",
+            payload["optimization_scope"]["basis"],
+        )
+        self.assertTrue(
+            any(
+                "Technical smoke test only" in warning
+                for warning in payload["warnings"]
+            )
+        )
         self.assertTrue(
             all(
                 item["counterfactual"]["feasible"] is None

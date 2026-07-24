@@ -19,6 +19,8 @@ import re
 import secrets
 import sys
 import unicodedata
+from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterable
@@ -1520,8 +1522,8 @@ def optimize_distance_buckets(
     return squads
 
 
-def load_avoid_ids(paths: list[Path]) -> set[str]:
-    avoid: set[str] = set()
+def load_avoid_exposure(paths: list[Path]) -> Counter[str]:
+    exposure: Counter[str] = Counter()
     for path in paths:
         with path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
@@ -1530,12 +1532,12 @@ def load_avoid_ids(paths: list[Path]) -> set[str]:
             continue
         for entry in entries:
             if isinstance(entry, str):
-                avoid.add(entry)
+                exposure[entry] += 1
             elif isinstance(entry, dict):
                 value = entry.get("id") or entry.get("player_id") or entry.get("name")
                 if value:
-                    avoid.add(str(value))
-    return avoid
+                    exposure[str(value)] += 1
+    return exposure
 
 
 def technical_variation_pool(
@@ -1599,21 +1601,21 @@ def technical_variation_pool(
     ]
 
 
-def varied_squad(
+def prepare_variation_context(
     players: list[Player],
     budget: int,
     base_scores: dict[str, float],
     profile: str,
     variation: str,
-    seed: int,
     club_cap: int,
     minimum_spend: int,
     slots: dict[str, int],
-    avoid_ids: set[str],
-    same_club_goalkeepers: bool = True,
-    min_reliable_anchors: int = 0,
-    technical_smoke: bool = False,
-) -> tuple[Squad, Squad, int, bool]:
+    same_club_goalkeepers: bool,
+    min_reliable_anchors: int,
+    technical_smoke: bool,
+) -> dict[str, Any]:
+    """Calculate the seed-independent portfolio search state once."""
+
     optimum = optimize(
         players,
         budget,
@@ -1626,7 +1628,7 @@ def varied_squad(
     )
     config = VARIATION_CONFIG[variation]
     if variation == "none":
-        return optimum, optimum, 0, True
+        return {"optimum": optimum}
 
     profile_factor = (
         0.75
@@ -1661,7 +1663,6 @@ def varied_squad(
         )
         for distance, candidate in base_buckets.items()
     }
-
     if (
         target_distance in base_buckets
         and base_bucket_scores[target_distance] >= quality_floor
@@ -1680,15 +1681,68 @@ def varied_squad(
     base_candidate = base_buckets[chosen_bucket]
     base_candidate_score = base_bucket_scores[chosen_bucket]
     slack = max(0.0, base_candidate_score - quality_floor)
-    # Spread the available quality slack across the intended swaps instead of
-    # all 22 roster slots. The selected result is checked against the unchanged
-    # baseline quality floor below, so an over-aggressive seeded result safely
-    # falls back to the exact base candidate.
     max_player_perturbation = (
         slack / max(2.0 * target_distance, 1.0)
         if target_distance > 0
         else 0.0
     )
+    return {
+        "optimum": optimum,
+        "config": config,
+        "target_distance": target_distance,
+        "variation_players": variation_players,
+        "quality_floor": quality_floor,
+        "chosen_bucket": chosen_bucket,
+        "variation_target_met": variation_target_met,
+        "base_candidate": base_candidate,
+        "base_candidate_score": base_candidate_score,
+        "max_player_perturbation": max_player_perturbation,
+    }
+
+
+def varied_squad(
+    players: list[Player],
+    budget: int,
+    base_scores: dict[str, float],
+    profile: str,
+    variation: str,
+    seed: int,
+    club_cap: int,
+    minimum_spend: int,
+    slots: dict[str, int],
+    avoid_ids: set[str] | Mapping[str, int],
+    same_club_goalkeepers: bool = True,
+    min_reliable_anchors: int = 0,
+    technical_smoke: bool = False,
+    exposure_strength: float = 1.0,
+    prepared_context: dict[str, Any] | None = None,
+) -> tuple[Squad, Squad, int, bool]:
+    context = prepared_context or prepare_variation_context(
+        players=players,
+        budget=budget,
+        base_scores=base_scores,
+        profile=profile,
+        variation=variation,
+        club_cap=club_cap,
+        minimum_spend=minimum_spend,
+        slots=slots,
+        same_club_goalkeepers=same_club_goalkeepers,
+        min_reliable_anchors=min_reliable_anchors,
+        technical_smoke=technical_smoke,
+    )
+    optimum = context["optimum"]
+    if variation == "none":
+        return optimum, optimum, 0, True
+
+    config = context["config"]
+    target_distance = context["target_distance"]
+    variation_players = context["variation_players"]
+    quality_floor = context["quality_floor"]
+    chosen_bucket = context["chosen_bucket"]
+    variation_target_met = context["variation_target_met"]
+    base_candidate = context["base_candidate"]
+    base_candidate_score = context["base_candidate_score"]
+    max_player_perturbation = context["max_player_perturbation"]
 
     rng = random.Random(seed)
     raw_preferences: dict[str, float] = {}
@@ -1696,10 +1750,22 @@ def varied_squad(
         variation_players,
         key=lambda item: (item.player_id, item.name),
     ):
-        avoid_match = player.player_id in avoid_ids or player.name in avoid_ids
-        avoid_penalty = config["avoid"] if avoid_match else 0.0
+        if isinstance(avoid_ids, Mapping):
+            exposure = max(
+                int(avoid_ids.get(player.player_id, 0)),
+                int(avoid_ids.get(player.name, 0)),
+            )
+        else:
+            exposure = int(
+                player.player_id in avoid_ids or player.name in avoid_ids
+            )
+        avoid_penalty = (
+            config["avoid"] * exposure * max(exposure_strength, 0.0)
+        )
+        noise_strength = min(1.0, 1.0 / max(exposure_strength, 1.0))
         raw_preferences[player.player_id] = (
-            rng.uniform(-config["noise"], config["noise"]) - avoid_penalty
+            rng.uniform(-config["noise"], config["noise"]) * noise_strength
+            - avoid_penalty
         )
     largest_preference = max(
         (abs(value) for value in raw_preferences.values()),
@@ -1746,6 +1812,148 @@ def varied_squad(
     return chosen, optimum, distance, variation_target_met
 
 
+def varied_portfolio(
+    players: list[Player],
+    budget: int,
+    base_scores: dict[str, float],
+    profile: str,
+    variation: str,
+    seed: int,
+    club_cap: int,
+    minimum_spend: int,
+    slots: dict[str, int],
+    avoid_exposure: Mapping[str, int],
+    portfolio_size: int,
+    portfolio_index: int,
+    same_club_goalkeepers: bool = True,
+    min_reliable_anchors: int = 0,
+    technical_smoke: bool = False,
+) -> tuple[Squad, Squad, int, bool, dict[str, Any]]:
+    """Build a reproducible set of near-optimal squads with balanced exposure."""
+
+    if portfolio_size < 1:
+        raise ValueError("portfolio size must be positive")
+    if not 1 <= portfolio_index <= portfolio_size:
+        raise ValueError("portfolio index must be inside the portfolio size")
+
+    exposure = Counter(
+        {
+            str(player_key): int(count)
+            for player_key, count in avoid_exposure.items()
+            if int(count) > 0
+        }
+    )
+    prepared_context = prepare_variation_context(
+        players=players,
+        budget=budget,
+        base_scores=base_scores,
+        profile=profile,
+        variation=variation,
+        club_cap=club_cap,
+        minimum_spend=minimum_spend,
+        slots=slots,
+        same_club_goalkeepers=same_club_goalkeepers,
+        min_reliable_anchors=min_reliable_anchors,
+        technical_smoke=technical_smoke,
+    )
+    generated: list[tuple[Squad, Squad, int, bool, int]] = []
+    used_rosters: set[frozenset[str]] = set()
+    for slot in range(1, portfolio_size + 1):
+        selected: tuple[Squad, Squad, int, bool, int] | None = None
+        for attempt in range(8):
+            slot_seed = seed + slot * 104_729 + attempt * 7_919
+            squad, optimum, distance, target_met = varied_squad(
+                players=players,
+                budget=budget,
+                base_scores=base_scores,
+                profile=profile,
+                variation=variation,
+                seed=slot_seed,
+                club_cap=club_cap,
+                minimum_spend=minimum_spend,
+                slots=slots,
+                avoid_ids=exposure,
+                same_club_goalkeepers=same_club_goalkeepers,
+                min_reliable_anchors=min_reliable_anchors,
+                technical_smoke=technical_smoke,
+                exposure_strength=10.0,
+                prepared_context=prepared_context,
+            )
+            selected = (squad, optimum, distance, target_met, slot_seed)
+            if squad.ids not in used_rosters:
+                break
+        if selected is None:
+            raise RuntimeError("portfolio generation produced no candidate")
+        generated.append(selected)
+        used_rosters.add(selected[0].ids)
+        exposure.update(selected[0].ids)
+
+    selected_squad, optimum, distance, target_met, selected_seed = generated[
+        portfolio_index - 1
+    ]
+    squad_id_sets = [entry[0].ids for entry in generated]
+    common_ids = (
+        set.intersection(*(set(ids) for ids in squad_id_sets))
+        if squad_id_sets
+        else set()
+    )
+    player_by_id = {player.player_id: player for player in players}
+    starting_id_sets = [
+        set(
+            best_starting_lineup(
+                entry[0].players,
+                base_scores,
+                min_reliable_anchors,
+            )[1]
+        )
+        for entry in generated
+    ]
+    common_starting_ids = (
+        set.intersection(*starting_id_sets)
+        if starting_id_sets
+        else set()
+    )
+    portfolio_exposure = Counter(
+        player_id
+        for squad_ids in squad_id_sets
+        for player_id in squad_ids
+    )
+    audit = {
+        "size": portfolio_size,
+        "index": portfolio_index,
+        "base_seed": seed,
+        "selected_seed": selected_seed,
+        "unique_rosters": len(used_rosters),
+        "common_player_ids": sorted(common_ids),
+        "common_player_count": len(common_ids),
+        "common_starting_player_ids": sorted(common_starting_ids),
+        "common_starting_player_count": len(common_starting_ids),
+        "common_reliable_anchor_ids": sorted(
+            player_id
+            for player_id in common_ids
+            if player_by_id[player_id].reliable_anchor
+        ),
+        "common_benchmark_ids": sorted(
+            player_id
+            for player_id in common_ids
+            if player_by_id[player_id].benchmark
+        ),
+        "max_player_exposure": max(portfolio_exposure.values(), default=0),
+        "player_exposure": dict(sorted(portfolio_exposure.items())),
+        "slots": [
+            {
+                "index": slot,
+                "seed": entry[4],
+                "distance_from_optimum": entry[2],
+                "variation_target_met": entry[3],
+                "player_ids": sorted(entry[0].ids),
+            }
+            for slot, entry in enumerate(generated, start=1)
+        ],
+    }
+    return selected_squad, optimum, distance, target_met, audit
+
+
 def output_payload(
     squad: Squad,
     optimum: Squad,
@@ -1763,6 +1971,7 @@ def output_payload(
     annotated_goalkeeper_blocks: int,
     hard_exclusions: list[dict[str, Any]],
     news_audit: dict[str, Any] | None = None,
+    portfolio_audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     news_audit = news_audit or {
         "status": "not_configured",
@@ -1800,6 +2009,11 @@ def output_payload(
             "Current role, fitness and transfer annotations are below the recommended "
             f"coverage: {missing_annotations}"
         )
+    if bool(getattr(args, "allow_unannotated", False)):
+        warnings.append(
+            "Technical smoke test only: unannotated output is not a recommendation "
+            "and must not be used as a Chrome target squad."
+        )
     overloaded = {
         club: count
         for club, count in club_counts.items()
@@ -1811,6 +2025,14 @@ def output_payload(
         warnings.append(
             "The requested minimum squad variation could not be reached inside "
             "the quality and roster constraints."
+        )
+    if portfolio_audit and (
+        portfolio_audit["unique_rosters"] < portfolio_audit["size"]
+    ):
+        warnings.append(
+            "The requested portfolio contains duplicate squads. Expand the "
+            "annotated candidate pool or increase variation before assigning it "
+            "to multiple people."
         )
     if args.budget - squad.cost > args.budget * 0.10:
         warnings.append(
@@ -2085,7 +2307,11 @@ def output_payload(
         "quality_gap_metric": "model_utility",
         "optimization_scope": {
             "eligible_players": len(players),
-            "basis": "fully_annotated_candidate_pool",
+            "basis": (
+                "technical_unannotated_smoke_pool"
+                if bool(getattr(args, "allow_unannotated", False))
+                else "fully_annotated_candidate_pool"
+            ),
             "quality_gap_reference": (
                 "best_feasible_squad_within_this_annotated_pool"
             ),
@@ -2097,6 +2323,28 @@ def output_payload(
         },
         "distance_from_optimum": distance,
         "variation_target_met": variation_target_met,
+        "portfolio": portfolio_audit or {
+            "size": 1,
+            "index": 1,
+            "base_seed": seed,
+            "selected_seed": seed,
+            "unique_rosters": 1,
+            "common_player_ids": sorted(squad.ids),
+            "common_player_count": len(squad.ids),
+            "common_starting_player_ids": sorted(core_ids),
+            "common_starting_player_count": len(core_ids),
+            "common_reliable_anchor_ids": sorted(
+                player.player_id
+                for player in squad.players
+                if player.reliable_anchor
+            ),
+            "common_benchmark_ids": sorted(
+                player.player_id
+                for player in squad.players
+                if player.benchmark
+            ),
+            "max_player_exposure": 1,
+        },
         "suggested_starting_lineup": {
             "formation": formation,
             "player_ids": sorted(core_ids),
@@ -2251,6 +2499,14 @@ def print_text(payload: dict[str, Any]) -> None:
         f"Cost={payload['cost']} remaining={payload['remaining_budget']} "
         f"annotated_pool_gap={payload['quality_gap_percent']}%"
     )
+    portfolio = payload["portfolio"]
+    if portfolio["size"] > 1:
+        print(
+            "Portfolio="
+            f"{portfolio['index']}/{portfolio['size']} "
+            f"unique={portfolio['unique_rosters']} "
+            f"common_players={portfolio['common_player_count']}"
+        )
     anchor_policy = payload["reliable_anchor_policy"]
     print(
         "Reliable anchors="
@@ -2333,6 +2589,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--variation", default="medium", choices=sorted(VARIATION_ALIASES))
     parser.add_argument("--seed", type=int, help="Reproducible variation seed")
     parser.add_argument(
+        "--portfolio-size",
+        type=int,
+        default=1,
+        help=(
+            "Generate a reproducible diversified group portfolio of this size; "
+            "use the same seed for every member"
+        ),
+    )
+    parser.add_argument(
+        "--portfolio-index",
+        type=int,
+        help=(
+            "Select the one-based member slot from the diversified portfolio; "
+            "defaults to a seed-derived slot"
+        ),
+    )
+    parser.add_argument(
         "--min-reliable-anchors",
         type=int,
         help=(
@@ -2392,6 +2665,14 @@ def parse_args() -> argparse.Namespace:
         args.max_outfield_per_club = DEFAULT_CLUB_CAP[args.profile]
     if args.max_outfield_per_club < 1:
         parser.error("--max-outfield-per-club must be positive")
+    if args.portfolio_size < 1:
+        parser.error("--portfolio-size must be positive")
+    if args.portfolio_index is not None and not (
+        1 <= args.portfolio_index <= args.portfolio_size
+    ):
+        parser.error("--portfolio-index must be inside --portfolio-size")
+    if args.portfolio_size > 1 and args.variation == "none":
+        parser.error("--portfolio-size greater than one requires variation")
     if args.min_reliable_anchors is None:
         args.min_reliable_anchors = (
             4
@@ -2453,7 +2734,15 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     seed = args.seed if args.seed is not None else secrets.randbelow(2**31)
+    portfolio_index = args.portfolio_index or (seed % args.portfolio_size) + 1
     print(f"Variation seed: {seed}", file=sys.stderr, flush=True)
+    if args.portfolio_size > 1:
+        print(
+            "Portfolio slot: "
+            f"{portfolio_index}/{args.portfolio_size}",
+            file=sys.stderr,
+            flush=True,
+        )
     annotations = load_annotations(args.annotations)
     hard_exclusions = [
         {
@@ -2654,24 +2943,50 @@ def main() -> int:
         args.profile,
         args.maintenance,
     )
-    avoid_ids = load_avoid_ids(args.avoid_roster)
+    avoid_exposure = load_avoid_exposure(args.avoid_roster)
     minimum_spend = math.ceil(args.budget * args.min_spend_ratio)
+    portfolio_audit: dict[str, Any] | None = None
     try:
-        squad, optimum, distance, variation_target_met = varied_squad(
-            players=eligible_players,
-            budget=args.budget,
-            base_scores=eligible_utility_scores,
-            profile=args.profile,
-            variation=args.variation,
-            seed=seed,
-            club_cap=args.max_outfield_per_club,
-            minimum_spend=minimum_spend,
-            slots=args.slots,
-            avoid_ids=avoid_ids,
-            same_club_goalkeepers=not args.mixed_goalkeepers,
-            min_reliable_anchors=args.min_reliable_anchors,
-            technical_smoke=args.allow_unannotated,
-        )
+        if args.portfolio_size > 1:
+            (
+                squad,
+                optimum,
+                distance,
+                variation_target_met,
+                portfolio_audit,
+            ) = varied_portfolio(
+                players=eligible_players,
+                budget=args.budget,
+                base_scores=eligible_utility_scores,
+                profile=args.profile,
+                variation=args.variation,
+                seed=seed,
+                club_cap=args.max_outfield_per_club,
+                minimum_spend=minimum_spend,
+                slots=args.slots,
+                avoid_exposure=avoid_exposure,
+                portfolio_size=args.portfolio_size,
+                portfolio_index=portfolio_index,
+                same_club_goalkeepers=not args.mixed_goalkeepers,
+                min_reliable_anchors=args.min_reliable_anchors,
+                technical_smoke=args.allow_unannotated,
+            )
+        else:
+            squad, optimum, distance, variation_target_met = varied_squad(
+                players=eligible_players,
+                budget=args.budget,
+                base_scores=eligible_utility_scores,
+                profile=args.profile,
+                variation=args.variation,
+                seed=seed,
+                club_cap=args.max_outfield_per_club,
+                minimum_spend=minimum_spend,
+                slots=args.slots,
+                avoid_ids=avoid_exposure,
+                same_club_goalkeepers=not args.mixed_goalkeepers,
+                min_reliable_anchors=args.min_reliable_anchors,
+                technical_smoke=args.allow_unannotated,
+            )
     except ValueError as error:
         print(f"Optimization stopped: {error}", file=sys.stderr)
         return 2
@@ -2757,6 +3072,7 @@ def main() -> int:
         annotated_goalkeeper_blocks=annotated_goalkeeper_blocks,
         hard_exclusions=hard_exclusions,
         news_audit=news_audit,
+        portfolio_audit=portfolio_audit,
     )
     rendered = (
         json.dumps(payload, ensure_ascii=False, indent=2)

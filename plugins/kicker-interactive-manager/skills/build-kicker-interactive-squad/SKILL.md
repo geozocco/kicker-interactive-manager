@@ -97,6 +97,7 @@ Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüf
 - Vor dem finalen Lauf in jeder Position mindestens die doppelte tatsächliche Sollzahl aktuell annotieren. Bei den üblichen 3/7/7/5 sind das 6/14/14/10. Im Standardmodus mindestens zwei vollständige Torwartblöcke abdecken.
 - In Abwehr, Mittelfeld und Sturm jeweils mindestens zwei auswählbare Leistungsreferenzen mit `benchmark: true` annotieren. Diese Spieler bilden den Vergleichsmaßstab für Preis, Sicherheit und erwartbare Leistung; sie müssen nicht automatisch gekauft werden.
 - Jeden vom Nutzer genannten Spieler vollständig und mit `benchmark: true` annotieren, auch wenn der Preis oder die automatische Shortlist gegen ihn spricht. Bestätigt nicht auswählbare Spieler mit Quellen belegen und über `exclude: true` kennzeichnen, statt sie still wegzulassen.
+- Einen vom Nutzer nur als Beispiel genannten Spieler niemals wegen der Nennung höher bewerten, erzwingen oder automatisch in einen Ankerkern aufnehmen. `benchmark: true` steuert ausschließlich Recherche, Vergleich und Begründung; es verändert den numerischen Spielerscore nicht. Nur ausdrücklich formulierte Wünsche wie „Spieler X muss in den Kader“ als Auswahlvorgabe behandeln.
 - Premiumsignale ligaweit ausdrücklich suchen und annotieren: mehrjährige Spitzenleistung, wiederholbare Standards oder Schlüsselrolle, Kapitänsverantwortung, frühere Torjägerkrone, außergewöhnliche individuelle Kreativ- oder Abschlussqualität sowie bereits höherklassig bestätigte Leistung. Aktuelle Verletzungs-, Transfer- oder Rollenrisiken können gegen eine Auswahl sprechen, aber nicht gegen die Aufnahme in den Vergleich.
 - Vorjahresausreißer mit Regression, gegnerischer Anpassung und möglichem Rollenverlust belasten.
 - Mehrjährige Konstanz, Standards, Kapitänsrolle und trainerbestätigte Schlüsselrollen als wiederholbare Signale aufwerten.
@@ -116,12 +117,19 @@ Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüf
 - Einen finalen Kader nicht aus einem unannotierten Lauf ableiten. `--allow-unannotated` ausschließlich für technische Smoke-Tests verwenden und dessen Ergebnis nie als Empfehlung oder Browser-Zielkader präsentieren.
 - Vor dem finalen Lauf einen zufälligen, nicht personenbezogenen Seed erzeugen, sofern der Nutzer keinen vorgibt, und ihn ausdrücklich mit `--seed` übergeben. Den Seed bereits vor beziehungsweise beim Start festhalten. Derselbe Seed reproduziert denselben Kader; ein neuer Seed erzeugt eine kontrollierte Alternative.
 - Meldet die Ausführungsumgebung einen noch laufenden Optimiererprozess, denselben Prozess weiter abwarten statt einen zweiten Lauf zu starten. Nur nach bestätigtem Abbruch mit demselben Seed erneut ausführen.
-- Wenn Kader anderer Kollegen als JSON vorliegen, diese mit `--avoid-roster` übergeben. Dadurch wird Überschneidung innerhalb des Qualitätskorridors zusätzlich reduziert.
+- Wenn Kader anderer Kollegen als JSON vorliegen, diese jeweils mit `--avoid-roster` übergeben. Wiederholte Spieler werden nach ihrer tatsächlichen bisherigen Einsatzhäufigkeit stärker belastet; das diversifiziert auch Premiumplätze innerhalb des Qualitätskorridors.
+- Soll eine Gruppe von Kollegen ohne zentralen Kaderspeicher unterschiedliche Mannschaften erhalten, einen gemeinsamen, nicht personenbezogenen Seed und `--portfolio-size <gruppengröße>` verwenden. Jedem Kollegen einen eindeutigen `--portfolio-index` von 1 bis zur Gruppengröße zuweisen. Dieselbe Kombination reproduziert das Gruppenportfolio auf jedem Rechner.
 
 Beispiel:
 
 ```text
 <python-3-command> scripts/optimize_squad.py --players <players-csv-path> --annotations <annotations-json-path> --competition "2. Bundesliga" --season "2026/27" --require-news-snapshot --require-news-coverage --profile reliable --variation medium --maintenance low --min-reliable-anchors 4 --min-attacking-anchors 3 --min-core-budget-share 0.70 --seed <seed> --budget 10000000 --goalkeepers 3 --defenders 7 --midfielders 7 --forwards 5 --format json
+```
+
+Beispiel für Kollege 3 in einem reproduzierbaren Fünfer-Portfolio:
+
+```text
+<python-3-command> scripts/optimize_squad.py ... --variation medium --seed <gemeinsamer-gruppenseed> --portfolio-size 5 --portfolio-index 3 --format json
 ```
 
 Wettbewerb, Saison und vier Positionsargumente immer mit den zuvor von der sichtbaren Kicker-Seite erfassten Werten belegen; die gezeigten Werte sind nur ein Beispiel. Für das Profil `verlässlich` mindestens vier `reliable_anchor` verlangen, davon mindestens drei in Mittelfeld oder Sturm. Ist das mit aktuell auswählbaren Spielern nicht möglich, den Pool um mehrjährig bestätigte Scorer, Kreativspieler und Standard- oder Schlüsselspieler erweitern oder die Einschränkung offen erklären; die Mindestzahl nicht still absenken.
@@ -140,6 +148,8 @@ Wettbewerb, Saison und vier Positionsargumente immer mit den zuvor von der sicht
 - Für `verlässlich` plus `gering` standardmäßig 11 bis 14 Kernspieler, wenige günstige direkte Vertreter und anschließend preiswerte einsatzfähige Ergänzungen bilden. Eine gleichmäßig teure Bank ist kein Qualitätsmerkmal und erschwert die Finanzierung von Ausnahmespielern.
 - Für `verlässlich` plus `gering` müssen mindestens 70 Prozent des gesamten Kaderwerts in der stärksten legalen Startelf liegen. Ein niedrigerer Wert ist ein Abbruchgrund: Bank verbilligen, nachgewiesene Scorer und Kreativspieler finanzieren und neu rechnen.
 - Variabilität darf einzelne Kernentscheidungen und günstige Ergänzungen verändern, aber nicht die Kaderarchitektur in 22 gleichwertige Alternativen auflösen.
+- Bei einem Gruppenportfolio nicht nur Bankplätze rotieren. Nahezu gleich bewertete Anker, Scorer und Premiumspieler ebenfalls über die Slots verteilen. Jeder Einzelkader muss weiterhin seine Anker-, Startelf- und Qualitätsgrenzen erfüllen.
+- Das `portfolio`-Audit einschließlich `common_starting_player_ids`, `common_reliable_anchor_ids` und `common_benchmark_ids` prüfen: Für eine ausdrücklich gewünschte Gruppe müssen grundsätzlich so viele unterschiedliche Kader wie Slots entstehen. Bleiben Kader identisch oder besteht trotz ausreichend breitem Pool ein fast vollständiger gemeinsamer Kern, Kandidatenpool verbreitern oder Variabilität erhöhen. Tatsächlich singuläre Ausnahmespieler dürfen gemeinsam bleiben; namentliche Nutzerbeispiele sind dafür keine Begründung.
 - Variabilität nur innerhalb der in `strategy-profiles.md` festgelegten Qualitätsgrenze zulassen.
 - Bleiben mehr als 10 Prozent des Budgets ungenutzt, den Kandidatenpool über mehrere Preisklassen erweitern und neu rechnen. Einen solchen Rohkader nicht direkt umsetzen.
 - Abweichungen vom Optimierer begründen und Budget erneut berechnen.

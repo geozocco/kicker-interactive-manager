@@ -101,6 +101,7 @@ Liga, Strategie, Variabilität und Betreuungsaufwand lassen sich frei kombiniere
 | Nur Vorschläge | „Zeige mir die fünf wichtigsten Verbesserungen, aber setze noch nichts in Chrome um.“ |
 | Optimieren und umsetzen | „Prüfe meinen Kader und setze nur klar begründete Verbesserungen in Chrome um.“ |
 | Variantenvergleich | „Vergleiche einen verlässlichen und einen ausgewogenen Kader, ohne Chrome zu ändern.“ |
+| Kollegengruppe | „Erstelle Kadernummer 3 von 5 mit Gruppenseed 20260724. Verteile auch ähnlich starke Ankerspieler über die fünf Kader.“ |
 | Spielercheck | „Prüfe, ob [Spielername] zu meinem Kader passt, und nenne bezahlbare Alternativen.“ |
 
 Alternativ genügt:
@@ -111,7 +112,15 @@ Der Bundesliga-Kader kann erst aufgestellt werden, wenn kicker den zugehörigen 
 
 Codex/ChatGPT fragt bei Bedarf nach Spielklasse, Risikoprofil und gewünschtem Betreuungsaufwand. Anschließend wird der Spielermarkt analysiert und der Kader direkt im geöffneten Chrome-Tab zusammengestellt. Bestätige den Zugriff auf Chrome, falls du danach gefragt wirst. Lasse Chrome und den kicker-Tab geöffnet, bis der fertige Kader bestätigt wurde.
 
-Bei **verlässlich und wartungsarm** konzentriert das Plugin das Budget auf einen starken Aufstellungskern mit mindestens drei bestätigten Leistungsträgern. Die Bank wird günstiger, aber mit realistischen Einsatzchancen besetzt. Im Ergebnis erklärt Codex die wichtigsten Spieler einzeln und vergleicht bewusst ausgelassene etablierte Alternativen samt Budget- und Risikogründen.
+Bei **verlässlich und wartungsarm** konzentriert das Plugin das Budget auf einen starken Aufstellungskern mit mindestens vier bestätigten Leistungsträgern. Die Bank wird günstiger, aber mit realistischen Einsatzchancen besetzt. Im Ergebnis erklärt Codex die wichtigsten Spieler einzeln und vergleicht bewusst ausgelassene etablierte Alternativen samt Budget- und Risikogründen.
+
+### Unterschiedliche Kader für mehrere Kollegen
+
+Soll eine Gruppe nicht versehentlich fünfmal denselben Kader erhalten, bekommen alle denselben beliebigen Gruppenseed und jeweils eine andere Kadernummer. Beispiel für fünf Personen:
+
+> Stelle mir Kadernummer 2 von 5 für die 2. Bundesliga zusammen. Nutze den gemeinsamen Gruppenseed 20260724, Profil verlässlich und Betreuungsaufwand gering.
+
+Die Kollegen verwenden nacheinander die Kadernummern 1 bis 5. Das Plugin berechnet daraus ein gemeinsames Portfolio und verteilt auch ähnlich starke Anker- und Premiumspieler, solange jeder einzelne Kader im zulässigen Qualitätskorridor bleibt. Ein namentlich erwähnter Spieler wird nur recherchiert und verglichen; er erhält dadurch keinen Bonus und wird nur auf ausdrücklichen Wunsch zwingend gekauft.
 
 Vor dem Umbau prüft das Plugin außerdem aktuelle Verletzungs- und Transfermeldungen. Für die 2. Bundesliga und 3. Liga der Saison 2026/27 verwendet das Plugin automatisch den zentralen API-Sports-Feed dieses Projekts. Dafür müssen Kollegen weder einen API-Key noch eine Feed-Adresse einrichten. Der Feed wird viermal täglich aktualisiert und enthält nur normalisierte Spieler-, Verletzungs- und Transferdaten; der geheime Provider-Schlüssel bleibt im geschützten GitHub-Secret-Speicher.
 

@@ -46,6 +46,18 @@ Vorschläge anschließend umsetzen:
 
 > Erzeuge zwei nahezu gleichwertige Kader mit unterschiedlichen Seeds und erkläre, welche Spieler den gemeinsamen Ankerkern bilden.
 
+## Unterschiedliche Kader für eine Gruppe
+
+Fünf Kader gemeinsam planen:
+
+> Erzeuge fünf verlässliche, wartungsarme Kader für die 2. Bundesliga als gemeinsames Portfolio. Verteile auch ähnlich starke Anker und Premiumspieler, ohne die Qualitätsgrenze zu verletzen.
+
+Einen persönlichen Portfolio-Slot abrufen:
+
+> Stelle mir Kadernummer 3 von 5 für die 3. Liga zusammen. Verwende den gemeinsamen Gruppenseed 20260724, Profil verlässlich und Betreuungsaufwand gering.
+
+Alle Kollegen müssen dieselbe Gruppengröße und denselben Gruppenseed verwenden, aber jeweils eine andere Kadernummer erhalten. Genannte Spielernamen gelten nur dann als Pflicht, wenn der Nutzer das ausdrücklich formuliert.
+
 ## Spieler gezielt prüfen
 
 > Prüfe, ob [Spielername] in meinen Kader passt. Berücksichtige Preis, Rolle, Verletzungen, Transferlage und bezahlbare Alternativen.
