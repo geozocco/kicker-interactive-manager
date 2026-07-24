@@ -143,7 +143,7 @@ Die eigentliche Bewertung und Kaderauswahl bleibt lokal. Deshalb können untersc
 
 Veraltete Daten, falsche Liga- oder Saisonangaben, fehlende Spielerzuordnungen und widersprüchliche Meldungen stoppen den automatischen Umbau, bis Codex die betroffenen Spieler in aktuellen Primärquellen geprüft hat. API-Sports ist ein zusätzlicher Frühwarnkanal und ersetzt diese gezielte Gegenprüfung nicht. Für normale Nutzer ändert sich am oben beschriebenen Ablauf nichts.
 
-Der technische Betrieb und die Feed-Endpunkte sind in den Plugin-Referenzen `references/market-data.md` und `references/news-hardening.md` dokumentiert. Zusätzlich zu Markt und News wird zentral ein breiter Qualitätsbestand gepflegt: mindestens 60 vollständig bewertete Kandidaten, 20 verlässliche Anker und 15 offensive Anker je Liga. Die Bewertung nutzt mehrere Spielzeiten und aktuelle Rollen-, Fitness- und Transfersignale; Namen aus Beispielprompts werden nicht bevorzugt. Provider-Zugangsdaten werden nie an Kollegen verteilt.
+Der technische Betrieb und die Feed-Endpunkte sind in den Plugin-Referenzen `references/market-data.md` und `references/news-hardening.md` dokumentiert. Zusätzlich zu Markt und News wird zentral ein breiter Qualitätsbestand gepflegt: mindestens 60 vollständig bewertete Kandidaten, 20 verlässliche Anker, 15 offensive Anker und sechs vollständige Torwartblöcke je Liga. Die Bewertung nutzt mehrere Spielzeiten und aktuelle Rollen-, Fitness- und Transfersignale; Namen aus Beispielprompts werden nicht bevorzugt. Provider-Zugangsdaten werden nie an Kollegen verteilt.
 
 Falls Codex nicht auf Chrome zugreifen kann, prüfe zuerst, ob:
 

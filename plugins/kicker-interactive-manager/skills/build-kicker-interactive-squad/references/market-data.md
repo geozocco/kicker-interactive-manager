@@ -15,7 +15,7 @@ https://geozocco.github.io/kicker-interactive-manager/v1/quality/2-bundesliga.js
 https://geozocco.github.io/kicker-interactive-manager/v1/quality/3-liga.json
 ```
 
-Der Workflow `.github/workflows/update-news-feed.yml` aktualisiert Markt-, News- und Qualitäts-Snapshots viermal täglich. Die Qualitätskonfigurationen unter `config/quality/` verlangen je Liga mindestens 60 vollständig bewertete Kandidaten, 20 verlässliche Anker und 15 offensive Anker. Spieler werden algorithmisch aus dem gesamten Markt ausgewählt; namentliche Beispiele oder frühere Nutzerprompts erhalten keinen Bonus.
+Der Workflow `.github/workflows/update-news-feed.yml` aktualisiert Markt-, News- und Qualitäts-Snapshots viermal täglich. Die Qualitätskonfigurationen unter `config/quality/` verlangen je Liga mindestens 60 vollständig bewertete Kandidaten, 20 verlässliche Anker, 15 offensive Anker und sechs vollständige Torwartblöcke. Spieler werden algorithmisch aus dem gesamten Markt ausgewählt; namentliche Beispiele oder frühere Nutzerprompts erhalten keinen Bonus.
 
 ## Sicherheitsvertrag
 
@@ -41,7 +41,7 @@ Für unterstützte Ligen lädt der Optimierer den Marktfeed anhand von Wettbewer
 <python-3-command> scripts/optimize_squad.py --competition "2. Bundesliga" --season "2026/27" --require-market-snapshot --require-quality-snapshot ...
 ```
 
-`market_audit` muss frisch sein. `quality_audit` muss mindestens 60 Kandidaten, 20 Anker und 15 offensive Anker ausweisen und dieselbe Markt-Prüfsumme tragen.
+`market_audit` muss frisch sein. `quality_audit` muss mindestens 60 Kandidaten, 20 Anker, 15 offensive Anker und sechs Torwartblöcke ausweisen und dieselbe Markt-Prüfsumme tragen.
 
 Der Qualitätsbestand liefert die zentralen Annotationen. Auf dem jeweiligen Rechner recherchierte Annotationen dürfen sie gezielt überschreiben; Kicker-ID, Verein, Position und Preis stammen weiterhin aus dem validierten Marktbestand.
 

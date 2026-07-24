@@ -195,6 +195,35 @@ def select_candidates(
             ranked[position],
             key=lambda item: (-item[0], int(item[1]["market_value"]), item[1]["id"]),
         )
+        if position == "GOALKEEPER":
+            by_club: dict[
+                str,
+                list[tuple[float, dict[str, Any], str, dict[str, Any]]],
+            ] = defaultdict(list)
+            for item in candidates:
+                by_club[str(item[1]["club"])].append(item)
+            complete_blocks = [
+                (
+                    sum(item[0] for item in club_candidates[:3]) / 3,
+                    club,
+                    club_candidates[:3],
+                )
+                for club, club_candidates in by_club.items()
+                if len(club_candidates) >= 3
+            ]
+            complete_blocks.sort(key=lambda item: (-item[0], item[1]))
+            requested_blocks = max(2, math.ceil(quotas[position] / 3))
+            if len(complete_blocks) < requested_blocks:
+                raise RuntimeError(
+                    f"only {len(complete_blocks)} complete goalkeeper blocks, "
+                    f"{requested_blocks} required"
+                )
+            selected.extend(
+                (player, news_id, news_player)
+                for _, _, block in complete_blocks[:requested_blocks]
+                for _, player, news_id, news_player in block
+            )
+            continue
         selected.extend(
             (player, news_id, news_player)
             for _, player, news_id, news_player in candidates[: quotas[position]]
@@ -427,6 +456,7 @@ def build_annotation(
     ]
     return {
         "position": position,
+        "club": str(market_player["club"]),
         "components": components,
         "risks": risks,
         "proven_seasons": proven_seasons,
@@ -562,6 +592,9 @@ def generate_snapshot(
             "candidate_count": int(config["minimum_candidates"]),
             "anchor_count": int(config["minimum_anchors"]),
             "attacking_anchor_count": int(config["minimum_attacking_anchors"]),
+            "goalkeeper_block_count": int(
+                config["minimum_goalkeeper_blocks"]
+            ),
         },
         "annotations": annotations,
     }

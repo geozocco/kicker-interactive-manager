@@ -126,6 +126,7 @@ def validate_snapshot(
         )
     anchor_count = 0
     attacking_anchor_count = 0
+    goalkeepers_by_club: dict[str, int] = {}
     for player_id, annotation in annotations.items():
         if not str(player_id).strip() or not isinstance(annotation, dict):
             raise QualitySnapshotError(
@@ -179,6 +180,10 @@ def validate_snapshot(
             anchor_count += 1
             if annotation.get("position") in {"MIDFIELDER", "FORWARD"}:
                 attacking_anchor_count += 1
+        if annotation.get("position") == "GOALKEEPER":
+            club = str(annotation.get("club", "")).strip()
+            if club:
+                goalkeepers_by_club[club] = goalkeepers_by_club.get(club, 0) + 1
 
     requirements = payload.get("requirements")
     if not isinstance(requirements, dict):
@@ -189,6 +194,9 @@ def validate_snapshot(
         "candidate_count": len(annotations),
         "anchor_count": anchor_count,
         "attacking_anchor_count": attacking_anchor_count,
+        "goalkeeper_block_count": sum(
+            count >= 3 for count in goalkeepers_by_club.values()
+        ),
     }
     for field_name, actual_value in actual.items():
         required = requirements.get(field_name)
@@ -317,6 +325,19 @@ def snapshot_audit(payload: dict[str, Any]) -> dict[str, Any]:
         "attacking_anchor_count": sum(
             annotation.get("position") in {"MIDFIELDER", "FORWARD"}
             for annotation in anchors
+        ),
+        "goalkeeper_block_count": len(
+            {
+                annotation.get("club")
+                for annotation in annotations.values()
+                if annotation.get("position") == "GOALKEEPER"
+                and sum(
+                    candidate.get("position") == "GOALKEEPER"
+                    and candidate.get("club") == annotation.get("club")
+                    for candidate in annotations.values()
+                )
+                >= 3
+            }
         ),
         "requirements": payload["requirements"],
     }
