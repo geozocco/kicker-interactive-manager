@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 2
 COMPONENTS = {
     "confirmed_performance",
     "minutes",
