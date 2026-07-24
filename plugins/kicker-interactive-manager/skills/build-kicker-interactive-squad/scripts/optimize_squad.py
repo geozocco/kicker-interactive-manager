@@ -2080,6 +2080,7 @@ def varied_portfolio(
     portfolio_index: int,
     same_club_goalkeepers: bool = True,
     min_reliable_anchors: int = 0,
+    min_attacking_anchors: int = 0,
     technical_smoke: bool = False,
     max_reliable_anchor_exposure: int = 1,
 ) -> tuple[Squad, Squad, int, bool, dict[str, Any]]:
@@ -2110,6 +2111,22 @@ def varied_portfolio(
             "Broaden the league-wide anchor research instead of repeating "
             "named examples."
         )
+    attacking_anchor_ids = {
+        player.player_id
+        for player in players
+        if player.reliable_anchor
+        and player.position in {"MIDFIELDER", "FORWARD"}
+    }
+    required_attacking_slots = portfolio_size * min_attacking_anchors
+    if (
+        max_reliable_anchor_exposure == 1
+        and len(attacking_anchor_ids) < required_attacking_slots
+    ):
+        raise ValueError(
+            "anchor-diverse portfolio is infeasible: "
+            f"required_attacking_anchor_slots={required_attacking_slots}, "
+            f"eligible_attacking_anchors={len(attacking_anchor_ids)}."
+        )
 
     exposure = Counter(
         {
@@ -2131,6 +2148,46 @@ def varied_portfolio(
         min_reliable_anchors=min_reliable_anchors,
         technical_smoke=technical_smoke,
     )
+    assigned_anchor_groups: list[set[str]] | None = None
+    if (
+        max_reliable_anchor_exposure == 1
+        and min_reliable_anchors > 0
+    ):
+        player_by_id = {player.player_id: player for player in players}
+        assignment_rng = random.Random(seed ^ 0x5A17C0DE)
+        attacking_candidates = sorted(attacking_anchor_ids)
+        assignment_rng.shuffle(attacking_candidates)
+        other_candidates = sorted(
+            reliable_anchor_ids - set(attacking_candidates)
+        )
+        assignment_rng.shuffle(other_candidates)
+        assigned_anchor_groups = [set() for _ in range(portfolio_size)]
+
+        def take_candidate(
+            candidates: list[str],
+            group: set[str],
+        ) -> str:
+            club_counts = Counter(
+                player_by_id[player_id].club for player_id in group
+            )
+            for index, player_id in enumerate(candidates):
+                if club_counts[player_by_id[player_id].club] < club_cap:
+                    return candidates.pop(index)
+            raise ValueError(
+                "anchor-diverse portfolio cannot satisfy the club cap"
+            )
+
+        for group in assigned_anchor_groups:
+            for _ in range(min_attacking_anchors):
+                group.add(take_candidate(attacking_candidates, group))
+        remaining_candidates = [
+            *other_candidates,
+            *attacking_candidates,
+        ]
+        assignment_rng.shuffle(remaining_candidates)
+        for group in assigned_anchor_groups:
+            while len(group) < min_reliable_anchors:
+                group.add(take_candidate(remaining_candidates, group))
     generated: list[tuple[Squad, Squad, int, bool, int]] = []
     used_rosters: set[frozenset[str]] = set()
     for slot in range(1, portfolio_size + 1):
@@ -2140,6 +2197,10 @@ def varied_portfolio(
             for player_id in reliable_anchor_ids
             if exposure[player_id] >= max_reliable_anchor_exposure
         }
+        if assigned_anchor_groups is not None:
+            forbidden_anchor_ids = (
+                reliable_anchor_ids - assigned_anchor_groups[slot - 1]
+            )
         for attempt in range(8):
             slot_seed = seed + slot * 104_729 + attempt * 7_919
             squad, optimum, distance, target_met = varied_squad(
@@ -2241,6 +2302,11 @@ def varied_portfolio(
         "reliable_anchor_exposure": reliable_anchor_exposure,
         "anchor_diversity_target_met": (
             max_anchor_exposure <= max_reliable_anchor_exposure
+        ),
+        "assigned_anchor_groups": (
+            [sorted(group) for group in assigned_anchor_groups]
+            if assigned_anchor_groups is not None
+            else None
         ),
         "max_player_exposure": max(portfolio_exposure.values(), default=0),
         "player_exposure": dict(sorted(portfolio_exposure.items())),
@@ -3533,6 +3599,7 @@ def main() -> int:
                 portfolio_index=portfolio_index,
                 same_club_goalkeepers=not args.mixed_goalkeepers,
                 min_reliable_anchors=args.min_reliable_anchors,
+                min_attacking_anchors=args.min_attacking_anchors,
                 technical_smoke=args.allow_unannotated,
                 max_reliable_anchor_exposure=args.max_anchor_exposure,
             )

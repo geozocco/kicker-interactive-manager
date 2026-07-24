@@ -474,6 +474,7 @@ class DistanceOptimizerTests(unittest.TestCase):
             portfolio_size=5,
             portfolio_index=1,
             min_reliable_anchors=2,
+            min_attacking_anchors=2,
         )
 
         anchor_sets = [
@@ -490,6 +491,10 @@ class DistanceOptimizerTests(unittest.TestCase):
         self.assertEqual([], audit["common_reliable_anchor_ids"])
         self.assertEqual(1, audit["max_reliable_anchor_exposure"])
         self.assertTrue(audit["anchor_diversity_target_met"])
+        self.assertEqual(
+            [2, 2, 2, 2, 2],
+            [len(group) for group in audit["assigned_anchor_groups"]],
+        )
 
     def test_group_portfolio_rejects_too_small_anchor_pool(self) -> None:
         players, scores = varied_pool()

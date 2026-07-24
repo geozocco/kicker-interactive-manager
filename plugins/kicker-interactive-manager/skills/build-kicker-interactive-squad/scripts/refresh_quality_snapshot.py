@@ -224,9 +224,28 @@ def select_candidates(
                 for _, player, news_id, news_player in block
             )
             continue
+        premium_count = max(1, math.ceil(quotas[position] * 0.65))
+        premium = candidates[:premium_count]
+        premium_ids = {str(item[1]["id"]) for item in premium}
+        value_depth = sorted(
+            (
+                item
+                for item in candidates
+                if str(item[1]["id"]) not in premium_ids
+            ),
+            key=lambda item: (
+                int(item[1]["market_value"]),
+                -item[0],
+                item[1]["id"],
+            ),
+        )
+        diversified = [
+            *premium,
+            *value_depth[: max(0, quotas[position] - len(premium))],
+        ]
         selected.extend(
             (player, news_id, news_player)
-            for _, player, news_id, news_player in candidates[: quotas[position]]
+            for _, player, news_id, news_player in diversified
         )
     return selected
 

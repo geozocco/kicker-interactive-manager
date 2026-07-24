@@ -4,9 +4,9 @@
   "history_seasons": [2025, 2024],
   "candidate_quotas": {
     "GOALKEEPER": 18,
-    "DEFENDER": 22,
-    "MIDFIELDER": 28,
-    "FORWARD": 22
+    "DEFENDER": 35,
+    "MIDFIELDER": 42,
+    "FORWARD": 32
   },
   "minimum_candidates": 60,
   "minimum_anchors": 20,
