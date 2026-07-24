@@ -7,7 +7,7 @@ Dieses öffentliche Codex-Marketplace enthält den Skill `kicker-interactive-man
 Git und das Codex-CLI werden nicht benötigt. Diese Zeile vollständig in PowerShell einfügen:
 
 ```powershell
-$installer = "$env:TEMP\install-kicker-interactive-manager.ps1"; Invoke-WebRequest "https://raw.githubusercontent.com/geozocco/kicker-interactive-manager/main/install.ps1" -OutFile $installer; powershell -NoProfile -ExecutionPolicy Bypass -File $installer
+$installer = "$env:TEMP\install-kicker-interactive-manager.ps1"; Invoke-WebRequest "https://raw.githubusercontent.com/geozocco/kicker-interactive-manager/382055f175089dfc4704300b1555842b732e52e2/install.ps1" -OutFile $installer; powershell -NoProfile -ExecutionPolicy Bypass -File $installer
 ```
 
 Der Installer:
