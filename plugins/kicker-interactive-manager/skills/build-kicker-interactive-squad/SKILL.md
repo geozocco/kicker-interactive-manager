@@ -115,21 +115,23 @@ Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüf
 - Ist kein zentraler Feed eingerichtet oder erreichbar, den in `news-hardening.md` beschriebenen manuellen Tagescheck für jeden möglichen Zielspieler und entscheidenden Near-Miss durchführen. Ein abgelaufenes Snapshot niemals als aktuellen Beleg verwenden.
 - Im finalen Lauf werden ausschließlich vollständig aktuell annotierte Spieler berücksichtigt.
 - Einen finalen Kader nicht aus einem unannotierten Lauf ableiten. `--allow-unannotated` ausschließlich für technische Smoke-Tests verwenden und dessen Ergebnis nie als Empfehlung oder Browser-Zielkader präsentieren.
-- Vor dem finalen Lauf einen zufälligen, nicht personenbezogenen Seed erzeugen, sofern der Nutzer keinen vorgibt, und ihn ausdrücklich mit `--seed` übergeben. Den Seed bereits vor beziehungsweise beim Start festhalten. Derselbe Seed reproduziert denselben Kader; ein neuer Seed erzeugt eine kontrollierte Alternative.
+- Im Normalfall keinen Seed erfinden und keine Kadernummer abfragen. `scripts/optimize_squad.py` ohne `--seed` ausführen; es erzeugt beziehungsweise verwendet automatisch eine private, nicht personenbezogene Installationskennung und leitet daraus für Liga, Saison und Strategie eine stabile persönliche Variante ab.
+- Fordert der Nutzer „eine neue Variante“, „neu würfeln“ oder sinngleich eine weitere Alternative an, denselben Lauf einmal mit `--new-variant` ausführen. Nicht mehrfach neu würfeln, sofern der Nutzer nicht mehrere Varianten verlangt.
+- `--seed` nur verwenden, wenn der Nutzer ausdrücklich eine konkrete technische Variante reproduzieren oder teilen möchte. Niemals die private Installationskennung lesen, ausgeben oder übertragen.
 - Meldet die Ausführungsumgebung einen noch laufenden Optimiererprozess, denselben Prozess weiter abwarten statt einen zweiten Lauf zu starten. Nur nach bestätigtem Abbruch mit demselben Seed erneut ausführen.
 - Wenn Kader anderer Kollegen als JSON vorliegen, diese jeweils mit `--avoid-roster` übergeben. Wiederholte Spieler werden nach ihrer tatsächlichen bisherigen Einsatzhäufigkeit stärker belastet; das diversifiziert auch Premiumplätze innerhalb des Qualitätskorridors.
-- Soll eine Gruppe von Kollegen ohne zentralen Kaderspeicher unterschiedliche Mannschaften erhalten, einen gemeinsamen, nicht personenbezogenen Seed und `--portfolio-size <gruppengröße>` verwenden. Jedem Kollegen einen eindeutigen `--portfolio-index` von 1 bis zur Gruppengröße zuweisen. Dieselbe Kombination reproduziert das Gruppenportfolio auf jedem Rechner.
+- Nur wenn der Nutzer ausdrücklich ein zentral koordiniertes Gruppenportfolio verlangt, die fortgeschrittenen Optionen `--portfolio-size`, `--portfolio-index` und einen gemeinsamen Seed verwenden. Für normale Kollegenkader weder Kadernummer noch Gruppenseed verlangen.
 
 Beispiel:
 
 ```text
-<python-3-command> scripts/optimize_squad.py --players <players-csv-path> --annotations <annotations-json-path> --competition "2. Bundesliga" --season "2026/27" --require-news-snapshot --require-news-coverage --profile reliable --variation medium --maintenance low --min-reliable-anchors 4 --min-attacking-anchors 3 --min-core-budget-share 0.70 --seed <seed> --budget 10000000 --goalkeepers 3 --defenders 7 --midfielders 7 --forwards 5 --format json
+<python-3-command> scripts/optimize_squad.py --players <players-csv-path> --annotations <annotations-json-path> --competition "2. Bundesliga" --season "2026/27" --require-news-snapshot --require-news-coverage --profile reliable --variation medium --maintenance low --min-reliable-anchors 4 --min-attacking-anchors 3 --min-core-budget-share 0.70 --budget 10000000 --goalkeepers 3 --defenders 7 --midfielders 7 --forwards 5 --format json
 ```
 
-Beispiel für Kollege 3 in einem reproduzierbaren Fünfer-Portfolio:
+Beispiel für eine ausdrücklich gewünschte neue persönliche Variante:
 
 ```text
-<python-3-command> scripts/optimize_squad.py ... --variation medium --seed <gemeinsamer-gruppenseed> --portfolio-size 5 --portfolio-index 3 --format json
+<python-3-command> scripts/optimize_squad.py ... --variation medium --new-variant --format json
 ```
 
 Wettbewerb, Saison und vier Positionsargumente immer mit den zuvor von der sichtbaren Kicker-Seite erfassten Werten belegen; die gezeigten Werte sind nur ein Beispiel. Für das Profil `verlässlich` mindestens vier `reliable_anchor` verlangen, davon mindestens drei in Mittelfeld oder Sturm. Ist das mit aktuell auswählbaren Spielern nicht möglich, den Pool um mehrjährig bestätigte Scorer, Kreativspieler und Standard- oder Schlüsselspieler erweitern oder die Einschränkung offen erklären; die Mindestzahl nicht still absenken.
@@ -158,7 +160,7 @@ Wettbewerb, Saison und vier Positionsargumente immer mit den zuvor von der sicht
 
 Vor jeder Änderung in Chrome einen vollständigen Ergebnisentwurf erstellen und prüfen. Kann eine Auswahl oder ein bewusst ausgelassener Premiumspieler nicht konkret erklärt werden, Annotationen und Kandidatenpool verbessern und erneut rechnen. Erst nach bestandener Prüfung den Kader im Browser verändern.
 
-Direkt vor dem ersten Verkauf den zentralen Feed erneut laden. Ist das Snapshot inzwischen abgelaufen, älter als die in `news-hardening.md` festgelegte letzte Kontrollfrist oder inhaltlich geändert, mit demselben Seed erneut optimieren und den Ergebnisentwurf aktualisieren. Bei manueller Fallback-Recherche den Zeitpunkt der letzten Prüfung entsprechend kontrollieren.
+Direkt vor dem ersten Verkauf den zentralen Feed erneut laden. Ist das Snapshot inzwischen abgelaufen, älter als die in `news-hardening.md` festgelegte letzte Kontrollfrist oder inhaltlich geändert, ohne `--new-variant` erneut optimieren und so dieselbe automatische Variante beibehalten. Bei einem ausdrücklich gesetzten Seed denselben Seed erneut verwenden. Bei manueller Fallback-Recherche den Zeitpunkt der letzten Prüfung entsprechend kontrollieren.
 
 Der Ergebnisentwurf muss enthalten:
 
@@ -186,4 +188,4 @@ Generische drei bis fünf Gründe für den Gesamtkader genügen diesem Vertrag n
 
 Bei einer Kaderbewertung das Urteil nach `squad-evaluation.md` liefern und ausdrücklich bestätigen, dass Chrome unverändert blieb.
 
-Bei einer Zusammenstellung den unter „Auswahl begründen und gegenprüfen“ vorbereiteten Ergebnisentwurf vollständig liefern und um Profil, Variabilität, Betreuungsaufwand, Seed, Kadergröße, Restbudget und den vollständigen Kader ergänzen. Bei ausgeführter Änderung ausdrücklich bestätigen, dass Namen, Positionen und Budget anschließend in Chrome verifiziert wurden.
+Bei einer Zusammenstellung den unter „Auswahl begründen und gegenprüfen“ vorbereiteten Ergebnisentwurf vollständig liefern und um Profil, Variabilität, Betreuungsaufwand, „automatische persönliche Variante“ beziehungsweise ausdrücklich gesetzten Seed, Kadergröße, Restbudget und den vollständigen Kader ergänzen. Die private Installationskennung niemals nennen. Bei ausgeführter Änderung ausdrücklich bestätigen, dass Namen, Positionen und Budget anschließend in Chrome verifiziert wurden.

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import bisect
 import csv
+import hashlib
 import itertools
 import json
 import math
@@ -81,6 +82,8 @@ CLUB_IDENTITY_STOPWORDS = {
     "spvgg",
     "ev",
 }
+VARIATION_STATE_ENV = "KICKER_VARIATION_STATE"
+VARIATION_STATE_SCHEMA_VERSION = 1
 
 PROFILE_ALIASES = {
     "reliable": "reliable",
@@ -108,6 +111,132 @@ VARIATION_ALIASES = {
     "high": "high",
     "hoch": "high",
 }
+
+
+class VariationStateError(ValueError):
+    """Raised when the private local variation state cannot be used safely."""
+
+
+def default_variation_state_path() -> Path:
+    """Return a cross-platform, user-local state path without exposing identity."""
+
+    explicit_path = os.environ.get(VARIATION_STATE_ENV)
+    if explicit_path:
+        return Path(explicit_path).expanduser()
+    codex_home = os.environ.get("CODEX_HOME")
+    if codex_home:
+        return Path(codex_home).expanduser() / "state" / "kicker-interactive-manager.json"
+    if os.name == "nt" and os.environ.get("APPDATA"):
+        return (
+            Path(os.environ["APPDATA"])
+            / "Codex"
+            / "state"
+            / "kicker-interactive-manager.json"
+        )
+    return (
+        Path.home()
+        / ".codex"
+        / "state"
+        / "kicker-interactive-manager.json"
+    )
+
+
+def _load_variation_state(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {
+            "schema_version": VARIATION_STATE_SCHEMA_VERSION,
+            "installation_id": secrets.token_hex(24),
+            "contexts": {},
+        }
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise VariationStateError(
+            f"local variation state is unreadable at {path}: {error}"
+        ) from error
+    installation_id = payload.get("installation_id")
+    contexts = payload.get("contexts")
+    if (
+        payload.get("schema_version") != VARIATION_STATE_SCHEMA_VERSION
+        or not isinstance(installation_id, str)
+        or re.fullmatch(r"[0-9a-f]{48}", installation_id) is None
+        or not isinstance(contexts, dict)
+        or any(
+            not isinstance(key, str)
+            or not isinstance(value, int)
+            or isinstance(value, bool)
+            or value < 0
+            for key, value in contexts.items()
+        )
+    ):
+        raise VariationStateError(
+            f"local variation state has an unsupported format at {path}"
+        )
+    return payload
+
+
+def _save_variation_state(path: Path, payload: dict[str, Any]) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = path.with_name(
+            f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
+        )
+        temporary_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        try:
+            temporary_path.chmod(0o600)
+        except OSError:
+            pass
+        os.replace(temporary_path, path)
+    except OSError as error:
+        raise VariationStateError(
+            f"local variation state cannot be saved at {path}: {error}"
+        ) from error
+
+
+def automatic_variation_seed(
+    *,
+    state_path: Path,
+    competition: str | None,
+    season: str | None,
+    profile: str,
+    maintenance: str,
+    variation: str,
+    budget: int,
+    slots: Mapping[str, int],
+    new_variant: bool = False,
+) -> tuple[int, int]:
+    """Derive a stable anonymous seed and optionally advance its local variant."""
+
+    context = json.dumps(
+        {
+            "competition": competition or "unspecified",
+            "season": season or "unspecified",
+            "profile": profile,
+            "maintenance": maintenance,
+            "variation": variation,
+            "budget": budget,
+            "slots": dict(sorted(slots.items())),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    context_key = hashlib.sha256(context.encode("utf-8")).hexdigest()[:24]
+    state = _load_variation_state(state_path)
+    generation = int(state["contexts"].get(context_key, 0))
+    if new_variant:
+        generation += 1
+    state["contexts"][context_key] = generation
+    _save_variation_state(state_path, state)
+    digest = hashlib.sha256(
+        (
+            f"{state['installation_id']}\0{context}\0{generation}"
+        ).encode("utf-8")
+    ).digest()
+    return int.from_bytes(digest[:8], "big") % (2**31), generation
 
 PROFILE_WEIGHTS = {
     "reliable": {
@@ -2589,6 +2718,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--variation", default="medium", choices=sorted(VARIATION_ALIASES))
     parser.add_argument("--seed", type=int, help="Reproducible variation seed")
     parser.add_argument(
+        "--new-variant",
+        action="store_true",
+        help=(
+            "Advance the anonymous local variant for this league, season and "
+            "strategy; use when the user asks for another squad"
+        ),
+    )
+    parser.add_argument(
+        "--variation-state",
+        type=Path,
+        help=(
+            "Advanced override for the private local variation state path; "
+            f"defaults to {VARIATION_STATE_ENV}, CODEX_HOME or the user profile"
+        ),
+    )
+    parser.add_argument(
         "--portfolio-size",
         type=int,
         default=1,
@@ -2667,6 +2812,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--max-outfield-per-club must be positive")
     if args.portfolio_size < 1:
         parser.error("--portfolio-size must be positive")
+    if args.seed is not None and args.new_variant:
+        parser.error("--new-variant cannot be combined with an explicit --seed")
     if args.portfolio_index is not None and not (
         1 <= args.portfolio_index <= args.portfolio_size
     ):
@@ -2733,9 +2880,37 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    seed = args.seed if args.seed is not None else secrets.randbelow(2**31)
+    variation_source = "explicit"
+    variation_generation: int | None = None
+    if args.seed is not None:
+        seed = args.seed
+    else:
+        variation_source = "automatic_local"
+        try:
+            seed, variation_generation = automatic_variation_seed(
+                state_path=args.variation_state or default_variation_state_path(),
+                competition=args.competition,
+                season=args.season,
+                profile=args.profile,
+                maintenance=args.maintenance,
+                variation=args.variation,
+                budget=args.budget,
+                slots=args.slots,
+                new_variant=args.new_variant,
+            )
+        except VariationStateError as error:
+            print(f"Automatic variation stopped: {error}", file=sys.stderr)
+            return 2
     portfolio_index = args.portfolio_index or (seed % args.portfolio_size) + 1
-    print(f"Variation seed: {seed}", file=sys.stderr, flush=True)
+    if variation_source == "automatic_local":
+        print(
+            "Variation seed: "
+            f"{seed} (automatic local variant {variation_generation})",
+            file=sys.stderr,
+            flush=True,
+        )
+    else:
+        print(f"Variation seed: {seed}", file=sys.stderr, flush=True)
     if args.portfolio_size > 1:
         print(
             "Portfolio slot: "
@@ -3074,6 +3249,12 @@ def main() -> int:
         news_audit=news_audit,
         portfolio_audit=portfolio_audit,
     )
+    payload["variation_identity"] = {
+        "mode": variation_source,
+        "generation": variation_generation,
+        "new_variant_supported": True,
+        "private_installation_id_exposed": False,
+    }
     rendered = (
         json.dumps(payload, ensure_ascii=False, indent=2)
         if args.format == "json"

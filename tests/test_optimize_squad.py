@@ -523,6 +523,127 @@ class DistanceOptimizerTests(unittest.TestCase):
         self.assertIn("Variation seed: 424242", completed.stderr)
         self.assertNotIn("Variation seed", completed.stdout)
 
+    def test_automatic_variation_is_stable_private_and_rerollable(self) -> None:
+        slots = {
+            "GOALKEEPER": 3,
+            "DEFENDER": 7,
+            "MIDFIELDER": 7,
+            "FORWARD": 5,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            first_state = Path(directory) / "first" / "variation.json"
+            second_state = Path(directory) / "second" / "variation.json"
+            arguments = {
+                "competition": "2. Bundesliga",
+                "season": "2026/27",
+                "profile": "reliable",
+                "maintenance": "low",
+                "variation": "medium",
+                "budget": 10_000_000,
+                "slots": slots,
+            }
+
+            first_seed, first_generation = optimizer.automatic_variation_seed(
+                state_path=first_state,
+                **arguments,
+            )
+            repeated_seed, repeated_generation = optimizer.automatic_variation_seed(
+                state_path=first_state,
+                **arguments,
+            )
+            rerolled_seed, rerolled_generation = optimizer.automatic_variation_seed(
+                state_path=first_state,
+                new_variant=True,
+                **arguments,
+            )
+            colleague_seed, _ = optimizer.automatic_variation_seed(
+                state_path=second_state,
+                **arguments,
+            )
+
+            stored = json.loads(first_state.read_text(encoding="utf-8"))
+
+        self.assertEqual(first_seed, repeated_seed)
+        self.assertEqual((0, 0, 1), (
+            first_generation,
+            repeated_generation,
+            rerolled_generation,
+        ))
+        self.assertNotEqual(first_seed, rerolled_seed)
+        self.assertNotEqual(first_seed, colleague_seed)
+        self.assertRegex(stored["installation_id"], r"^[0-9a-f]{48}$")
+        self.assertNotIn(stored["installation_id"], str(first_seed))
+
+    def test_malformed_automatic_variation_state_is_not_overwritten(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "variation.json"
+            state_path.write_text("not-json", encoding="utf-8")
+            with self.assertRaises(optimizer.VariationStateError):
+                optimizer.automatic_variation_seed(
+                    state_path=state_path,
+                    competition="3. Liga",
+                    season="2026/27",
+                    profile="balanced",
+                    maintenance="normal",
+                    variation="medium",
+                    budget=10_000_000,
+                    slots={
+                        "GOALKEEPER": 3,
+                        "DEFENDER": 7,
+                        "MIDFIELDER": 7,
+                        "FORWARD": 5,
+                    },
+                )
+            self.assertEqual("not-json", state_path.read_text(encoding="utf-8"))
+
+    def test_five_installations_receive_five_controlled_synthetic_squads(self) -> None:
+        players, scores = varied_pool()
+        slots = {
+            "GOALKEEPER": 3,
+            "DEFENDER": 2,
+            "MIDFIELDER": 2,
+            "FORWARD": 2,
+        }
+        squads: set[frozenset[str]] = set()
+        with tempfile.TemporaryDirectory() as directory:
+            for index in range(1, 6):
+                state_path = Path(directory) / f"colleague-{index}.json"
+                state_path.write_text(
+                    json.dumps(
+                        {
+                            "schema_version": 1,
+                            "installation_id": f"{index:048x}",
+                            "contexts": {},
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                seed, _ = optimizer.automatic_variation_seed(
+                    state_path=state_path,
+                    competition="2. Bundesliga",
+                    season="2026/27",
+                    profile="balanced",
+                    maintenance="normal",
+                    variation="medium",
+                    budget=900,
+                    slots=slots,
+                )
+                squad = optimizer.varied_squad(
+                    players,
+                    900,
+                    scores,
+                    "balanced",
+                    "medium",
+                    seed,
+                    1,
+                    900,
+                    slots,
+                    set(),
+                )[0]
+                squads.add(squad.ids)
+
+        self.assertEqual(5, len(squads))
+
 
 class CentralNewsIdentityTests(unittest.TestCase):
     def test_provider_roster_matches_kicker_full_name_to_initial(self) -> None:
@@ -1476,6 +1597,8 @@ class NewsHardeningIntegrationTests(unittest.TestCase):
                     "2. Bundesliga",
                     "--season",
                     "2026/27",
+                    "--variation-state",
+                    str(root / "variation-state.json"),
                     "--news-snapshot",
                     str(snapshot_path),
                     "--require-news-snapshot",
@@ -1491,6 +1614,14 @@ class NewsHardeningIntegrationTests(unittest.TestCase):
         payload = json.loads(completed.stdout)
         self.assertEqual("fresh", payload["news_audit"]["status"])
         self.assertEqual(4, len(payload["squad"]))
+        self.assertEqual(
+            "automatic_local",
+            payload["variation_identity"]["mode"],
+        )
+        self.assertEqual(0, payload["variation_identity"]["generation"])
+        self.assertFalse(
+            payload["variation_identity"]["private_installation_id_exposed"]
+        )
 
     def test_news_only_increases_risk_and_removes_unsafe_anchor_status(self) -> None:
         candidate = player(

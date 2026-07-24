@@ -101,7 +101,8 @@ Liga, Strategie, Variabilität und Betreuungsaufwand lassen sich frei kombiniere
 | Nur Vorschläge | „Zeige mir die fünf wichtigsten Verbesserungen, aber setze noch nichts in Chrome um.“ |
 | Optimieren und umsetzen | „Prüfe meinen Kader und setze nur klar begründete Verbesserungen in Chrome um.“ |
 | Variantenvergleich | „Vergleiche einen verlässlichen und einen ausgewogenen Kader, ohne Chrome zu ändern.“ |
-| Kollegengruppe | „Erstelle Kadernummer 3 von 5 mit Gruppenseed 20260724. Verteile auch ähnlich starke Ankerspieler über die fünf Kader.“ |
+| Persönliche Variante | „Stelle mir einen verlässlichen Kader zusammen. Nutze automatisch meine persönliche, anonyme Variante.“ |
+| Neu würfeln | „Erzeuge mir eine neue, nahezu gleichwertige Variante und erkläre die Unterschiede.“ |
 | Spielercheck | „Prüfe, ob [Spielername] zu meinem Kader passt, und nenne bezahlbare Alternativen.“ |
 
 Alternativ genügt:
@@ -116,11 +117,17 @@ Bei **verlässlich und wartungsarm** konzentriert das Plugin das Budget auf eine
 
 ### Unterschiedliche Kader für mehrere Kollegen
 
-Soll eine Gruppe nicht versehentlich fünfmal denselben Kader erhalten, bekommen alle denselben beliebigen Gruppenseed und jeweils eine andere Kadernummer. Beispiel für fünf Personen:
+Das Plugin erzeugt auf jedem Rechner automatisch eine eigene, anonyme Variante. Niemand muss eine Kadernummer oder einen Gruppenseed kennen:
 
-> Stelle mir Kadernummer 2 von 5 für die 2. Bundesliga zusammen. Nutze den gemeinsamen Gruppenseed 20260724, Profil verlässlich und Betreuungsaufwand gering.
+> Stelle meinen Kader für die 2. Bundesliga verlässlich und wartungsarm zusammen.
 
-Die Kollegen verwenden nacheinander die Kadernummern 1 bis 5. Das Plugin berechnet daraus ein gemeinsames Portfolio und verteilt auch ähnlich starke Anker- und Premiumspieler, solange jeder einzelne Kader im zulässigen Qualitätskorridor bleibt. Ein namentlich erwähnter Spieler wird nur recherchiert und verglichen; er erhält dadurch keinen Bonus und wird nur auf ausdrücklichen Wunsch zwingend gekauft.
+Beim ersten Lauf legt das Plugin ausschließlich auf dem eigenen Rechner eine zufällige technische Kennung ab. Daraus werden zusammen mit Liga, Saison und Strategie kontrollierte Entscheidungen innerhalb des zulässigen Qualitätskorridors abgeleitet. Die Kennung enthält keine Namen, E-Mail-Adressen oder andere personenbezogene Daten, wird nicht hochgeladen und erscheint nicht im Ergebnis. Deshalb erhalten Kollegen normalerweise unterschiedliche Kader, ohne sich untereinander abzustimmen.
+
+Wer auf demselben Rechner eine weitere Alternative sehen möchte, schreibt einfach:
+
+> Erzeuge mir eine neue, nahezu gleichwertige Variante dieses Kaders.
+
+Das Plugin würfelt dann kontrolliert neu und erklärt die Unterschiede. Bewährte Ausnahmespieler dürfen trotzdem in mehreren Kadern vorkommen; Varianz ist kein Selbstzweck und verdrängt keine klar bessere Wahl. Eine garantierte weltweite Einzigartigkeit gibt es ohne zentralen Kaderspeicher nicht, zufällige Überschneidungen bleiben also möglich. Ein namentlich erwähnter Spieler wird nur recherchiert und verglichen; er erhält dadurch keinen Bonus und wird nur auf ausdrücklichen Wunsch zwingend gekauft.
 
 Vor dem Umbau prüft das Plugin außerdem aktuelle Verletzungs- und Transfermeldungen. Für die 2. Bundesliga und 3. Liga der Saison 2026/27 verwendet das Plugin automatisch den zentralen API-Sports-Feed dieses Projekts. Dafür müssen Kollegen weder einen API-Key noch eine Feed-Adresse einrichten. Der Feed wird viermal täglich aktualisiert und enthält nur normalisierte Spieler-, Verletzungs- und Transferdaten; der geheime Provider-Schlüssel bleibt im geschützten GitHub-Secret-Speicher.
 

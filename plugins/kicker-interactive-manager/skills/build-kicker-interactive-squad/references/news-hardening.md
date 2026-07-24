@@ -21,7 +21,7 @@ Provider-Schlüssel niemals in das Plugin, in Annotationen, in das Snapshot, in 
 - Namens- oder Vereinsabweichungen bei derselben Kicker-ID sind ein Konflikt. Ausgewählte Spieler mit offenem Konflikt blockieren den finalen Lauf.
 - Liefert ein Provider den Vornamen nur als Initiale, ist eine automatische Zuordnung ausschließlich bei passender Initiale, vollständigem identischem Nachnamen und passendem Verein zulässig. Mehrdeutige Treffer bleiben Konflikte.
 - Für jeden ausgewählten Spieler muss bei mindestens einem Provider ein verifiziertes Paar aus Spieler- und aktuellem Team-ID vorliegen. Nur so lässt sich die Richtung eines Transfers sicher bewerten. Fehlt es, den Spieler am selben Tag manuell in Primärquellen prüfen und die zentrale Zuordnung ergänzen, bevor Chrome geändert wird.
-- Direkt vor dem ersten Verkauf Snapshot erneut laden. Liegt die letzte Prüfung mehr als zwei Stunden zurück oder gab es neue Meldungen, finalen Lauf mit demselben Seed wiederholen.
+- Direkt vor dem ersten Verkauf Snapshot erneut laden. Liegt die letzte Prüfung mehr als zwei Stunden zurück oder gab es neue Meldungen, finalen Lauf ohne `--new-variant` wiederholen; so bleibt die automatische persönliche Variante stabil. Bei einem ausdrücklich gesetzten Seed denselben Wert verwenden.
 
 ## Zentraler GitHub-Aktualisierungslauf
 
@@ -106,7 +106,7 @@ KICKER_NEWS_FEED_TOKEN=<feed-token>
 ## Finaler Optimierungslauf
 
 ```text
-<python-3-command> scripts/optimize_squad.py --players <players-csv> --annotations <annotations-json> --competition "2. Bundesliga" --season "2026/27" --news-snapshot <https-url-oder-datei> --require-news-snapshot --require-news-coverage --profile reliable --variation medium --maintenance low --min-reliable-anchors 3 --seed <seed> --budget <budget> --format json
+<python-3-command> scripts/optimize_squad.py --players <players-csv> --annotations <annotations-json> --competition "2. Bundesliga" --season "2026/27" --news-snapshot <https-url-oder-datei> --require-news-snapshot --require-news-coverage --profile reliable --variation medium --maintenance low --min-reliable-anchors 3 --budget <budget> --format json
 ```
 
 `news_audit` im Ergebnis dokumentiert Snapshot-Prüfsumme, Providerstatus, Erzeugungs- und Ablaufzeit, angewandte Spieler, fehlende Zuordnungen, Konflikte und harte Ausschlüsse. Dieses Audit vor jeder Browseränderung lesen.

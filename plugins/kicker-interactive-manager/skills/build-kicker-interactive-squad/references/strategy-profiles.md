@@ -96,10 +96,11 @@ Variabilität darf keine blinde Zufallsauswahl sein. Zuerst das beste Ergebnis i
 
 - Beim Profil `verlässlich` die Qualitätsgrenze mit Faktor 0,75 enger setzen.
 - Beim Profil `ausbruch` die Qualitätsgrenze mit Faktor 1,20 erweitern.
-- Einen zufälligen Seed lokal erzeugen, wenn der Nutzer keinen nennt. Keine personenbezogenen Daten als Seed verwenden.
-- Den Seed im Ergebnis ausgeben, damit ein Kader reproduzierbar bleibt.
+- Ohne Nutzereingabe die automatische private Installationsvariante des Optimierers verwenden. Keine Kadernummer erfragen und keine personenbezogenen Daten ableiten.
+- Bei „neue Variante“ genau einmal `--new-variant` verwenden. Der lokale Variantenstand hält das Ergebnis anschließend reproduzierbar.
+- Im Nutzerergebnis „automatische persönliche Variante“ nennen; die private Installationskennung niemals lesen oder ausgeben. Den numerischen Seed nur bei ausdrücklich technischer Diagnose oder vom Nutzer gewünschter exakter Reproduktion nennen.
 - Bei bekannten Kollegenkadern Überschneidungen über `--avoid-roster` nach Auswahlhäufigkeit bestrafen. Niemals einen klar schlechteren Spieler allein zur Abgrenzung wählen.
-- Für eine vorab bekannte Gruppe `--portfolio-size` und eindeutige `--portfolio-index`-Werte mit demselben Gruppenseed verwenden. Der Optimierer berechnet die Slots gemeinsam und verteilt wiederholt gewählte Spieler zunehmend weniger attraktiv.
+- Nur für ein ausdrücklich zentral koordiniertes Portfolio `--portfolio-size` und eindeutige `--portfolio-index`-Werte mit demselben Gruppenseed verwenden. Das ist eine fortgeschrittene Ausnahme, nicht der normale Kollegenablauf.
 - Portfolio-Diversität umfasst auch Anker und Premiumspieler. Ein Spieler darf in allen Slots stehen, wenn sein Qualitätsvorsprung innerhalb des Korridors nicht ersetzbar ist; eine frühere Erwähnung durch den Nutzer ist kein solcher Qualitätsvorsprung.
 - `benchmark: true` besitzt keinerlei Scorebonus. Es erzwingt nur, dass ein Kandidat recherchiert, verglichen und bei Nichtauswahl erklärt wird.
 - Innerhalb einer Gruppe darf ein sportlich begründeter gemeinsamer Ankerkern bestehen. Die Portfolio-Slots sollen mittlere Preisklassen, Bankplätze und ähnlich bewertete Anker beziehungsweise Premiumspieler variieren.

@@ -44,19 +44,19 @@ Vorschläge anschließend umsetzen:
 
 > Erstelle für die 2. Bundesliga je einen verlässlichen und einen ausgewogenen Kader, vergleiche Kern, Risiken und Ausbruchspotenzial und ändere Chrome noch nicht.
 
-> Erzeuge zwei nahezu gleichwertige Kader mit unterschiedlichen Seeds und erkläre, welche Spieler den gemeinsamen Ankerkern bilden.
+> Erzeuge eine neue, nahezu gleichwertige Variante und erkläre, welche Spieler im Ankerkern bleiben und warum.
 
 ## Unterschiedliche Kader für eine Gruppe
 
-Fünf Kader gemeinsam planen:
+Automatisch persönliche Kollegenkader:
 
-> Erzeuge fünf verlässliche, wartungsarme Kader für die 2. Bundesliga als gemeinsames Portfolio. Verteile auch ähnlich starke Anker und Premiumspieler, ohne die Qualitätsgrenze zu verletzen.
+> Stelle meinen verlässlichen, wartungsarmen Kader für die 2. Bundesliga zusammen. Nutze automatisch meine persönliche, anonyme Variante.
 
-Einen persönlichen Portfolio-Slot abrufen:
+Auf demselben Rechner neu würfeln:
 
-> Stelle mir Kadernummer 3 von 5 für die 3. Liga zusammen. Verwende den gemeinsamen Gruppenseed 20260724, Profil verlässlich und Betreuungsaufwand gering.
+> Erzeuge mir eine neue, nahezu gleichwertige Variante meines 3.-Liga-Kaders.
 
-Alle Kollegen müssen dieselbe Gruppengröße und denselben Gruppenseed verwenden, aber jeweils eine andere Kadernummer erhalten. Genannte Spielernamen gelten nur dann als Pflicht, wenn der Nutzer das ausdrücklich formuliert.
+Das Plugin verwendet standardmäßig pro Installation eine private, nicht personenbezogene Kennung. Keine Kadernummer und keinen Gruppenseed abfragen. Nur wenn der Nutzer ausdrücklich ein koordiniertes Gruppenportfolio verlangt, die fortgeschrittene Portfoliofunktion anbieten. Genannte Spielernamen gelten nur dann als Pflicht, wenn der Nutzer das ausdrücklich formuliert.
 
 ## Spieler gezielt prüfen
 
