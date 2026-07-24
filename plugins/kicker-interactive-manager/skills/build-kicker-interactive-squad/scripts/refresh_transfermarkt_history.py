@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import gzip
 import hashlib
 import html
 import json
@@ -729,6 +730,61 @@ def load_identity_seed(
     return players
 
 
+def load_performance_seed(
+    path: Path | None,
+    *,
+    competition: str,
+    season: str,
+    strength_sha256: str,
+    target_strength: float,
+) -> dict[int, dict[str, Any]]:
+    if path is None:
+        return {}
+    if path.suffix == ".gz":
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    else:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != 1
+        or payload.get("competition") != competition
+        or payload.get("season") != season
+        or payload.get("strength_model_sha256") != strength_sha256
+        or not math.isclose(
+            float(payload.get("target_strength", 0)),
+            target_strength,
+        )
+        or not isinstance(payload.get("players"), list)
+    ):
+        raise RuntimeError("Transfermarkt performance seed is invalid")
+    players: dict[int, dict[str, Any]] = {}
+    for player in payload["players"]:
+        if not isinstance(player, dict):
+            raise RuntimeError(
+                "Transfermarkt performance seed contains an invalid player"
+            )
+        player_id = player.get("transfermarkt_player_id")
+        if (
+            isinstance(player_id, bool)
+            or not isinstance(player_id, int)
+            or player_id <= 0
+            or player_id in players
+            or not str(player.get("retrieved_at", "")).strip()
+            or not isinstance(player.get("seasons"), list)
+            or not isinstance(player.get("career"), dict)
+        ):
+            raise RuntimeError(
+                "Transfermarkt performance seed contains an invalid history"
+            )
+        players[player_id] = {
+            "retrieved_at": str(player["retrieved_at"]),
+            "seasons": player["seasons"],
+            "career": player["career"],
+        }
+    return players
+
+
 def identities_from_previous(
     previous: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
@@ -769,6 +825,7 @@ def build_snapshot(
     *,
     previous: dict[str, Any] | None,
     identity_seed: list[dict[str, Any]],
+    performance_seed: dict[int, dict[str, Any]],
     ttl_hours: int,
     minimum_refresh_age_hours: int,
     request_delay: float,
@@ -855,12 +912,38 @@ def build_snapshot(
         return transfermarkt_id, raw_appearances(payload)
 
     failures: dict[int, str] = {}
+    unique_fetch_ids = sorted(set(fetch_ids))
+    if unique_fetch_ids and performance_seed:
+        probe_id = unique_fetch_ids[0]
+        try:
+            result_id, appearances = fetch_history(probe_id)
+            histories_by_transfermarkt_id[result_id] = {
+                "retrieved_at": generated_at,
+                "appearances": appearances,
+            }
+            unique_fetch_ids = unique_fetch_ids[1:]
+        except Exception as error:  # pragma: no cover - network boundary
+            print(
+                "Live Transfermarkt performance endpoint unavailable; using "
+                f"the validated performance bootstrap: {error}",
+                file=sys.stderr,
+            )
+            for transfermarkt_id in unique_fetch_ids:
+                seeded = performance_seed.get(transfermarkt_id)
+                if seeded:
+                    histories_by_transfermarkt_id[transfermarkt_id] = seeded
+                else:
+                    failures[transfermarkt_id] = (
+                        "missing_from_performance_bootstrap"
+                    )
+            unique_fetch_ids = []
+
     with concurrent.futures.ThreadPoolExecutor(
         max_workers=max(1, workers),
     ) as executor:
         futures = {
             executor.submit(fetch_history, transfermarkt_id): transfermarkt_id
-            for transfermarkt_id in sorted(set(fetch_ids))
+            for transfermarkt_id in unique_fetch_ids
         }
         for completed, future in enumerate(
             concurrent.futures.as_completed(futures),
@@ -875,19 +958,27 @@ def build_snapshot(
                 }
             except Exception as error:  # pragma: no cover - network boundary
                 previous_player = previous_index.get(transfermarkt_id)
+                seeded = performance_seed.get(transfermarkt_id)
                 if previous_player:
                     histories_by_transfermarkt_id[transfermarkt_id] = {
                         "retrieved_at": str(previous_player["retrieved_at"]),
                         "seasons": previous_player["seasons"],
                         "career": previous_player["career"],
                     }
+                elif seeded:
+                    histories_by_transfermarkt_id[transfermarkt_id] = seeded
                 else:
                     failures[transfermarkt_id] = str(error)
-            print(
-                f"Transfermarkt performance {completed}/{len(futures)}",
-                file=sys.stderr,
-                flush=True,
-            )
+            if (
+                completed == 1
+                or completed == len(futures)
+                or completed % 25 == 0
+            ):
+                print(
+                    f"Transfermarkt performance {completed}/{len(futures)}",
+                    file=sys.stderr,
+                    flush=True,
+                )
 
     players: dict[str, dict[str, Any]] = {}
     for market_player in market_players:
@@ -1008,6 +1099,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mapping", type=Path, required=True)
     parser.add_argument("--strengths", type=Path, required=True)
     parser.add_argument("--identity-seed", type=Path)
+    parser.add_argument("--performance-seed", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--previous")
     parser.add_argument("--ttl-hours", type=int, default=192)
@@ -1028,12 +1120,21 @@ def main() -> int:
         competition=str(config["competition"]),
         season=str(config["season"]),
     )
+    current_strength_sha = strength_model_sha256(strength_model)
+    performance_seed = load_performance_seed(
+        args.performance_seed,
+        competition=str(config["competition"]),
+        season=str(config["season"]),
+        strength_sha256=current_strength_sha,
+        target_strength=float(config["target_strength"]),
+    )
     payload = build_snapshot(
         market_payload,
         config,
         strength_model,
         previous=load_previous(args.previous),
         identity_seed=identity_seed,
+        performance_seed=performance_seed,
         ttl_hours=args.ttl_hours,
         minimum_refresh_age_hours=args.minimum_refresh_age_hours,
         request_delay=args.request_delay,

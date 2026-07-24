@@ -4,6 +4,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +46,99 @@ def appearances(competition_id: str, *, season: int) -> list[dict]:
 
 
 class TransfermarktHistoryTests(unittest.TestCase):
+    @mock.patch.object(
+        transfermarkt,
+        "discover_squads",
+        side_effect=RuntimeError("blocked"),
+    )
+    @mock.patch.object(
+        transfermarkt,
+        "request_json",
+        side_effect=RuntimeError("blocked"),
+    )
+    def test_runner_blockade_uses_validated_bootstraps(
+        self,
+        _request_json: mock.Mock,
+        _discover_squads: mock.Mock,
+    ) -> None:
+        identity = {
+            "player_id": 123,
+            "name": "Example Player",
+            "club": "Example Club",
+            "profile_url": (
+                "https://www.transfermarkt.co.uk/example/profil/spieler/123"
+            ),
+        }
+        seeded_seasons, seeded_career = transfermarkt.aggregate_history(
+            appearances("L2", season=2025),
+            position="FORWARD",
+            target_strength=0.8,
+            strength_model=STRENGTH_MODEL,
+            maximum_seasons=8,
+        )
+        payload = transfermarkt.build_snapshot(
+            {
+                "competition": "2. Bundesliga",
+                "season": "2026/27",
+                "players": [
+                    {
+                        "id": "p1",
+                        "name": "Example Player",
+                        "club": "Example Club",
+                        "position": "FORWARD",
+                        "market_value": 500000,
+                    }
+                ],
+            },
+            {
+                "competition": "2. Bundesliga",
+                "season": "2026/27",
+                "target_strength": 0.8,
+                "maximum_seasons": 8,
+                "minimum_resolved_percent": 75,
+                "transfermarkt_competition_id": "L2",
+            },
+            STRENGTH_MODEL,
+            previous=None,
+            identity_seed=[identity],
+            performance_seed={
+                123: {
+                    "retrieved_at": "2026-07-24T12:00:00Z",
+                    "seasons": seeded_seasons,
+                    "career": seeded_career,
+                }
+            },
+            ttl_hours=192,
+            minimum_refresh_age_hours=144,
+            request_delay=0,
+            timeout=1,
+            workers=1,
+        )
+        player = payload["players"]["p1"]
+        self.assertEqual("verified", player["mapping"]["status"])
+        self.assertEqual(
+            seeded_career["confirmed_score"],
+            player["career"]["confirmed_score"],
+        )
+
+    def test_versioned_performance_bootstrap_matches_strength_model(self) -> None:
+        strength_sha = transfermarkt.strength_model_sha256(STRENGTH_MODEL)
+        values = transfermarkt.load_performance_seed(
+            REPOSITORY_ROOT
+            / "config"
+            / "history"
+            / "performance"
+            / "2-bundesliga.json.gz",
+            competition="2. Bundesliga",
+            season="2026/27",
+            strength_sha256=strength_sha,
+            target_strength=0.8,
+        )
+        self.assertGreaterEqual(len(values), 450)
+        self.assertTrue(
+            all("seasons" in value and "career" in value for value in values.values())
+        )
+
     def test_same_output_is_weighted_by_league_level(self) -> None:
         second_seasons, second_career = transfermarkt.aggregate_history(
             appearances("L2", season=2025),
