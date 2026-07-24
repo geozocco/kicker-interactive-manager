@@ -1163,6 +1163,128 @@ def reliable_core_audit(
     }
 
 
+def repair_core_budget_share(
+    squad: Squad,
+    candidates: list[Player],
+    quality_scores: Mapping[str, float],
+    core_scores: dict[str, float],
+    *,
+    club_cap: int,
+    min_reliable_anchors: int,
+    min_attacking_anchors: int,
+    min_core_budget_share: float,
+    quality_floor: float,
+) -> Squad | None:
+    """Replace expensive reserves with the best safe cheaper alternatives."""
+
+    current = squad
+    candidate_by_position: dict[str, list[Player]] = {
+        position: sorted(
+            (
+                player
+                for player in candidates
+                if player.position == position
+            ),
+            key=lambda player: (
+                -quality_scores[player.player_id],
+                player.cost,
+                player.player_id,
+            ),
+        )
+        for position in DEFAULT_SLOTS
+    }
+    for _ in range(len(current.players)):
+        audit = reliable_core_audit(
+            current,
+            core_scores,
+            min_reliable_anchors,
+            min_attacking_anchors,
+            min_core_budget_share,
+        )
+        if audit["passes"]:
+            return current
+        selected_ids = current.ids
+        core_ids = set(audit["player_ids"])
+        club_counts = Counter(
+            player.club
+            for player in current.players
+            if player.position != "GOALKEEPER"
+        )
+        alternatives: list[
+            tuple[float, float, int, Squad]
+        ] = []
+        for reserve in current.players:
+            if (
+                reserve.player_id in core_ids
+                or reserve.position == "GOALKEEPER"
+                or reserve.reliable_anchor
+            ):
+                continue
+            for candidate in candidate_by_position[reserve.position]:
+                if (
+                    candidate.player_id in selected_ids
+                    or candidate.cost >= reserve.cost
+                ):
+                    continue
+                if (
+                    candidate.club != reserve.club
+                    and club_counts[candidate.club] >= club_cap
+                ):
+                    continue
+                replacement_players = [
+                    candidate if player.player_id == reserve.player_id else player
+                    for player in current.players
+                ]
+                replacement = Squad(
+                    replacement_players,
+                    sum(
+                        quality_scores[player.player_id]
+                        for player in replacement_players
+                    ),
+                )
+                replacement_score = sum(
+                    quality_scores[player.player_id]
+                    for player in replacement_players
+                )
+                if replacement_score < quality_floor:
+                    continue
+                replacement_audit = reliable_core_audit(
+                    replacement,
+                    core_scores,
+                    min_reliable_anchors,
+                    min_attacking_anchors,
+                    min_core_budget_share,
+                )
+                if (
+                    replacement_audit["reliable_anchors"]
+                    < min_reliable_anchors
+                    or replacement_audit["attacking_anchors"]
+                    < min_attacking_anchors
+                    or replacement_audit["core_budget_share"]
+                    <= audit["core_budget_share"]
+                ):
+                    continue
+                alternatives.append(
+                    (
+                        replacement_score,
+                        replacement_audit["core_budget_share"],
+                        reserve.cost - candidate.cost,
+                        replacement,
+                    )
+                )
+        if not alternatives:
+            return None
+        _, _, _, current = max(
+            alternatives,
+            key=lambda item: (
+                item[0],
+                item[1],
+                item[2],
+            ),
+        )
+    return None
+
+
 def goalkeeper_options(
     players: list[Player],
     count: int,
@@ -1936,6 +2058,7 @@ def varied_squad(
     base_candidate = context["base_candidate"]
     base_candidate_score = context["base_candidate_score"]
     max_player_perturbation = context["max_player_perturbation"]
+    distance_cap = target_distance
     forbidden_ids = forbidden_ids or set()
     if forbidden_ids:
         variation_players = [
@@ -1943,6 +2066,7 @@ def varied_squad(
             for player in variation_players
             if player.player_id not in forbidden_ids
         ]
+        distance_cap = sum(slots.values())
         base_buckets = optimize_distance_buckets(
             variation_players,
             budget,
@@ -1951,7 +2075,7 @@ def varied_squad(
             minimum_spend,
             slots,
             optimum.ids,
-            target_distance,
+            distance_cap,
             same_club_goalkeepers,
             min_reliable_anchors,
         )
@@ -1969,22 +2093,14 @@ def varied_squad(
                 "anchor-diverse portfolio is infeasible inside the quality "
                 "corridor; broaden the league-wide reliable-anchor pool"
             )
-        if target_distance in feasible_buckets:
-            chosen_bucket = target_distance
-            variation_target_met = True
-        else:
-            lower_buckets = [
-                distance
-                for distance in feasible_buckets
-                if distance < target_distance
-            ]
-            if not lower_buckets:
-                raise ValueError(
-                    "anchor-diverse portfolio cannot meet the requested "
-                    "variation distance inside the quality corridor"
-                )
-            chosen_bucket = max(lower_buckets)
-            variation_target_met = False
+        chosen_bucket = min(
+            feasible_buckets,
+            key=lambda distance: (
+                abs(distance - target_distance),
+                distance,
+            ),
+        )
+        variation_target_met = chosen_bucket == target_distance
         base_candidate = feasible_buckets[chosen_bucket]
         base_candidate_score = sum(
             base_scores[player.player_id]
@@ -2044,7 +2160,7 @@ def varied_squad(
         minimum_spend,
         slots,
         optimum.ids,
-        target_distance,
+        distance_cap,
         same_club_goalkeepers,
         min_reliable_anchors,
     )
@@ -2081,6 +2197,8 @@ def varied_portfolio(
     same_club_goalkeepers: bool = True,
     min_reliable_anchors: int = 0,
     min_attacking_anchors: int = 0,
+    min_core_budget_share: float = 0.0,
+    core_scores: Mapping[str, float] | None = None,
     technical_smoke: bool = False,
     max_reliable_anchor_exposure: int = 1,
 ) -> tuple[Squad, Squad, int, bool, dict[str, Any]]:
@@ -2092,6 +2210,7 @@ def varied_portfolio(
         raise ValueError("portfolio index must be inside the portfolio size")
     if max_reliable_anchor_exposure < 1:
         raise ValueError("maximum reliable-anchor exposure must be positive")
+    effective_core_scores = core_scores or base_scores
 
     reliable_anchor_ids = {
         player.player_id
@@ -2135,19 +2254,6 @@ def varied_portfolio(
             if int(count) > 0
         }
     )
-    prepared_context = prepare_variation_context(
-        players=players,
-        budget=budget,
-        base_scores=base_scores,
-        profile=profile,
-        variation=variation,
-        club_cap=club_cap,
-        minimum_spend=minimum_spend,
-        slots=slots,
-        same_club_goalkeepers=same_club_goalkeepers,
-        min_reliable_anchors=min_reliable_anchors,
-        technical_smoke=technical_smoke,
-    )
     assigned_anchor_groups: list[set[str]] | None = None
     if (
         max_reliable_anchor_exposure == 1
@@ -2155,12 +2261,30 @@ def varied_portfolio(
     ):
         player_by_id = {player.player_id: player for player in players}
         assignment_rng = random.Random(seed ^ 0x5A17C0DE)
-        attacking_candidates = sorted(attacking_anchor_ids)
-        assignment_rng.shuffle(attacking_candidates)
-        other_candidates = sorted(
-            reliable_anchor_ids - set(attacking_candidates)
+        anchor_tiebreak = {
+            player_id: assignment_rng.uniform(-1.5, 1.5)
+            for player_id in sorted(reliable_anchor_ids)
+        }
+        attacking_candidates = sorted(
+            attacking_anchor_ids,
+            key=lambda player_id: (
+                -(
+                    base_scores[player_id]
+                    + anchor_tiebreak[player_id]
+                ),
+                player_id,
+            ),
         )
-        assignment_rng.shuffle(other_candidates)
+        other_candidates = sorted(
+            reliable_anchor_ids - set(attacking_candidates),
+            key=lambda player_id: (
+                -(
+                    base_scores[player_id]
+                    + anchor_tiebreak[player_id]
+                ),
+                player_id,
+            ),
+        )
         assigned_anchor_groups = [set() for _ in range(portfolio_size)]
 
         def take_candidate(
@@ -2177,21 +2301,52 @@ def varied_portfolio(
                 "anchor-diverse portfolio cannot satisfy the club cap"
             )
 
-        for group in assigned_anchor_groups:
-            for _ in range(min_attacking_anchors):
+        for _ in range(min_attacking_anchors):
+            for group in assigned_anchor_groups:
                 group.add(take_candidate(attacking_candidates, group))
         remaining_candidates = [
             *other_candidates,
             *attacking_candidates,
         ]
-        assignment_rng.shuffle(remaining_candidates)
-        for group in assigned_anchor_groups:
-            while len(group) < min_reliable_anchors:
+        remaining_candidates.sort(
+            key=lambda player_id: (
+                -(
+                    base_scores[player_id]
+                    + anchor_tiebreak[player_id]
+                ),
+                player_id,
+            )
+        )
+        while any(
+            len(group) < min_reliable_anchors
+            for group in assigned_anchor_groups
+        ):
+            for group in assigned_anchor_groups:
+                if len(group) >= min_reliable_anchors:
+                    continue
                 group.add(take_candidate(remaining_candidates, group))
+    prepared_context = (
+        None
+        if assigned_anchor_groups is not None
+        else prepare_variation_context(
+            players=players,
+            budget=budget,
+            base_scores=base_scores,
+            profile=profile,
+            variation=variation,
+            club_cap=club_cap,
+            minimum_spend=minimum_spend,
+            slots=slots,
+            same_club_goalkeepers=same_club_goalkeepers,
+            min_reliable_anchors=min_reliable_anchors,
+            technical_smoke=technical_smoke,
+        )
+    )
     generated: list[tuple[Squad, Squad, int, bool, int]] = []
     used_rosters: set[frozenset[str]] = set()
     for slot in range(1, portfolio_size + 1):
         selected: tuple[Squad, Squad, int, bool, int] | None = None
+        last_core_audit: dict[str, Any] | None = None
         forbidden_anchor_ids = {
             player_id
             for player_id in reliable_anchor_ids
@@ -2201,12 +2356,40 @@ def varied_portfolio(
             forbidden_anchor_ids = (
                 reliable_anchor_ids - assigned_anchor_groups[slot - 1]
             )
+            slot_players = [
+                player
+                for player in players
+                if player.player_id not in forbidden_anchor_ids
+            ]
+            slot_scores = {
+                player.player_id: base_scores[player.player_id]
+                for player in slot_players
+            }
+            slot_context = prepare_variation_context(
+                players=slot_players,
+                budget=budget,
+                base_scores=slot_scores,
+                profile=profile,
+                variation=variation,
+                club_cap=club_cap,
+                minimum_spend=minimum_spend,
+                slots=slots,
+                same_club_goalkeepers=same_club_goalkeepers,
+                min_reliable_anchors=min_reliable_anchors,
+                technical_smoke=technical_smoke,
+            )
+            slot_forbidden_ids: set[str] = set()
+        else:
+            slot_players = players
+            slot_scores = base_scores
+            slot_context = prepared_context
+            slot_forbidden_ids = forbidden_anchor_ids
         for attempt in range(8):
             slot_seed = seed + slot * 104_729 + attempt * 7_919
             squad, optimum, distance, target_met = varied_squad(
-                players=players,
+                players=slot_players,
                 budget=budget,
-                base_scores=base_scores,
+                base_scores=slot_scores,
                 profile=profile,
                 variation=variation,
                 seed=slot_seed,
@@ -2218,14 +2401,69 @@ def varied_portfolio(
                 min_reliable_anchors=min_reliable_anchors,
                 technical_smoke=technical_smoke,
                 exposure_strength=10.0,
-                prepared_context=prepared_context,
-                forbidden_ids=forbidden_anchor_ids,
+                prepared_context=slot_context,
+                forbidden_ids=slot_forbidden_ids,
             )
+            core_audit = reliable_core_audit(
+                squad,
+                effective_core_scores,
+                min_reliable_anchors,
+                min_attacking_anchors,
+                min_core_budget_share,
+            )
+            last_core_audit = core_audit
+            if min_core_budget_share > 0 and not core_audit["passes"]:
+                repaired = repair_core_budget_share(
+                    squad,
+                    slot_players,
+                    slot_scores,
+                    effective_core_scores,
+                    club_cap=club_cap,
+                    min_reliable_anchors=min_reliable_anchors,
+                    min_attacking_anchors=min_attacking_anchors,
+                    min_core_budget_share=min_core_budget_share,
+                    quality_floor=float("-inf"),
+                )
+                if repaired is not None:
+                    squad = repaired
+                    distance = len(
+                        optimum.ids.symmetric_difference(squad.ids)
+                    ) // 2
+                    target_met = (
+                        distance
+                        == int(VARIATION_CONFIG[variation]["distance"])
+                    )
+                    core_audit = reliable_core_audit(
+                        squad,
+                        effective_core_scores,
+                        min_reliable_anchors,
+                        min_attacking_anchors,
+                        min_core_budget_share,
+                    )
+                    last_core_audit = core_audit
+            if (
+                (
+                    min_core_budget_share > 0
+                    and (
+                        core_audit["reliable_anchors"]
+                        < min_reliable_anchors
+                        or core_audit["attacking_anchors"]
+                        < min_attacking_anchors
+                        or core_audit["core_budget_share"]
+                        < min_core_budget_share
+                    )
+                )
+                or squad.ids in used_rosters
+            ):
+                continue
             selected = (squad, optimum, distance, target_met, slot_seed)
-            if squad.ids not in used_rosters:
-                break
+            break
         if selected is None:
-            raise RuntimeError("portfolio generation produced no candidate")
+            raise ValueError(
+                "portfolio generation cannot satisfy the starting-core "
+                f"anchor and budget-share policy for slot {slot}: "
+                f"{last_core_audit}"
+            )
         generated.append(selected)
         used_rosters.add(selected[0].ids)
         exposure.update(selected[0].ids)
@@ -2322,6 +2560,24 @@ def varied_portfolio(
                     for player in entry[0].players
                     if player.reliable_anchor
                 ),
+                "core_audit": reliable_core_audit(
+                    entry[0],
+                    effective_core_scores,
+                    min_reliable_anchors,
+                    min_attacking_anchors,
+                    min_core_budget_share,
+                )
+                | {
+                    "player_ids": sorted(
+                        reliable_core_audit(
+                            entry[0],
+                            effective_core_scores,
+                            min_reliable_anchors,
+                            min_attacking_anchors,
+                            min_core_budget_share,
+                        )["player_ids"]
+                    )
+                },
             }
             for slot, entry in enumerate(generated, start=1)
         ],
@@ -3433,6 +3689,15 @@ def main() -> int:
             news_payload,
         )
         hard_exclusions.extend(news_exclusions)
+    if args.require_news_coverage:
+        provider_mapped_ids = set(
+            news_audit.get("provider_mapped_player_ids", [])
+        )
+        players = [
+            player
+            for player in players
+            if player.player_id in provider_mapped_ids
+        ]
     raw_scores = score_players(players, args.profile, args.maintenance)
     if args.shortlist_only:
         payload = shortlist_payload(
@@ -3600,6 +3865,8 @@ def main() -> int:
                 same_club_goalkeepers=not args.mixed_goalkeepers,
                 min_reliable_anchors=args.min_reliable_anchors,
                 min_attacking_anchors=args.min_attacking_anchors,
+                min_core_budget_share=args.min_core_budget_share,
+                core_scores=eligible_raw_scores,
                 technical_smoke=args.allow_unannotated,
                 max_reliable_anchor_exposure=args.max_anchor_exposure,
             )

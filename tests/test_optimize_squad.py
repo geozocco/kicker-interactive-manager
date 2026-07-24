@@ -907,6 +907,79 @@ class CentralNewsIdentityTests(unittest.TestCase):
 
 
 class ReliableCorePolicyTests(unittest.TestCase):
+    def test_expensive_reserves_are_repaired_with_safe_value_depth(self) -> None:
+        squad_players: list[optimizer.Player] = []
+        scores: dict[str, float] = {}
+        anchors = {"D0", "M0", "M1", "M2"}
+        for position, prefix, count in (
+            ("GOALKEEPER", "G", 3),
+            ("DEFENDER", "D", 7),
+            ("MIDFIELDER", "M", 7),
+            ("FORWARD", "F", 5),
+        ):
+            for index in range(count):
+                player_id = f"{prefix}{index}"
+                is_anchor = player_id in anchors
+                cost = (
+                    100
+                    if position == "GOALKEEPER"
+                    else (500 if is_anchor else (400 if index < 5 else 300))
+                )
+                squad_players.append(
+                    player(
+                        player_id,
+                        f"Club {player_id}",
+                        position,
+                        cost,
+                        reliable_anchor=is_anchor,
+                    )
+                )
+                scores[player_id] = 100.0 - index
+        candidates = list(squad_players)
+        for position, prefix in (
+            ("DEFENDER", "VD"),
+            ("MIDFIELDER", "VM"),
+            ("FORWARD", "VF"),
+        ):
+            for index in range(4):
+                player_id = f"{prefix}{index}"
+                candidates.append(
+                    player(
+                        player_id,
+                        f"Value Club {player_id}",
+                        position,
+                        50,
+                    )
+                )
+                scores[player_id] = 20.0 - index
+        squad = optimizer.Squad(
+            squad_players,
+            sum(scores[item.player_id] for item in squad_players),
+        )
+
+        repaired = optimizer.repair_core_budget_share(
+            squad,
+            candidates,
+            scores,
+            scores,
+            club_cap=3,
+            min_reliable_anchors=4,
+            min_attacking_anchors=3,
+            min_core_budget_share=0.70,
+            quality_floor=float("-inf"),
+        )
+
+        self.assertIsNotNone(repaired)
+        audit = optimizer.reliable_core_audit(
+            repaired,
+            scores,
+            4,
+            3,
+            0.70,
+        )
+        self.assertTrue(audit["passes"])
+        self.assertLess(repaired.cost, squad.cost)
+
     def test_core_audit_rejects_equal_value_bench_and_accepts_star_heavy_core(
         self,
     ) -> None:
