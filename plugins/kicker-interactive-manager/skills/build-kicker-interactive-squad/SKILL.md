@@ -1,6 +1,6 @@
 ---
 name: build-kicker-interactive-squad
-description: Plane, optimiere und ändere Kader im kicker Managerspiel Interactive über eine bereits angemeldete Chrome-Sitzung. Verwende diesen Skill bei Anfragen zu kicker Interactive, automatischer Kaderzusammenstellung, Transfers, Mannschaftsoptimierung, Geheimtipps oder Strategieprofilen für Bundesliga, 2. Bundesliga, 3. Liga und weitere angebotene Wettbewerbe. Unterstützt konservative, ausgewogene und ausbruchsorientierte Auswahl sowie kontrolliert unterschiedliche Kader für mehrere Personen.
+description: Plane, optimiere und ändere Kader im kicker Managerspiel Interactive über eine bereits angemeldete Chrome-Sitzung. Verwende diesen Skill bei Anfragen zu kicker Interactive, automatischer Kaderzusammenstellung, Transfers, Mannschaftsoptimierung, Geheimtipps oder Strategieprofilen für Bundesliga, 2. Bundesliga und 3. Liga. Die WM ist ausdrücklich ausgeschlossen. Unterstützt konservative, ausgewogene und ausbruchsorientierte Auswahl sowie kontrolliert unterschiedliche Kader für mehrere Personen.
 ---
 
 # kicker Interactive Kader aufstellen
@@ -23,7 +23,13 @@ description: Plane, optimiere und ändere Kader im kicker Managerspiel Interacti
 
 ## Parameter auflösen
 
-Diese drei Parameter aus der Anfrage übernehmen. Fehlende Werte auf die angegebenen Defaults setzen und knapp nennen, statt den Ablauf unnötig zu blockieren.
+Den Wettbewerb sowie die drei Strategieparameter aus der Anfrage übernehmen.
+
+0. Wettbewerb:
+   - ausschließlich `Bundesliga`, `2. Bundesliga` oder `3. Liga`
+   - die WM und andere Turniere sind ausdrücklich ausgeschlossen
+   - fehlt die Spielklasse, vor Recherche oder Browseränderungen nachfragen; nicht aus einem zufällig geöffneten Tab raten
+   - ist der kicker-Transfermarkt der gewählten Liga noch nicht geöffnet oder fehlt der Spieler-Daten-Export, keine andere Liga auswählen und keinen Kader erfinden; den Nutzer knapp auf den noch geschlossenen Markt hinweisen
 
 1. Strategie:
    - `verlässlich` (Default): bestätigte, wiederholbare Leistung und sichere Minuten
@@ -38,6 +44,8 @@ Diese drei Parameter aus der Anfrage übernehmen. Fehlende Werte auf die angegeb
    - `normal`: moderate Rollenrisiken zulassen
    - `aktiv`: mehr frühe Wetten zulassen, wenn der Nutzer regelmäßig nachsteuert
 
+Fehlende Strategieparameter auf die angegebenen Defaults setzen und knapp nennen, statt den Ablauf unnötig zu blockieren.
+
 Für exakte Gewichtungen und Qualitätsgrenzen [references/strategy-profiles.md](references/strategy-profiles.md) vollständig lesen.
 
 ## Arbeitsmodus bestimmen
@@ -51,7 +59,7 @@ Für exakte Gewichtungen und Qualitätsgrenzen [references/strategy-profiles.md]
 
 ### 1. Ist-Zustand erfassen
 
-- Wettbewerb, Saison-ID, Budget, Positionsvorgaben, aktuellen Kader und offene Plätze aus der sichtbaren Kicker-Seite erfassen.
+- Prüfen, dass die sichtbare Kicker-Seite zur ausdrücklich gewählten Spielklasse gehört. Wettbewerb, Saison-ID, Budget, Positionsvorgaben, aktuellen Kader und offene Plätze erfassen.
 - Den Link „Spieler-Daten Export“ der aktuellen Saison verwenden und die CSV als maßgeblichen Preis-/Positionsbestand behandeln.
 - Standardmäßig alle Torhüter aus demselben Verein wählen. Nur auf ausdrücklichen Wunsch mit `--mixed-goalkeepers` abweichen.
 - Weichen die sichtbaren Positionsvorgaben von 3/7/7/5 ab, dem Skript die tatsächlichen Werte über `--goalkeepers`, `--defenders`, `--midfielders` und `--forwards` übergeben.

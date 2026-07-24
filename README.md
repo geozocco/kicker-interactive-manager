@@ -1,6 +1,6 @@
 # kicker Interactive Manager für Codex
 
-Dieses öffentliche Codex-Marketplace enthält den Skill `kicker-interactive-manager`. Er recherchiert und optimiert Kader für das kicker Managerspiel Interactive und setzt sie über eine bereits angemeldete Chrome-Sitzung um.
+Dieses öffentliche Codex-Marketplace enthält den Skill `kicker-interactive-manager`. Er recherchiert und optimiert Kader für das kicker Managerspiel Interactive in der Bundesliga, 2. Bundesliga oder 3. Liga und setzt sie über eine bereits angemeldete Chrome-Sitzung um. Die WM ist ausdrücklich ausgeschlossen.
 
 ## Installation
 
@@ -53,13 +53,21 @@ Wichtig: Verwende später dasselbe Chrome-Profil, in dem die Erweiterung install
 3. Öffne das **Managerspiel Interactive** und dort den Kader, den du bearbeiten möchtest.
 4. Lasse diesen Chrome-Tab geöffnet.
 5. Öffne in Codex/ChatGPT einen neuen Task beziehungsweise Chat, in dem das Plugin installiert ist.
-6. Beauftrage Codex/ChatGPT mit der Zusammenstellung. Schreibe zum Beispiel:
+6. Beauftrage Codex/ChatGPT mit der Zusammenstellung. Nenne dabei immer ausdrücklich die gewünschte Liga.
 
-> Stelle meinen kicker-Interactive-Kader verlässlich, wartungsarm und mit mittlerer Variabilität auf.
-
-Du kannst auch genauer vorgeben, was dir wichtig ist:
+Beispiel für die 2. Bundesliga:
 
 > Stelle meinen Kader für die 2. Bundesliga im kicker Managerspiel Interactive zusammen. Wähle eine ausgewogene Mischung aus verlässlichen Spielern und Talenten und nutze meine geöffnete Chrome-Sitzung.
+
+Beispiel für die 3. Liga:
+
+> Stelle meinen Kader für die 3. Liga im kicker Managerspiel Interactive zusammen. Setze stärker auf Ausbruchspotenzial, halte die Bank aber ausreichend robust und nutze meine geöffnete Chrome-Sitzung.
+
+Beispiel für die Bundesliga:
+
+> Stelle meinen Kader für die Bundesliga im kicker Managerspiel Interactive verlässlich und wartungsarm zusammen und nutze meine geöffnete Chrome-Sitzung.
+
+Der Bundesliga-Kader kann erst aufgestellt werden, wenn kicker den zugehörigen Transfermarkt für die neue Saison geöffnet hat. Bis dahin soll Codex keine andere Liga auswählen und keinen Kader erfinden. Die Weltmeisterschaft wird von diesem Plugin nicht unterstützt.
 
 Codex/ChatGPT fragt bei Bedarf nach Spielklasse, Risikoprofil und gewünschtem Betreuungsaufwand. Anschließend wird der Spielermarkt analysiert und der Kader direkt im geöffneten Chrome-Tab zusammengestellt. Bestätige den Zugriff auf Chrome, falls du danach gefragt wirst. Lasse Chrome und den kicker-Tab geöffnet, bis der fertige Kader bestätigt wurde.
 

@@ -1,7 +1,7 @@
 {
   "name": "kicker-interactive-manager",
-  "version": "0.1.0+codex.20260724093546",
-  "description": "Plant und setzt individuelle Kader f\u00fcr das kicker Managerspiel Interactive in einer angemeldeten Chrome-Sitzung um.",
+  "version": "0.1.0+codex.20260724100827",
+  "description": "Plant und setzt individuelle Kader f\u00fcr Bundesliga, 2. Bundesliga oder 3. Liga im kicker Managerspiel Interactive in einer angemeldeten Chrome-Sitzung um.",
   "author": {
     "name": "Jan Pies"
   },
@@ -24,9 +24,9 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Stelle meinen kicker-Kader verl\u00e4sslich und wartungsarm auf.",
-      "Baue mir einen konservativen Kader mit wenig Wechselbedarf.",
-      "Suche einen variablen Kader mit Ausbruchspotenzial."
+      "Stelle meinen Kader f\u00fcr die 2. Bundesliga verl\u00e4sslich und wartungsarm auf.",
+      "Stelle meinen Kader f\u00fcr die 3. Liga ausgewogen und mit mittlerer Variabilit\u00e4t auf.",
+      "Stelle meinen Kader f\u00fcr die Bundesliga mit Ausbruchspotenzial auf, sobald der Transfermarkt ge\u00f6ffnet ist."
     ]
   }
 }
