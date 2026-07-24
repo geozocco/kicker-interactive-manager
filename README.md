@@ -18,7 +18,17 @@ Der Installer:
 
 In Codex anschließend auf **Plugin installieren** klicken, Codex neu starten und einen neuen Task öffnen.
 
-## Installation unter macOS mit Git und Codex-CLI
+## Installation auf einem frischen Mac
+
+Git, Python und das Codex-CLI werden nicht benötigt. Diese Zeile vollständig in Terminal einfügen:
+
+```bash
+INSTALLER="$(mktemp /tmp/install-kicker-interactive-manager.XXXXXX)"; curl -fsSL "https://raw.githubusercontent.com/geozocco/kicker-interactive-manager/main/install-macos.sh" -o "$INSTALLER"; /bin/bash "$INSTALLER"; rm -f "$INSTALLER"
+```
+
+Der Installer lädt und prüft das Marketplace mit macOS-Bordmitteln, installiert es ohne Administratorrechte und öffnet anschließend Codex. Dort auf **Plugin installieren** klicken, Codex neu starten und einen neuen Task öffnen.
+
+## Alternative macOS-Installation mit Git und Codex-CLI
 
 ```bash
 git clone https://github.com/geozocco/kicker-interactive-manager.git "$HOME/kicker-interactive-manager"
@@ -40,6 +50,6 @@ Anschließend Codex neu starten und einen neuen Task öffnen. In Chrome bei kick
 
 ## Aktualisierung
 
-Auf Windows den PowerShell-Installer erneut ausführen. Die vorherige Version wird dabei als Backup erhalten. Bei einer Git-Installation im geklonten Verzeichnis `git pull` ausführen und das Plugin in Codex über **Refresh** aktualisieren.
+Auf Windows beziehungsweise macOS den jeweiligen Installer erneut ausführen. Die vorherige Version wird dabei als Backup erhalten. Bei einer Git-Installation im geklonten Verzeichnis `git pull` ausführen und das Plugin in Codex über **Refresh** aktualisieren.
 
 Der Marketplace wird auf jedem Rechner lokal importiert. Er enthält deshalb keinen absoluten macOS- oder Windows-Pfad und kann zwischen den Betriebssystemen geteilt werden.
