@@ -1,4 +1,4 @@
 interface:
   display_name: "Kicker Interactive Kaderplaner"
   short_description: "Optimiert Kicker-Interactive-Kader im Browser"
-  default_prompt: "Nutze $build-kicker-interactive-squad, um meinen Kicker-Interactive-Kader verlässlich, variabel und wartungsarm aufzustellen."
+  default_prompt: "Nutze $build-kicker-interactive-squad für Bundesliga, 2. Bundesliga oder 3. Liga. Frage nach der Spielklasse, falls ich sie nicht genannt habe, und stelle den Kader anschließend verlässlich und wartungsarm mit starkem Aufstellungskern, günstiger einsatzfähiger Bank und konkreter Auswahlbegründung auf."

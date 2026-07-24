@@ -68,7 +68,8 @@ Den Risikowert mit dem Faktor multiplizieren und vom Komponentenscore abziehen.
 
 - Gewichte für `minutes`, `role` und `stability` erhöhen.
 - `upside` und `value` leicht reduzieren.
-- Mindestens 16 bis 18 Feldspieler mit plausibler regelmäßiger Einsatzchance anstreben.
+- Beim Profil `verlässlich` die Modellutility innerhalb jeder Position zugunsten der bestbewerteten Kandidaten krümmen: Der Spitzenkandidat behält sein volles Gewicht, während die günstigeren Ergänzungen mit einem bis auf 30 Prozent sinkenden Bankgewicht eingehen. So finanziert der Solver einen starken Aufstellungskern statt 22 annähernd gleichwertiger Spieler.
+- Elf bis 14 hochwertige Kernspieler anstreben. Die übrigen Plätze günstig, aber mit plausibler Einsatzchance besetzen; eine gleichwertige Premiumbank ist nicht erforderlich.
 - Verletzte, stark wechselgefährdete und reine Entwicklungsprojekte höchstens als einzelne Wetten einsetzen.
 
 ### Normal
@@ -84,13 +85,13 @@ Den Risikowert mit dem Faktor multiplizieren und vom Komponentenscore abziehen.
 
 ## Variabilität
 
-Variabilität darf keine blinde Zufallsauswahl sein. Zuerst den besten Kader nach Basisscore bestimmen, anschließend alternative Kader mit einem Seed erzeugen.
+Variabilität darf keine blinde Zufallsauswahl sein. Zuerst das beste Ergebnis innerhalb des vollständig annotierten Kandidatenpools bestimmen, anschließend alternative Kader mit einem Seed erzeugen.
 
-| Stufe | Zielabstand zum Optimum | Zielunterschied |
+| Stufe | Zielabstand zum besten Pool-Ergebnis | Zielunterschied |
 |---|---:|---:|
-| niedrig | höchstens 2 % | mindestens 2 Spieler |
-| mittel | höchstens 5 % | mindestens 4 Spieler |
-| hoch | höchstens 8 % | mindestens 6 Spieler |
+| niedrig | höchstens 2 % | genau 2 Spieler, sofern im Korridor machbar |
+| mittel | höchstens 5 % | genau 4 Spieler, sofern im Korridor machbar |
+| hoch | höchstens 8 % | genau 6 Spieler, sofern im Korridor machbar |
 
 - Beim Profil `verlässlich` die Qualitätsgrenze mit Faktor 0,75 enger setzen.
 - Beim Profil `ausbruch` die Qualitätsgrenze mit Faktor 1,20 erweitern.
@@ -108,5 +109,6 @@ Variabilität darf keine blinde Zufallsauswahl sein. Zuerst den besten Kader nac
   - ausgewogen: 4
   - ausbruch: 3
 - Einen höheren Wert nur bei außergewöhnlich guter Rolle und vertretbarem Teamrisiko zulassen.
-- Bei geringem Betreuungsaufwand mindestens zwei robuste Optionen je Feldposition außerhalb der wahrscheinlichen Startelf behalten.
+- Bei geringem Betreuungsaufwand je Feldposition günstige, einsatzfähige Absicherung vorsehen, ohne den Premiumkern doppelt zu bezahlen.
+- Beim Profil `verlässlich` mindestens drei aktuell belastbare Feldspieler als `reliable_anchor` verlangen. Verletzungs-, Transfer- und Rollenrisiken können einen bekannten Spieler vom Ankerstatus ausschließen.
 - Maximal ein bis drei extreme Longshots einsetzen, abhängig vom Profil.

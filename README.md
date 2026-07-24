@@ -71,6 +71,8 @@ Der Bundesliga-Kader kann erst aufgestellt werden, wenn kicker den zugehörigen 
 
 Codex/ChatGPT fragt bei Bedarf nach Spielklasse, Risikoprofil und gewünschtem Betreuungsaufwand. Anschließend wird der Spielermarkt analysiert und der Kader direkt im geöffneten Chrome-Tab zusammengestellt. Bestätige den Zugriff auf Chrome, falls du danach gefragt wirst. Lasse Chrome und den kicker-Tab geöffnet, bis der fertige Kader bestätigt wurde.
 
+Bei **verlässlich und wartungsarm** konzentriert das Plugin das Budget auf einen starken Aufstellungskern mit mindestens drei bestätigten Leistungsträgern. Die Bank wird günstiger, aber mit realistischen Einsatzchancen besetzt. Im Ergebnis erklärt Codex die wichtigsten Spieler einzeln und vergleicht bewusst ausgelassene etablierte Alternativen samt Budget- und Risikogründen.
+
 Falls Codex nicht auf Chrome zugreifen kann, prüfe zuerst, ob:
 
 - Google Chrome geöffnet ist,

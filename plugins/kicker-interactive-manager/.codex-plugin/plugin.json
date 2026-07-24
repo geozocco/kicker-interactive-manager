@@ -1,6 +1,6 @@
 {
   "name": "kicker-interactive-manager",
-  "version": "0.1.0+codex.20260724100827",
+  "version": "0.1.0+codex.20260724104813",
   "description": "Plant und setzt individuelle Kader f\u00fcr Bundesliga, 2. Bundesliga oder 3. Liga im kicker Managerspiel Interactive in einer angemeldeten Chrome-Sitzung um.",
   "author": {
     "name": "Jan Pies"
@@ -16,7 +16,7 @@
   "interface": {
     "displayName": "kicker Interactive Kaderplaner",
     "shortDescription": "Individuelle Kader direkt in Chrome planen",
-    "longDescription": "Erstellt und pflegt kicker-Interactive-Kader mit w\u00e4hlbarer Strategie zwischen best\u00e4tigter Leistung, ausgewogener Mischung und Ausbruchspotenzial. Kontrollierte Variabilit\u00e4t sorgt f\u00fcr hochwertige, aber unterschiedliche Mannschaften.",
+    "longDescription": "Erstellt und pflegt kicker-Interactive-Kader mit w\u00e4hlbarer Strategie zwischen best\u00e4tigter Leistung, ausgewogener Mischung und Ausbruchspotenzial. Das verl\u00e4ssliche Profil finanziert einen starken Aufstellungskern und erkl\u00e4rt wichtige Auswahlen sowie ausgelassene Alternativen; kontrollierte Variabilit\u00e4t sorgt dennoch f\u00fcr unterschiedliche Mannschaften.",
     "developerName": "Jan Pies",
     "category": "Productivity",
     "capabilities": [

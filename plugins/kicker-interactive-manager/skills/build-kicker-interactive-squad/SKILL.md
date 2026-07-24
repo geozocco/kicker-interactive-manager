@@ -11,6 +11,7 @@ description: Plane, optimiere und ändere Kader im kicker Managerspiel Interacti
 - Vor jeder Browsersteuerung den verfügbaren Chrome-Control-Skill vollständig laden und dessen Interaktions- und Finalisierungsregeln befolgen.
 - Aktuelle Informationen zu Transfers, Verletzungen, Vorbereitung, Trainer und Rollen im Web verifizieren. Offizielle Vereins- und Ligaseiten bevorzugen.
 - Keine Vorjahrespunkte als Prognose behandeln. Wiederholbarkeit, Rolle, Einsatzwahrscheinlichkeit, Umfeld und Preis getrennt bewerten.
+- Berücksichtigen, dass nur die am Spieltag aufgestellte Elf Punkte sammelt. Reservequalität ist Absicherung und darf insbesondere bei geringem Betreuungsaufwand nicht genauso viel Budgetgewicht erhalten wie der wahrscheinliche Kern.
 - Nie „Alle verkaufen“ verwenden. Änderungen einzeln ausführen und nach jeder Phase Kadergröße, Positionen und Budget prüfen.
 
 ## Python-Laufzeit unter macOS und Windows
@@ -36,17 +37,19 @@ Den Wettbewerb sowie die drei Strategieparameter aus der Anfrage übernehmen.
    - `ausgewogen`: Floor und Potenzial ausgewogen kombinieren
    - `ausbruch`: unterbewertete Talente, Neustarts und Rollengewinner stärker gewichten
 2. Variabilität:
-   - `niedrig`: kleiner Abstand zum mathematisch besten Kader
+   - `niedrig`: kleiner Abstand zum besten Ergebnis im vollständig annotierten Kandidatenpool
    - `mittel` (Default): mehrere Plätze aus einem nahezu gleichwertigen Kandidatenband variieren
    - `hoch`: deutlich individuellere Kader bei weiterhin begrenztem Qualitätsabschlag
 3. Betreuungsaufwand:
-   - `gering` (Default): robuste Stammspieler, belastbare Bank und wenig Wechselbedarf
+   - `gering` (Default): einen starken, verlässlichen Aufstellungskern finanzieren und die Bank günstig, aber einsatzfähig halten; nicht das Budget auf 22 annähernd gleichwertige Spieler verteilen
    - `normal`: moderate Rollenrisiken zulassen
    - `aktiv`: mehr frühe Wetten zulassen, wenn der Nutzer regelmäßig nachsteuert
 
 Fehlende Strategieparameter auf die angegebenen Defaults setzen und knapp nennen, statt den Ablauf unnötig zu blockieren.
 
 Für exakte Gewichtungen und Qualitätsgrenzen [references/strategy-profiles.md](references/strategy-profiles.md) vollständig lesen.
+
+Die Kombination `verlässlich` und `gering` ist das konservative Kollegenprofil: Der Kader soll über einen möglichst sicheren, hochwertigen Kern funktionieren. Die Bank fängt einzelne Ausfälle mit günstigen Spielern ab, die realistische Einsatzminuten haben; sie muss den Kern weder preislich noch leistungsmäßig spiegeln.
 
 ## Arbeitsmodus bestimmen
 
@@ -74,7 +77,10 @@ Für exakte Gewichtungen und Qualitätsgrenzen [references/strategy-profiles.md]
 
 - Je Position etablierte Kandidaten, Neuzugänge, höherklassig erprobte Spieler, Jugendtalente und Rebound-Kandidaten aufnehmen.
 - Mindestens die realistischen Startelf- und Bankkandidaten prüfen; reine 0,05-/0,10-Füller nicht ohne belegbare Einsatzchance bevorzugen.
-- Vor dem finalen Lauf mindestens doppelt so viele Torhüter wie Torwartplätze sowie je drei zusätzliche Feldspieler über der jeweiligen Sollzahl aktuell annotieren. Bei den üblichen 3/7/7/5 sind das 6/10/10/8. Im Standardmodus zwei vollständige Torwartblöcke abdecken.
+- Vor dem finalen Lauf in jeder Position mindestens die doppelte tatsächliche Sollzahl aktuell annotieren. Bei den üblichen 3/7/7/5 sind das 6/14/14/10. Im Standardmodus mindestens zwei vollständige Torwartblöcke abdecken.
+- In Abwehr, Mittelfeld und Sturm jeweils mindestens zwei auswählbare Leistungsreferenzen mit `benchmark: true` annotieren. Diese Spieler bilden den Vergleichsmaßstab für Preis, Sicherheit und erwartbare Leistung; sie müssen nicht automatisch gekauft werden.
+- Jeden vom Nutzer genannten Spieler vollständig und mit `benchmark: true` annotieren, auch wenn der Preis oder die automatische Shortlist gegen ihn spricht. Bestätigt nicht auswählbare Spieler mit Quellen belegen und über `exclude: true` kennzeichnen, statt sie still wegzulassen.
+- Premiumsignale ligaweit ausdrücklich suchen und annotieren: mehrjährige Spitzenleistung, wiederholbare Standards oder Schlüsselrolle, Kapitänsverantwortung, frühere Torjägerkrone, außergewöhnliche individuelle Kreativ- oder Abschlussqualität sowie bereits höherklassig bestätigte Leistung. Aktuelle Verletzungs-, Transfer- oder Rollenrisiken können gegen eine Auswahl sprechen, aber nicht gegen die Aufnahme in den Vergleich.
 - Vorjahresausreißer mit Regression, gegnerischer Anpassung und möglichem Rollenverlust belasten.
 - Mehrjährige Konstanz, Standards, Kapitänsrolle und trainerbestätigte Schlüsselrollen als wiederholbare Signale aufwerten.
 - Transfers als Rollenreset behandeln. Qualität des Spielers und Passung zum neuen Team getrennt von seiner alten Produktion bewerten.
@@ -84,33 +90,55 @@ Für exakte Gewichtungen und Qualitätsgrenzen [references/strategy-profiles.md]
 
 - Alle hier genannten Skript- und Referenzpfade relativ zum Verzeichnis dieses `SKILL.md` auflösen.
 - Komponenten und Risiken nach [references/annotation-schema.md](references/annotation-schema.md) erfassen.
+- Für jeden final geprüften Kandidaten zusätzlich `reliable_anchor`, `anchor_reason`, `benchmark` und belastbare `evidence` erfassen.
 - `scripts/optimize_squad.py` mit CSV, Profil, Variabilität, Betreuungsaufwand, Budget und Annotationen ausführen.
 - Im finalen Lauf werden ausschließlich vollständig aktuell annotierte Spieler berücksichtigt.
 - Einen finalen Kader nicht aus einem unannotierten Lauf ableiten. `--allow-unannotated` ausschließlich für technische Smoke-Tests verwenden und dessen Ergebnis nie als Empfehlung oder Browser-Zielkader präsentieren.
-- Den ausgegebenen Seed festhalten. Derselbe Seed reproduziert denselben Kader; ein neuer Seed erzeugt eine kontrollierte Alternative.
+- Vor dem finalen Lauf einen zufälligen, nicht personenbezogenen Seed erzeugen, sofern der Nutzer keinen vorgibt, und ihn ausdrücklich mit `--seed` übergeben. Den Seed bereits vor beziehungsweise beim Start festhalten. Derselbe Seed reproduziert denselben Kader; ein neuer Seed erzeugt eine kontrollierte Alternative.
+- Meldet die Ausführungsumgebung einen noch laufenden Optimiererprozess, denselben Prozess weiter abwarten statt einen zweiten Lauf zu starten. Nur nach bestätigtem Abbruch mit demselben Seed erneut ausführen.
 - Wenn Kader anderer Kollegen als JSON vorliegen, diese mit `--avoid-roster` übergeben. Dadurch wird Überschneidung innerhalb des Qualitätskorridors zusätzlich reduziert.
 
 Beispiel:
 
 ```text
-<python-3-command> scripts/optimize_squad.py --players <players-csv-path> --annotations <annotations-json-path> --profile balanced --variation medium --maintenance low --budget 10000000 --goalkeepers 3 --defenders 7 --midfielders 7 --forwards 5 --format json
+<python-3-command> scripts/optimize_squad.py --players <players-csv-path> --annotations <annotations-json-path> --profile reliable --variation medium --maintenance low --min-reliable-anchors 3 --seed <seed> --budget 10000000 --goalkeepers 3 --defenders 7 --midfielders 7 --forwards 5 --format json
 ```
 
-Die vier Positionsargumente immer mit den zuvor von der sichtbaren Kicker-Seite erfassten Werten belegen; die gezeigten Zahlen sind nur das übliche Beispiel.
+Die vier Positionsargumente immer mit den zuvor von der sichtbaren Kicker-Seite erfassten Werten belegen; die gezeigten Zahlen sind nur das übliche Beispiel. Für das Profil `verlässlich` mindestens drei `reliable_anchor` verlangen. Ist das mit aktuell auswählbaren Spielern nicht möglich, den Pool erweitern oder die Einschränkung offen erklären; die Mindestzahl nicht still absenken.
 
 ### 4. Portfolio prüfen
 
 - Kader nicht nur nach Summenscore beurteilen:
-  - ausreichend wahrscheinliche Starter und belastbare Ersatzspieler
+  - einen klaren, hochwertigen Kern aus wahrscheinlichen Startern
+  - bei `verlässlich` mindestens drei aktuell belastbare `reliable_anchor`
   - keine unnötige Häufung desselben Teamrisikos
   - wenige teure Spieler nur bei wiederholbarer Rolle
-  - bei geringem Betreuungsaufwand keine Bank voller Projektspieler
+  - bei geringem Betreuungsaufwand die Qualität auf den Kern konzentrieren und teure Doppelbesetzungen vermeiden
+  - günstige Bankspieler nur mit belegbarer Einsatzchance wählen; keine Bank voller unklarer Entwicklungsprojekte
   - Transfergefahr vor Saisonstart gesondert prüfen
+- Für `verlässlich` plus `gering` standardmäßig 11 bis 14 Kernspieler, wenige günstige direkte Vertreter und anschließend preiswerte einsatzfähige Ergänzungen bilden. Eine gleichmäßig teure Bank ist kein Qualitätsmerkmal und erschwert die Finanzierung von Ausnahmespielern.
+- Variabilität darf einzelne Kernentscheidungen und günstige Ergänzungen verändern, aber nicht die Kaderarchitektur in 22 gleichwertige Alternativen auflösen.
 - Variabilität nur innerhalb der in `strategy-profiles.md` festgelegten Qualitätsgrenze zulassen.
 - Bleiben mehr als 10 Prozent des Budgets ungenutzt, den Kandidatenpool über mehrere Preisklassen erweitern und neu rechnen. Einen solchen Rohkader nicht direkt umsetzen.
 - Abweichungen vom Optimierer begründen und Budget erneut berechnen.
 
-### 5. In Chrome umsetzen
+### 5. Auswahl begründen und gegenprüfen
+
+Vor jeder Änderung in Chrome einen vollständigen Ergebnisentwurf erstellen und prüfen. Kann eine Auswahl oder ein bewusst ausgelassener Premiumspieler nicht konkret erklärt werden, Annotationen und Kandidatenpool verbessern und erneut rechnen. Erst nach bestandener Prüfung den Kader im Browser verändern.
+
+Der Ergebnisentwurf muss enthalten:
+
+1. Den Geltungsbereich korrekt benennen: „bestes Ergebnis innerhalb des aktuell recherchierten und annotierten Kandidatenpools“. Nicht ohne diese Einschränkung von einem „mathematischen Optimum“ sprechen.
+2. Kern, direkte Vertreter und günstige Ergänzungen klar trennen. Für jeden Kernspieler einen individuellen sportlichen und wirtschaftlichen Auswahlgrund nennen; auch bei jedem Bankspieler die konkrete Funktion wie Einsatzsicherheit, Positionsabdeckung oder Preisvorteil nennen.
+3. Für Abwehr, Mittelfeld und Sturm jeweils mindestens zwei wichtige nicht gewählte Kandidaten als Near-Misses vergleichen. Zusätzlich jeden ausgelassenen Spieler mit `benchmark: true` aufführen.
+4. Für jeden Near-Miss die vom Optimierer ausgegebene `counterfactual`-Variante verwenden: das tatsächlich verdrängte Spielerpaket, die Budgetänderung und den Utility-Abstand nennen. Danach knapp erklären, welcher Rollen-, Fitness- oder Risikofaktor zusätzlich ausschlaggebend war.
+5. Die Budgetarchitektur erklären: wofür Premiumbudget eingesetzt wird, an welchen Bankplätzen bewusst gespart wird und welche Stärke dieser Tausch finanziert.
+6. Spielerbezogene Aussagen mit den in `evidence` erfassten aktuellen Quellen belegen. Allgemeine Vereins- oder Trainingslagerlinks ersetzen keine Belege für Rolle, Fitness, Transferlage oder Auswahlentscheidung eines konkreten Spielers.
+7. Verbleibende Risiken und den sinnvollen nächsten Kontrollzeitpunkt nennen.
+
+Generische drei bis fünf Gründe für den Gesamtkader genügen diesem Vertrag nicht.
+
+### 6. In Chrome umsetzen
 
 - Vor tatsächlichen Änderungen [references/browser-workflow.md](references/browser-workflow.md) vollständig lesen.
 - Erst Verkäufe, dann Käufe einzeln und positionsweise durchführen.
@@ -120,11 +148,4 @@ Die vier Positionsargumente immer mit den zuvor von der sichtbaren Kicker-Seite 
 
 ## Ergebnis
 
-Kompakt berichten:
-
-1. gewähltes Profil, Variabilität, Betreuungsaufwand und Seed
-2. Kadergröße und Restbudget
-3. wichtigste Käufe/Verkäufe oder vollständiger Kader, wenn verlangt
-4. drei bis fünf zentrale Begründungen
-5. verbleibende Unsicherheiten wie offene Transfers oder Verletzungen
-6. bei ausgeführter Änderung ausdrücklich bestätigen, dass der Kader in Chrome verifiziert wurde
+Den unter „Auswahl begründen und gegenprüfen“ vorbereiteten Ergebnisentwurf vollständig liefern und um Profil, Variabilität, Betreuungsaufwand, Seed, Kadergröße, Restbudget und den vollständigen Kader ergänzen. Bei ausgeführter Änderung ausdrücklich bestätigen, dass Namen, Positionen und Budget anschließend in Chrome verifiziert wurden.
