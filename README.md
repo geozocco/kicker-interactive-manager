@@ -23,7 +23,7 @@ In Codex anschließend auf **Plugin installieren** klicken, Codex neu starten un
 Git, Python und das Codex-CLI werden nicht benötigt. Diese Zeile vollständig in Terminal einfügen:
 
 ```bash
-INSTALLER="$(mktemp /tmp/install-kicker-interactive-manager.XXXXXX)"; curl -fsSL "https://raw.githubusercontent.com/geozocco/kicker-interactive-manager/main/install-macos.sh" -o "$INSTALLER"; /bin/bash "$INSTALLER"; rm -f "$INSTALLER"
+INSTALLER="$(mktemp /tmp/install-kicker-interactive-manager.XXXXXX)"; curl -fsSL "https://raw.githubusercontent.com/geozocco/kicker-interactive-manager/e9d5a81b442dd48cfd54d93d007c59dee5e67f36/install-macos.sh" -o "$INSTALLER"; /bin/bash "$INSTALLER"; rm -f "$INSTALLER"
 ```
 
 Der Installer lädt und prüft das Marketplace mit macOS-Bordmitteln, installiert es ohne Administratorrechte und öffnet anschließend Codex. Dort auf **Plugin installieren** klicken, Codex neu starten und einen neuen Task öffnen.
