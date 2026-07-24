@@ -28,7 +28,7 @@ try {
             }
     )
     if ($sourceCandidates.Count -ne 1) {
-        throw "Das heruntergeladene Archiv enthält kein eindeutiges Codex-Marketplace."
+        throw "Das heruntergeladene Archiv enthaelt kein eindeutiges Codex-Marketplace."
     }
 
     $sourceRoot = $sourceCandidates[0].FullName
@@ -44,7 +44,7 @@ try {
     }
     $matchingPlugins = @($marketplace.plugins | Where-Object { $_.name -eq $pluginName })
     if ($matchingPlugins.Count -ne 1) {
-        throw "Das Marketplace enthält das erwartete Plugin nicht eindeutig."
+        throw "Das Marketplace enthaelt das erwartete Plugin nicht eindeutig."
     }
 
     $installParent = Split-Path -Parent $InstallRoot
@@ -81,14 +81,14 @@ try {
         Write-Host "Codex-Link: $installLink"
     }
     else {
-        Write-Host "Öffne jetzt den Installationsdialog in Codex ..."
+        Write-Host "Oeffne jetzt den Installationsdialog in Codex ..."
         try {
             Start-Process $installLink
             Write-Host "In Codex bitte auf 'Plugin installieren' klicken."
         }
         catch {
-            Write-Warning "Codex konnte nicht automatisch geöffnet werden."
-            Write-Host "Diesen Link lokal auf diesem Rechner öffnen:"
+            Write-Warning "Codex konnte nicht automatisch geoeffnet werden."
+            Write-Host "Diesen Link lokal auf diesem Rechner oeffnen:"
             Write-Host $installLink
         }
     }
