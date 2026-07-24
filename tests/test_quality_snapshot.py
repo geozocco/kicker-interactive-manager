@@ -36,6 +36,17 @@ def annotation(position: str, *, anchor: bool = False) -> dict:
         "reliable_anchor": anchor,
         "anchor_reason": "Two proven seasons" if anchor else "",
         "benchmark": False,
+        "history_summary": {
+            "mapping_status": "verified",
+            "confidence": "high",
+            "transfermarkt_player_id": 123,
+            "profile_url": (
+                "https://www.transfermarkt.co.uk/example/profil/spieler/123"
+            ),
+            "proven_seasons": 2,
+            "comparable_minutes": 3000.0,
+            "level_adjusted_minutes": 3200.0,
+        },
         "evidence": [
             {
                 "claim": "Current role",
@@ -55,12 +66,14 @@ def payload(now: datetime) -> dict:
         "season": "2026/27",
         "market_sha256": "market",
         "news_sha256": "news",
+        "history_sha256": "history",
         "model_version": "test-v1",
         "requirements": {
             "candidate_count": 3,
             "anchor_count": 2,
             "attacking_anchor_count": 1,
             "goalkeeper_block_count": 0,
+            "history_resolved_percent": 100,
         },
         "annotations": {
             "d1": annotation("DEFENDER", anchor=True),

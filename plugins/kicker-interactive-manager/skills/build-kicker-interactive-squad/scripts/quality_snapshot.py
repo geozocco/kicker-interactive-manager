@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 COMPONENTS = {
     "confirmed_performance",
     "minutes",
@@ -113,6 +113,7 @@ def validate_snapshot(
         "season",
         "market_sha256",
         "news_sha256",
+        "history_sha256",
         "model_version",
     ):
         if not str(payload.get(field_name, "")).strip():
@@ -126,6 +127,7 @@ def validate_snapshot(
         )
     anchor_count = 0
     attacking_anchor_count = 0
+    history_resolved_count = 0
     goalkeepers_by_club: dict[str, int] = {}
     for player_id, annotation in annotations.items():
         if not str(player_id).strip() or not isinstance(annotation, dict):
@@ -152,6 +154,49 @@ def validate_snapshot(
             raise QualitySnapshotError(
                 f"quality benchmark flag is invalid for {player_id}"
             )
+        history_summary = annotation.get("history_summary")
+        if not isinstance(history_summary, dict):
+            raise QualitySnapshotError(
+                f"quality history summary is missing for {player_id}"
+            )
+        mapping_status = str(history_summary.get("mapping_status", ""))
+        if mapping_status not in {
+            "verified",
+            "probable",
+            "unmatched",
+            "ambiguous",
+        }:
+            raise QualitySnapshotError(
+                f"quality history mapping status is invalid for {player_id}"
+            )
+        if mapping_status in {"verified", "probable"}:
+            transfermarkt_id = history_summary.get("transfermarkt_player_id")
+            if (
+                isinstance(transfermarkt_id, bool)
+                or not isinstance(transfermarkt_id, int)
+                or transfermarkt_id <= 0
+                or not str(history_summary.get("profile_url", "")).startswith(
+                    "https://"
+                )
+            ):
+                raise QualitySnapshotError(
+                    f"quality history identity is invalid for {player_id}"
+                )
+            history_resolved_count += 1
+        for field_name in (
+            "proven_seasons",
+            "comparable_minutes",
+            "level_adjusted_minutes",
+        ):
+            value = history_summary.get(field_name)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or float(value) < 0
+            ):
+                raise QualitySnapshotError(
+                    f"quality history {field_name} is invalid for {player_id}"
+                )
         proven_seasons = annotation.get("proven_seasons")
         if (
             isinstance(proven_seasons, bool)
@@ -196,6 +241,9 @@ def validate_snapshot(
         "attacking_anchor_count": attacking_anchor_count,
         "goalkeeper_block_count": sum(
             count >= 3 for count in goalkeepers_by_club.values()
+        ),
+        "history_resolved_percent": round(
+            100.0 * history_resolved_count / max(1, len(annotations))
         ),
     }
     for field_name, actual_value in actual.items():
@@ -319,6 +367,7 @@ def snapshot_audit(payload: dict[str, Any]) -> dict[str, Any]:
         "sha256": canonical_sha256(payload),
         "market_sha256": payload["market_sha256"],
         "news_sha256": payload["news_sha256"],
+        "history_sha256": payload["history_sha256"],
         "model_version": payload["model_version"],
         "candidate_count": len(annotations),
         "anchor_count": len(anchors),
@@ -338,6 +387,21 @@ def snapshot_audit(payload: dict[str, Any]) -> dict[str, Any]:
                 )
                 >= 3
             }
+        ),
+        "history_resolved_count": sum(
+            annotation["history_summary"]["mapping_status"]
+            in {"verified", "probable"}
+            for annotation in annotations.values()
+        ),
+        "history_resolved_percent": round(
+            100.0
+            * sum(
+                annotation["history_summary"]["mapping_status"]
+                in {"verified", "probable"}
+                for annotation in annotations.values()
+            )
+            / max(1, len(annotations)),
+            2,
         ),
         "requirements": payload["requirements"],
     }

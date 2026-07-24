@@ -11,5 +11,6 @@
   "minimum_candidates": 60,
   "minimum_anchors": 20,
   "minimum_attacking_anchors": 15,
-  "minimum_goalkeeper_blocks": 6
+  "minimum_goalkeeper_blocks": 6,
+  "minimum_history_resolved_percent": 75
 }

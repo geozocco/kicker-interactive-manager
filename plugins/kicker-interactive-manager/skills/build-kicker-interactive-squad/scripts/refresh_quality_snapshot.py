@@ -24,6 +24,10 @@ from market_snapshot import (
     canonical_sha256 as market_sha256,
     load_snapshot as load_market_snapshot,
 )
+from history_snapshot import (
+    canonical_sha256 as history_sha256,
+    load_snapshot as load_history_snapshot,
+)
 from news_snapshot import (
     canonical_sha256 as news_sha256,
     load_snapshot as load_news_snapshot,
@@ -32,7 +36,7 @@ from quality_snapshot import SCHEMA_VERSION, canonical_sha256, validate_snapshot
 from refresh_news_snapshot import api_sports_pages, optional_int
 
 
-MODEL_VERSION = "multi-season-v1"
+MODEL_VERSION = "multi-season-v2-transfermarkt-context"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
 
 
@@ -139,6 +143,7 @@ def candidate_rank(
     player: dict[str, Any],
     points_by_position: dict[str, list[float]],
     prices_by_position: dict[str, list[float]],
+    history_player: dict[str, Any],
 ) -> float:
     position = str(player["position"])
     points = float(player.get("points", 0.0))
@@ -147,12 +152,30 @@ def candidate_rank(
     price_pct = percentile(price, prices_by_position[position])
     grade = float(player.get("average_grade", 0.0))
     grade_score = 50.0 if grade <= 0 else max(0.0, min(100.0, (4.7 - grade) * 45))
-    return 0.58 * points_pct + 0.22 * grade_score + 0.20 * (100 - price_pct)
+    history_score = float(
+        history_player.get("career", {}).get("confirmed_score", 0)
+    )
+    mapping_status = history_player.get("mapping", {}).get("status")
+    history_weight = (
+        1.0
+        if mapping_status == "verified"
+        else 0.65
+        if mapping_status == "probable"
+        else 0.0
+    )
+    historical_signal = 45.0 + history_weight * (history_score - 45.0)
+    return (
+        0.32 * points_pct
+        + 0.17 * grade_score
+        + 0.16 * (100 - price_pct)
+        + 0.35 * historical_signal
+    )
 
 
 def select_candidates(
     market_payload: dict[str, Any],
     news_payload: dict[str, Any],
+    history_payload: dict[str, Any],
     quotas: dict[str, int],
 ) -> list[tuple[dict[str, Any], str, dict[str, Any]]]:
     market_players = available_market_players(market_payload)
@@ -181,9 +204,21 @@ def select_candidates(
         if match is None:
             continue
         news_id, news_player = match
+        history_player = history_payload["players"].get(
+            str(player["id"]),
+            {
+                "mapping": {"status": "unmatched"},
+                "career": {"confirmed_score": 0, "proven_seasons": 0},
+            },
+        )
         ranked[str(player["position"])].append(
             (
-                candidate_rank(player, points_by_position, prices_by_position),
+                candidate_rank(
+                    player,
+                    points_by_position,
+                    prices_by_position,
+                    history_player,
+                ),
                 player,
                 news_id,
                 news_player,
@@ -243,6 +278,20 @@ def select_candidates(
             *premium,
             *value_depth[: max(0, quotas[position] - len(premium))],
         ]
+        diversified_ids = {str(item[1]["id"]) for item in diversified}
+        historically_proven = [
+            item
+            for item in candidates
+            if int(
+                history_payload["players"]
+                .get(str(item[1]["id"]), {})
+                .get("career", {})
+                .get("proven_seasons", 0)
+            )
+            >= 2
+            and str(item[1]["id"]) not in diversified_ids
+        ]
+        diversified.extend(historically_proven)
         selected.extend(
             (player, news_id, news_player)
             for _, player, news_id, news_player in diversified
@@ -358,6 +407,7 @@ def build_annotation(
     news_id: str,
     news_player: dict[str, Any],
     histories: list[dict[str, Any]],
+    history_player: dict[str, Any],
     *,
     competition: str,
     points_pct: float,
@@ -367,7 +417,9 @@ def build_annotation(
     position = str(market_player["position"])
     consensus = news_player.get("consensus", {})
     latest = histories[0] if histories else {}
-    proven_seasons = sum(season_is_proven(position, stats) for stats in histories)
+    api_proven_seasons = sum(
+        season_is_proven(position, stats) for stats in histories
+    )
     career_appearances = sum(int(stats["appearances"]) for stats in histories)
     career_minutes = sum(int(stats["minutes"]) for stats in histories)
     contributions = sum(
@@ -383,23 +435,72 @@ def build_annotation(
         if ratings
         else 45.0
     )
-    confirmed = clamp(
+    api_confirmed = clamp(
         30
-        + 18 * proven_seasons
+        + 18 * api_proven_seasons
         + 0.20 * points_pct
         + 0.16 * rating_score
         + min(12, career_appearances / 5)
     )
-    minutes = clamp(
+    api_minutes = clamp(
         42
         + min(30, numeric(latest.get("minutes")) / 55)
         + min(18, career_minutes / 180)
     )
-    role = clamp(
+    api_role = clamp(
         48
         + min(22, numeric(latest.get("lineups")) * 1.4)
         + min(16, contributions * (1.5 if position in {"MIDFIELDER", "FORWARD"} else 0.5))
     )
+    history_mapping = history_player.get(
+        "mapping",
+        {"status": "unmatched", "confidence": "none"},
+    )
+    history_status = str(history_mapping.get("status", "unmatched"))
+    history_confidence = (
+        1.0
+        if history_status == "verified"
+        else 0.65
+        if history_status == "probable"
+        else 0.0
+    )
+    history_career = history_player.get("career", {})
+    history_proven_seasons = int(
+        history_career.get("proven_seasons", 0)
+    )
+    history_confirmed = float(
+        history_career.get("confirmed_score", 0)
+    )
+    history_minutes = float(
+        history_career.get("recent_minutes_score", 0)
+    )
+    history_role = float(history_career.get("role_score", 0))
+    if history_confidence > 0:
+        confirmed = clamp(
+            history_confidence
+            * (
+                0.58 * history_confirmed
+                + 0.22 * api_confirmed
+                + 0.20 * points_pct
+            )
+            + (1 - history_confidence) * api_confirmed
+        )
+        minutes = clamp(
+            history_confidence
+            * (0.48 * history_minutes + 0.52 * api_minutes)
+            + (1 - history_confidence) * api_minutes
+        )
+        role = clamp(
+            history_confidence
+            * (0.45 * history_role + 0.55 * api_role)
+            + (1 - history_confidence) * api_role
+        )
+        proven_seasons = history_proven_seasons
+    else:
+        confirmed = api_confirmed
+        minutes = api_minutes
+        role = api_role
+        proven_seasons = api_proven_seasons
     transfer_risk = clamp(consensus.get("transfer", 0), 0)
     injury_risk = clamp(consensus.get("injury", 0), 0)
     rotation_risk = clamp(consensus.get("rotation", 0), 0)
@@ -435,6 +536,8 @@ def build_annotation(
     }
     reliable_anchor = (
         position != "GOALKEEPER"
+        and history_confidence > 0
+        and history_proven_seasons >= 2
         and proven_seasons >= 2
         and confirmed >= 72
         and minutes >= 70
@@ -457,7 +560,7 @@ def build_annotation(
             "checked_at": generated_at,
         },
         {
-            "claim": "Mehrjährige Einsatz-, Bewertungs- und Scorerhistorie",
+            "claim": "Ergänzende mehrjährige Einsatz-, Bewertungs- und Scorerhistorie",
             "source_url": (
                 "https://v3.football.api-sports.io/players"
                 f"?id={provider_id}"
@@ -473,6 +576,36 @@ def build_annotation(
             "checked_at": generated_at,
         },
     ]
+    profile_url = str(history_mapping.get("profile_url", ""))
+    if history_confidence > 0 and profile_url.startswith("https://"):
+        evidence.insert(
+            1,
+            {
+                "claim": (
+                    "Ligakontextualisierte historische Einsätze, Minuten "
+                    "und Scorer über bis zu acht Spielzeiten"
+                ),
+                "source_url": profile_url,
+                "checked_at": generated_at,
+            },
+        )
+    history_summary = {
+        "mapping_status": history_status,
+        "confidence": str(history_mapping.get("confidence", "none")),
+        "transfermarkt_player_id": history_mapping.get(
+            "transfermarkt_player_id"
+        ),
+        "profile_url": profile_url or None,
+        "proven_seasons": history_proven_seasons,
+        "comparable_minutes": round(
+            float(history_career.get("comparable_minutes", 0)),
+            1,
+        ),
+        "level_adjusted_minutes": round(
+            float(history_career.get("level_adjusted_minutes", 0)),
+            1,
+        ),
+    }
     return {
         "position": position,
         "club": str(market_player["club"]),
@@ -488,18 +621,22 @@ def build_annotation(
         ),
         "benchmark": False,
         "note": (
-            f"Zentraler Mehrjahres-Check: {career_appearances} Einsätze, "
-            f"{career_minutes} Minuten, {contributions} Tore/Assists."
+            f"Mehrjahres-Check: {history_proven_seasons} im Zielniveau "
+            "bestätigte Spielzeiten; "
+            f"{int(history_career.get('comparable_minutes', 0))} Minuten "
+            "auf vergleichbarem oder höherem Ligastand."
         ),
         "evidence": evidence,
         "provider_news_id": news_id,
-        "history": histories,
+        "api_sports_history": histories,
+        "history_summary": history_summary,
     }
 
 
 def generate_snapshot(
     market_payload: dict[str, Any],
     news_payload: dict[str, Any],
+    history_payload: dict[str, Any],
     config: dict[str, Any],
     *,
     token: str,
@@ -510,11 +647,22 @@ def generate_snapshot(
         raise RuntimeError("market and news competition do not match")
     if market_payload["season"] != news_payload["season"]:
         raise RuntimeError("market and news season do not match")
+    if market_payload["competition"] != history_payload["competition"]:
+        raise RuntimeError("market and history competition do not match")
+    if market_payload["season"] != history_payload["season"]:
+        raise RuntimeError("market and history season do not match")
+    if market_sha256(market_payload) != history_payload["market_sha256"]:
+        raise RuntimeError("history snapshot does not belong to the market")
     quotas = {
         position: int(config["candidate_quotas"][position])
         for position in POSITIONS
     }
-    candidates = select_candidates(market_payload, news_payload, quotas)
+    candidates = select_candidates(
+        market_payload,
+        news_payload,
+        history_payload,
+        quotas,
+    )
     minimum_candidates = int(config["minimum_candidates"])
     if len(candidates) < minimum_candidates:
         raise RuntimeError(
@@ -569,6 +717,16 @@ def generate_snapshot(
             news_id,
             news_player,
             histories,
+            history_payload["players"].get(
+                str(market_player["id"]),
+                {
+                    "mapping": {
+                        "status": "unmatched",
+                        "confidence": "none",
+                    },
+                    "career": {},
+                },
+            ),
             competition=str(market_payload["competition"]),
             points_pct=percentile(
                 float(market_player.get("points", 0.0)),
@@ -606,6 +764,7 @@ def generate_snapshot(
         "season": market_payload["season"],
         "market_sha256": market_sha256(market_payload),
         "news_sha256": news_sha256(news_payload),
+        "history_sha256": history_sha256(history_payload),
         "model_version": MODEL_VERSION,
         "requirements": {
             "candidate_count": int(config["minimum_candidates"]),
@@ -613,6 +772,9 @@ def generate_snapshot(
             "attacking_anchor_count": int(config["minimum_attacking_anchors"]),
             "goalkeeper_block_count": int(
                 config["minimum_goalkeeper_blocks"]
+            ),
+            "history_resolved_percent": int(
+                config["minimum_history_resolved_percent"]
             ),
         },
         "annotations": annotations,
@@ -625,6 +787,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--market", required=True)
     parser.add_argument("--news", required=True)
+    parser.add_argument("--history", required=True)
     parser.add_argument("--mapping", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--ttl-hours", type=int, default=18)
@@ -641,9 +804,11 @@ def main() -> int:
     config = json.loads(args.mapping.read_text(encoding="utf-8"))
     market_payload = load_market_snapshot(args.market)
     news_payload = load_news_snapshot(args.news)
+    history_payload = load_history_snapshot(args.history)
     payload = generate_snapshot(
         market_payload,
         news_payload,
+        history_payload,
         config,
         token=token,
         request_delay=args.request_delay,

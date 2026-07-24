@@ -2,7 +2,7 @@
 
 ## Zweck und Grenze
 
-Für 2. Bundesliga und 3. Liga 2026/27 einen gemeinsamen, nur lesbaren Marktbestand und einen getrennten Qualitätsbestand verwenden. Der Markt enthält ausschließlich öffentliche Kicker-Fakten. Der Qualitätsbestand enthält breit recherchierte, reproduzierbare Mehrjahres-, Rollen-, Fitness- und Transfereinschätzungen. Persönliche Präferenzen, lokale Variantenkennungen, Kollegenkader und Kaderbelegungen niemals zentral speichern.
+Für 2. Bundesliga und 3. Liga 2026/27 einen gemeinsamen, nur lesbaren Marktbestand, einen getrennten Transfermarkt-Historienbestand und einen Qualitätsbestand verwenden. Der Markt enthält ausschließlich öffentliche Kicker-Fakten. Die Historie enthält normalisierte öffentliche Transfermarkt-Einsatzdaten. Der Qualitätsbestand enthält breit recherchierte, reproduzierbare Mehrjahres-, Rollen-, Fitness- und Transfereinschätzungen. Persönliche Präferenzen, lokale Variantenkennungen, Kollegenkader und Kaderbelegungen niemals zentral speichern.
 
 Der gemeinsame Marktbestand beschleunigt und vereinheitlicht die Recherche. Er garantiert keine kollisionsfreien Kader bei unabhängig gestarteten Kollegen. Überschneidungsfreie Ankerkerne nur über ein gemeinsam erzeugtes Gruppenportfolio koordinieren.
 
@@ -13,9 +13,15 @@ https://geozocco.github.io/kicker-interactive-manager/v1/market/2-bundesliga.jso
 https://geozocco.github.io/kicker-interactive-manager/v1/market/3-liga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/quality/2-bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/quality/3-liga.json
+https://geozocco.github.io/kicker-interactive-manager/v1/history/2-bundesliga.json
+https://geozocco.github.io/kicker-interactive-manager/v1/history/3-liga.json
 ```
 
-Der Workflow `.github/workflows/update-news-feed.yml` aktualisiert Markt-, News- und Qualitäts-Snapshots viermal täglich. Die Qualitätskonfigurationen unter `config/quality/` verlangen je Liga mindestens 60 vollständig bewertete Kandidaten, 20 verlässliche Anker, 15 offensive Anker und sechs vollständige Torwartblöcke. Spieler werden algorithmisch aus dem gesamten Markt ausgewählt; namentliche Beispiele oder frühere Nutzerprompts erhalten keinen Bonus.
+Der Workflow `.github/workflows/update-news-feed.yml` aktualisiert Markt-, News- und Qualitäts-Snapshots viermal täglich. Transfermarkt-Kaderzuordnungen werden dabei gegen den aktuellen Markt erneuert; teure Performance-Abrufe werden normalerweise sechs Tage wiederverwendet und anschließend zentral aktualisiert. Die Qualitätskonfigurationen unter `config/quality/` verlangen je Liga mindestens 60 vollständig bewertete Kandidaten, 20 verlässliche Anker, 15 offensive Anker, sechs vollständige Torwartblöcke und mindestens 75 Prozent aufgelöste Transfermarkt-Historien. Spieler werden algorithmisch aus dem gesamten Markt ausgewählt; namentliche Beispiele oder frühere Nutzerprompts erhalten keinen Bonus.
+
+Jeder Kicker-Spieler steht im Historienbestand. Die Zuordnung trägt ausdrücklich `verified`, `probable`, `unmatched` oder `ambiguous`. Nur `verified` und vorsichtiger gewichtete `probable`-Zuordnungen wirken auf den Score. Unklare Identitäten und technisch nicht klassifizierte Wettbewerbe werden nicht negativ interpretiert und erhalten keinen erfundenen Leistungsfaktor.
+
+Die Wettbewerbsfaktoren unter `config/history/competition-strength.json` verwenden die Bundesliga als Referenz `1,00`, die 2. Bundesliga mit `0,80` und die 3. Liga mit `0,64`. Eine Spielzeit gilt nur dann als bestätigt, wenn genügend Ligaminuten auf vergleichbarem oder höherem Niveau vorliegen. Pokal, Freundschaft und Jugend werden getrennt gespeichert und ersetzen keine Senior-Ligasaison. Die veröffentlichten Daten enthalten nur verdichtete Fakten und Quellenlinks, keine vollständigen Transfermarkt-Seiten.
 
 ## Sicherheitsvertrag
 
@@ -27,7 +33,8 @@ Das Snapshot nur verwenden, wenn:
 - jede Spieler-ID eindeutig ist,
 - Position und positiver Marktwert gültig sind,
 - die Anzahl unterschiedlicher Vereine exakt zur Konfiguration passt.
-- der Qualitätsbestand exakt zur Prüfsumme des aktuellen Markt- und News-Bestands gehört,
+- der Historienbestand jeden Spieler des aktuellen Markts mit einem expliziten Zuordnungsstatus enthält,
+- der Qualitätsbestand exakt zur Prüfsumme des aktuellen Markt-, News- und Historienbestands gehört,
 - alle acht Qualitätskomponenten und fünf Risiken vollständig sind,
 - die ligaweiten Mindestzahlen für Kandidaten und Anker erreicht werden.
 
@@ -41,7 +48,7 @@ Für unterstützte Ligen lädt der Optimierer den Marktfeed anhand von Wettbewer
 <python-3-command> scripts/optimize_squad.py --competition "2. Bundesliga" --season "2026/27" --require-market-snapshot --require-quality-snapshot ...
 ```
 
-`market_audit` muss frisch sein. `quality_audit` muss mindestens 60 Kandidaten, 20 Anker, 15 offensive Anker und sechs Torwartblöcke ausweisen und dieselbe Markt-Prüfsumme tragen.
+`market_audit` muss frisch sein. `quality_audit` muss mindestens 60 Kandidaten, 20 Anker, 15 offensive Anker, sechs Torwartblöcke und die geforderte Transfermarkt-Abdeckung ausweisen sowie dieselben Markt-, News- und Historien-Prüfsummen tragen.
 
 Der Qualitätsbestand liefert die zentralen Annotationen. Auf dem jeweiligen Rechner recherchierte Annotationen dürfen sie gezielt überschreiben; Kicker-ID, Verein, Position und Preis stammen weiterhin aus dem validierten Marktbestand.
 

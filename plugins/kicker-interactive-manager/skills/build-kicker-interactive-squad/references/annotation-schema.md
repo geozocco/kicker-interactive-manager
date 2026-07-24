@@ -52,8 +52,8 @@ Teilannotationen dürfen als vorläufige Arbeitsnotiz in einem Recherche- oder S
 ## Bewertungsregeln
 
 - Nur Werte zwischen 0 und 100 verwenden.
-- `confirmed_performance` nicht mit Vorjahrespunkten gleichsetzen. Andere Ligen, mehrere Saisons und individuelle Rolle einbeziehen.
-- `proven_seasons` zählt nur Spielzeiten mit belastbarer individueller Leistung auf vergleichbarem oder höherem Niveau. Eine frühere Torjägerkrone, mehrere zweistellige Scorersaisons oder jahrelang wiederholte Standards zählen auch dann, wenn die unmittelbar letzte Saison schwächer war.
+- `confirmed_performance` nicht mit Vorjahrespunkten gleichsetzen. Andere Ligen, mehrere Saisons und individuelle Rolle einbeziehen. Historische Transfermarkt-Minuten und Scorer nur mit dem im zentralen Historienbestand ausgewiesenen Wettbewerbsfaktor anrechnen.
+- `proven_seasons` zählt nur Spielzeiten mit belastbarer individueller Leistung auf vergleichbarem oder höherem Niveau. Eine frühere Torjägerkrone, mehrere zweistellige Scorersaisons oder jahrelang wiederholte Standards zählen auch dann, wenn die unmittelbar letzte Saison schwächer war. Produktion unterhalb des Zielniveaus erhöht weiterhin `upside` oder `value`, begründet aber allein keinen verlässlichen Anker.
 - Bei Neuzugängen `minutes`, `role`, `stability` und `unknown_role` neu bewerten.
 - Herausragende Jugendleistungen vor allem in `upside` erfassen; den Sprung in den Profibereich über `minutes` und `unknown_role` begrenzen.
 - Frühere Verletzungen getrennt bewerten: aktuelle Fitness in `fitness`, Rückfallwahrscheinlichkeit in `injury`.

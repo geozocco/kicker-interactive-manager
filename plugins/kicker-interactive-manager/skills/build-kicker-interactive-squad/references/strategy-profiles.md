@@ -61,6 +61,9 @@ Den Risikowert mit dem Faktor multiplizieren und vom Komponentenscore abziehen.
 - Eine Ausreißersaison: historischen Wert je nach Rolle und zugrunde liegender Qualität deutlich schrumpfen.
 - Wiederholbare Standards, Kapitänsrolle oder eine über Jahre identische Schlüsselrolle dürfen die Regression teilweise ausgleichen.
 - Nach einem Wechsel weder die alte Rolle fortschreiben noch pauschal alles verwerfen. Neue Konkurrenz, Traineridee und Preis entscheiden.
+- Historische Einsätze, Minuten und Scorer mit dem damaligen Wettbewerbsfaktor normalisieren. Bundesliga-Leistung wiegt höher als 2.-Bundesliga-Leistung, diese wiederum höher als 3.-Liga- oder Regionalliga-Leistung.
+- Eine Spielzeit zählt für `proven_seasons` nur, wenn ausreichende Minuten auf einem zur Zielliga vergleichbaren oder höheren Niveau belegt sind. Eine starke 3.-Liga-Saison ist daher ein wertvolles Potenzial- und Value-Signal für die 2. Bundesliga, aber noch keine voll bestätigte Zweitliga-Spielzeit.
+- Pokal-, Freundschafts- und Jugendspiele nicht als Ersatz für eine bestätigte Senior-Ligasaison verwenden. Nicht klassifizierte Wettbewerbe dokumentieren, aber nicht mit einem erfundenen Faktor bewerten.
 
 ## Betreuungsaufwand
 

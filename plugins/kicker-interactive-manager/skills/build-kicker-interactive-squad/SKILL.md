@@ -10,8 +10,8 @@ description: Plane, optimiere, bewerte und ändere Kader im kicker Managerspiel 
 - Ausschließlich die bereits angemeldete Chrome-Sitzung verwenden. Keine Passwörter, Cookies, Tokens oder Browser-Speicher lesen oder exportieren.
 - Vor jeder Browsersteuerung den verfügbaren Chrome-Control-Skill vollständig laden und dessen Interaktions- und Finalisierungsregeln befolgen.
 - Aktuelle Informationen zu Transfers, Verletzungen, Vorbereitung, Trainer und Rollen im Web verifizieren. Offizielle Vereins- und Ligaseiten bevorzugen.
-- Für die 2. Bundesliga und 3. Liga 2026/27 die im Optimierer hinterlegten zentralen Markt-, Qualitäts- und News-Feeds als erstes maschinenlesbares Gate verwenden. Lokale Feed-URLs dürfen diesen Standard für Tests oder einen internen Spiegel überschreiben. Der News-Feed ersetzt die gezielte Prüfung von Lücken, Konflikten und folgenreichen Meldungen in Primärquellen nicht.
-- Keine Vorjahrespunkte als Prognose behandeln. Wiederholbarkeit, Rolle, Einsatzwahrscheinlichkeit, Umfeld und Preis getrennt bewerten.
+- Für die 2. Bundesliga und 3. Liga 2026/27 die im Optimierer hinterlegten zentralen Markt-, Transfermarkt-Historien-, Qualitäts- und News-Feeds als erstes maschinenlesbares Gate verwenden. Der Qualitätsbestand ist nur gültig, wenn er zur aktuellen Historien-Prüfsumme gehört. Lokale Feed-URLs dürfen diesen Standard für Tests oder einen internen Spiegel überschreiben. Der News-Feed ersetzt die gezielte Prüfung von Lücken, Konflikten und folgenreichen Meldungen in Primärquellen nicht.
+- Keine Vorjahrespunkte als Prognose behandeln. Wiederholbarkeit, Rolle, Einsatzwahrscheinlichkeit, Umfeld und Preis getrennt bewerten. Historische Minuten und Scorer stets im Niveau der damaligen Liga bewerten; unterklassige Produktion nicht eins zu eins auf die Zielliga übertragen.
 - Berücksichtigen, dass nur die am Spieltag aufgestellte Elf Punkte sammelt. Reservequalität ist Absicherung und darf insbesondere bei geringem Betreuungsaufwand nicht genauso viel Budgetgewicht erhalten wie der wahrscheinliche Kern.
 - Nie „Alle verkaufen“ verwenden. Änderungen einzeln ausführen und nach jeder Phase Kadergröße, Positionen und Budget prüfen.
 
@@ -150,7 +150,7 @@ Wettbewerb, Saison und vier Positionsargumente immer mit den zuvor von der sicht
 - Transfergefahr vor Saisonstart gesondert prüfen
 - `news_audit` muss frisch sein, zum Wettbewerb und zur Saison passen und darf bei ausgewählten Spielern weder fehlende Provider-Zuordnungen noch offene Konflikte enthalten
 - `market_audit` muss frisch sein, zum Wettbewerb und zur Saison passen und die vollständige zentrale Spielerliste ausweisen
-- `quality_audit` muss frisch sein, dieselbe Markt-Prüfsumme tragen und die Mindestwerte von 60 Kandidaten, 20 Ankern, 15 offensiven Ankern und sechs Torwartblöcken erreichen
+- `quality_audit` muss frisch sein, dieselbe Markt-, News- und Historien-Prüfsumme tragen, mindestens 75 Prozent eindeutig oder mit hoher Plausibilität zugeordnete Transfermarkt-Historien ausweisen und die Mindestwerte von 60 Kandidaten, 20 Ankern, 15 offensiven Ankern und sechs Torwartblöcken erreichen
 - Für `verlässlich` plus `gering` standardmäßig 11 bis 14 Kernspieler, wenige günstige direkte Vertreter und anschließend preiswerte einsatzfähige Ergänzungen bilden. Eine gleichmäßig teure Bank ist kein Qualitätsmerkmal und erschwert die Finanzierung von Ausnahmespielern.
 - Für `verlässlich` plus `gering` müssen mindestens 70 Prozent des gesamten Kaderwerts in der stärksten legalen Startelf liegen. Ein niedrigerer Wert ist ein Abbruchgrund: Bank verbilligen, nachgewiesene Scorer und Kreativspieler finanzieren und neu rechnen.
 - Variabilität darf einzelne Kernentscheidungen und günstige Ergänzungen verändern, aber nicht die Kaderarchitektur in 22 gleichwertige Alternativen auflösen.
