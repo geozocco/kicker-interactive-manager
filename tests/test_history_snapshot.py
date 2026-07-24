@@ -32,6 +32,9 @@ def career(*, proven_seasons: int = 2) -> dict:
         "level_adjusted_minutes": 3900.0,
         "comparable_minutes": 3900.0,
         "proven_seasons": proven_seasons,
+        "youth_adjusted_minutes": 0.0,
+        "youth_adjusted_contributions": 0.0,
+        "youth_score": 0.0,
         "confirmed_score": 82.0,
         "recent_minutes_score": 78.0,
         "role_score": 74.0,
@@ -66,6 +69,8 @@ def resolved_player() -> dict:
                 "assists": 3,
                 "level_adjusted_minutes": 1950.0,
                 "comparable_minutes": 1950.0,
+                "youth_adjusted_minutes": 0.0,
+                "youth_adjusted_contributions": 0.0,
                 "proven": True,
                 "competitions": [
                     {

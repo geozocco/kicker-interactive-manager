@@ -69,7 +69,11 @@ def api_history() -> list[dict]:
     ]
 
 
-def transfermarkt_history(*, proven_seasons: int) -> dict:
+def transfermarkt_history(
+    *,
+    proven_seasons: int,
+    youth_score: float = 0,
+) -> dict:
     return {
         "mapping": {
             "status": "verified",
@@ -86,6 +90,9 @@ def transfermarkt_history(*, proven_seasons: int) -> dict:
             "role_score": 86.0,
             "comparable_minutes": 6200.0 if proven_seasons >= 2 else 0.0,
             "level_adjusted_minutes": 6500.0,
+            "youth_adjusted_minutes": 2400.0 if youth_score else 0.0,
+            "youth_adjusted_contributions": 22.0 if youth_score else 0.0,
+            "youth_score": youth_score,
         },
     }
 
@@ -143,6 +150,52 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             },
         )
         self.assertGreater(historically_proven, one_year_signal)
+
+    def test_youth_history_raises_upside_but_never_creates_anchor(self) -> None:
+        young_history = api_history()
+        for index, season in enumerate(young_history):
+            season["age"] = 20 - index
+        annotation = quality.build_annotation(
+            market_player(points=20),
+            "news-1",
+            news_player(),
+            young_history,
+            transfermarkt_history(
+                proven_seasons=0,
+                youth_score=92,
+            ),
+            competition="2. Bundesliga",
+            points_pct=15,
+            price_pct=20,
+            generated_at="2026-07-24T12:00:00Z",
+        )
+        self.assertGreaterEqual(annotation["components"]["upside"], 90)
+        self.assertFalse(annotation["reliable_anchor"])
+        self.assertEqual(0, annotation["proven_seasons"])
+        self.assertEqual(92, annotation["history_summary"]["youth_score"])
+
+    def test_candidate_rank_uses_strong_youth_signal_for_shortlisting(self) -> None:
+        points = {"FORWARD": [0, 50, 100, 150]}
+        prices = {"FORWARD": [400000, 800000, 1200000]}
+        youth_prospect = quality.candidate_rank(
+            market_player(points=20),
+            points,
+            prices,
+            transfermarkt_history(
+                proven_seasons=0,
+                youth_score=92,
+            ),
+        )
+        unresolved = quality.candidate_rank(
+            market_player(points=20),
+            points,
+            prices,
+            {
+                "mapping": {"status": "unmatched"},
+                "career": {"confirmed_score": 0, "youth_score": 0},
+            },
+        )
+        self.assertGreater(youth_prospect, unresolved)
 
 
 if __name__ == "__main__":

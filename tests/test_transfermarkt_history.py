@@ -176,6 +176,50 @@ class TransfermarktHistoryTests(unittest.TestCase):
         self.assertTrue(seasons[0]["proven"])
         self.assertEqual(1, career["proven_seasons"])
 
+    def test_austrian_and_swiss_top_flights_match_third_league_level(self) -> None:
+        for competition_id in ("A1", "CH1"):
+            with self.subTest(competition_id=competition_id):
+                second_target_seasons, second_target_career = (
+                    transfermarkt.aggregate_history(
+                        appearances(competition_id, season=2025),
+                        position="FORWARD",
+                        target_strength=0.8,
+                        strength_model=STRENGTH_MODEL,
+                        maximum_seasons=8,
+                    )
+                )
+                third_target_seasons, third_target_career = (
+                    transfermarkt.aggregate_history(
+                        appearances(competition_id, season=2025),
+                        position="FORWARD",
+                        target_strength=0.64,
+                        strength_model=STRENGTH_MODEL,
+                        maximum_seasons=8,
+                    )
+                )
+                self.assertFalse(second_target_seasons[0]["proven"])
+                self.assertEqual(0, second_target_career["proven_seasons"])
+                self.assertTrue(third_target_seasons[0]["proven"])
+                self.assertEqual(1, third_target_career["proven_seasons"])
+                self.assertEqual(
+                    1800.0,
+                    third_target_career["comparable_minutes"],
+                )
+
+    def test_youth_production_only_increases_upside_signal(self) -> None:
+        seasons, career = transfermarkt.aggregate_history(
+            appearances("19YL", season=2025),
+            position="FORWARD",
+            target_strength=0.8,
+            strength_model=STRENGTH_MODEL,
+            maximum_seasons=8,
+        )
+        self.assertFalse(seasons[0]["proven"])
+        self.assertEqual(0, career["proven_seasons"])
+        self.assertEqual(0.0, career["level_adjusted_minutes"])
+        self.assertGreater(career["youth_adjusted_minutes"], 0)
+        self.assertGreater(career["youth_score"], 50)
+
     def test_unrated_competition_is_recorded_without_score_credit(self) -> None:
         seasons, career = transfermarkt.aggregate_history(
             appearances("UNKNOWN", season=2025),

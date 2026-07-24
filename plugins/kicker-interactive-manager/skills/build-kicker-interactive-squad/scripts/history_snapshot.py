@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAPPING_STATUSES = {"verified", "probable", "unmatched", "ambiguous"}
 
 
@@ -139,6 +139,8 @@ def _validate_seasons(
             "assists",
             "level_adjusted_minutes",
             "comparable_minutes",
+            "youth_adjusted_minutes",
+            "youth_adjusted_contributions",
         ):
             _non_negative_number(
                 season.get(field_name),
@@ -264,6 +266,9 @@ def validate_snapshot(
             "level_adjusted_minutes",
             "comparable_minutes",
             "proven_seasons",
+            "youth_adjusted_minutes",
+            "youth_adjusted_contributions",
+            "youth_score",
             "confirmed_score",
             "recent_minutes_score",
             "role_score",
@@ -284,6 +289,10 @@ def validate_snapshot(
         if float(career["role_score"]) > 100:
             raise HistorySnapshotError(
                 f"history role_score is invalid for {player_id}"
+            )
+        if float(career["youth_score"]) > 100:
+            raise HistorySnapshotError(
+                f"history youth_score is invalid for {player_id}"
             )
         retrieved_at = player.get("retrieved_at")
         if status in {"verified", "probable"}:

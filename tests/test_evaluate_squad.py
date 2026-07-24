@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 
@@ -359,7 +359,9 @@ class SquadEvaluationCliTests(unittest.TestCase):
                     {
                         "claim": "Current role, fitness and transfer status checked",
                         "source_url": "https://example.com/current",
-                        "checked_at": date.today().isoformat(),
+                        "checked_at": (
+                            datetime.now(timezone.utc).date().isoformat()
+                        ),
                     }
                 ],
                 "exclude": False,

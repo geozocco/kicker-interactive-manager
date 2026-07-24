@@ -21,7 +21,9 @@ Der Workflow `.github/workflows/update-news-feed.yml` aktualisiert Markt-, News-
 
 Jeder Kicker-Spieler steht im Historienbestand. Die Zuordnung trägt ausdrücklich `verified`, `probable`, `unmatched` oder `ambiguous`. Nur `verified` und vorsichtiger gewichtete `probable`-Zuordnungen wirken auf den Score. Unklare Identitäten und technisch nicht klassifizierte Wettbewerbe werden nicht negativ interpretiert und erhalten keinen erfundenen Leistungsfaktor.
 
-Die Wettbewerbsfaktoren unter `config/history/competition-strength.json` verwenden die Bundesliga als Referenz `1,00`, die 2. Bundesliga mit `0,80` und die 3. Liga mit `0,64`. Eine Spielzeit gilt nur dann als bestätigt, wenn genügend Ligaminuten auf vergleichbarem oder höherem Niveau vorliegen. Pokal, Freundschaft und Jugend werden getrennt gespeichert und ersetzen keine Senior-Ligasaison. Die veröffentlichten Daten enthalten nur verdichtete Fakten und Quellenlinks, keine vollständigen Transfermarkt-Seiten.
+Die Wettbewerbsfaktoren unter `config/history/competition-strength.json` verwenden die Bundesliga als Referenz `1,00`, die 2. Bundesliga mit `0,80` und die 3. Liga mit `0,64`. Die österreichische Bundesliga und die Schweizer Super League stehen ebenfalls bei `0,64`: Für die 3. Liga sind sie vergleichbar, für die 2. Bundesliga bleiben sie ein wertvolles, aber unterklassiges Seniorensignal. Eine Spielzeit gilt nur dann als bestätigt, wenn genügend Ligaminuten auf vergleichbarem oder höherem Niveau vorliegen.
+
+Jugendwettbewerbe aus Deutschland und dem Ausland werden separat nach Nachwuchsniveau gewichtet. Minuten und Scorer ergeben einen `youth_score`, der nur die Potenzial- und Geheimtippbewertung verbessert. Jugendspiele erzeugen weder bestätigte Seniorenspielzeiten noch einen verlässlichen Anker. Pokal und Freundschaft bleiben ohne historischen Score. Die veröffentlichten Daten enthalten nur verdichtete Fakten und Quellenlinks, keine vollständigen Transfermarkt-Seiten.
 
 ## Sicherheitsvertrag
 

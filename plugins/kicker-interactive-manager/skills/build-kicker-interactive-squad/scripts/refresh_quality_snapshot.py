@@ -36,7 +36,7 @@ from quality_snapshot import SCHEMA_VERSION, canonical_sha256, validate_snapshot
 from refresh_news_snapshot import api_sports_pages, optional_int
 
 
-MODEL_VERSION = "multi-season-v2-transfermarkt-context"
+MODEL_VERSION = "multi-season-v3-youth-foreign-context"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
 
 
@@ -155,6 +155,9 @@ def candidate_rank(
     history_score = float(
         history_player.get("career", {}).get("confirmed_score", 0)
     )
+    youth_score = float(
+        history_player.get("career", {}).get("youth_score", 0)
+    )
     mapping_status = history_player.get("mapping", {}).get("status")
     history_weight = (
         1.0
@@ -163,7 +166,8 @@ def candidate_rank(
         if mapping_status == "probable"
         else 0.0
     )
-    historical_signal = 45.0 + history_weight * (history_score - 45.0)
+    historical_score = max(history_score, 0.70 * youth_score)
+    historical_signal = 45.0 + history_weight * (historical_score - 45.0)
     return (
         0.32 * points_pct
         + 0.17 * grade_score
@@ -475,6 +479,7 @@ def build_annotation(
         history_career.get("recent_minutes_score", 0)
     )
     history_role = float(history_career.get("role_score", 0))
+    history_youth_score = float(history_career.get("youth_score", 0))
     if history_confidence > 0:
         confirmed = clamp(
             history_confidence
@@ -511,7 +516,14 @@ def build_annotation(
     )
     stability = clamp(82 - 0.55 * transfer_risk - 0.25 * rotation_risk)
     fitness = clamp(min(fitness_cap, 92 - 0.58 * injury_risk))
-    upside = clamp(78 - max(0, age - 20) * 2.1 + (100 - points_pct) * 0.12)
+    base_upside = clamp(
+        78 - max(0, age - 20) * 2.1 + (100 - points_pct) * 0.12
+    )
+    youth_relevance = max(0.0, 1.0 - max(0, age - 21) * 0.18)
+    youth_upside = clamp(
+        35 + 0.65 * history_youth_score * youth_relevance
+    )
+    upside = max(base_upside, youth_upside)
     value = clamp(
         0.42 * (100 - price_pct)
         + 0.32 * confirmed
@@ -605,6 +617,20 @@ def build_annotation(
             float(history_career.get("level_adjusted_minutes", 0)),
             1,
         ),
+        "youth_adjusted_minutes": round(
+            float(history_career.get("youth_adjusted_minutes", 0)),
+            1,
+        ),
+        "youth_adjusted_contributions": round(
+            float(
+                history_career.get(
+                    "youth_adjusted_contributions",
+                    0,
+                )
+            ),
+            2,
+        ),
+        "youth_score": round(history_youth_score, 2),
     }
     return {
         "position": position,

@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 COMPONENTS = {
     "confirmed_performance",
     "minutes",
@@ -187,6 +187,9 @@ def validate_snapshot(
             "proven_seasons",
             "comparable_minutes",
             "level_adjusted_minutes",
+            "youth_adjusted_minutes",
+            "youth_adjusted_contributions",
+            "youth_score",
         ):
             value = history_summary.get(field_name)
             if (
@@ -197,6 +200,10 @@ def validate_snapshot(
                 raise QualitySnapshotError(
                     f"quality history {field_name} is invalid for {player_id}"
                 )
+        if float(history_summary["youth_score"]) > 100:
+            raise QualitySnapshotError(
+                f"quality history youth_score is invalid for {player_id}"
+            )
         proven_seasons = annotation.get("proven_seasons")
         if (
             isinstance(proven_seasons, bool)

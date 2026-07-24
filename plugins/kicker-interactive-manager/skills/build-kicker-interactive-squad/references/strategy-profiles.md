@@ -62,8 +62,10 @@ Den Risikowert mit dem Faktor multiplizieren und vom Komponentenscore abziehen.
 - Wiederholbare Standards, Kapitänsrolle oder eine über Jahre identische Schlüsselrolle dürfen die Regression teilweise ausgleichen.
 - Nach einem Wechsel weder die alte Rolle fortschreiben noch pauschal alles verwerfen. Neue Konkurrenz, Traineridee und Preis entscheiden.
 - Historische Einsätze, Minuten und Scorer mit dem damaligen Wettbewerbsfaktor normalisieren. Bundesliga-Leistung wiegt höher als 2.-Bundesliga-Leistung, diese wiederum höher als 3.-Liga- oder Regionalliga-Leistung.
+- Die österreichische Bundesliga und die Schweizer Super League als ungefähr deutsches Drittliganiveau (`0,64`) behandeln. Sie können eine Drittligasaison bestätigen, aber allein keine Zweitligasaison.
 - Eine Spielzeit zählt für `proven_seasons` nur, wenn ausreichende Minuten auf einem zur Zielliga vergleichbaren oder höheren Niveau belegt sind. Eine starke 3.-Liga-Saison ist daher ein wertvolles Potenzial- und Value-Signal für die 2. Bundesliga, aber noch keine voll bestätigte Zweitliga-Spielzeit.
-- Pokal-, Freundschafts- und Jugendspiele nicht als Ersatz für eine bestätigte Senior-Ligasaison verwenden. Nicht klassifizierte Wettbewerbe dokumentieren, aber nicht mit einem erfundenen Faktor bewerten.
+- Nachwuchsligen, Jugendpokale und Jugendnationalmannschaften getrennt gewichten. Umfang und Scorerproduktion dürfen `upside` und die Shortlist-Chance eines jungen Spielers erhöhen, aber nie `confirmed_performance`, `proven_seasons` oder `reliable_anchor`.
+- Pokal- und Freundschaftsspiele nicht als Ersatz für eine bestätigte Senior-Ligasaison verwenden. Nicht klassifizierte Wettbewerbe dokumentieren, aber nicht mit einem erfundenen Faktor bewerten.
 
 ## Betreuungsaufwand
 

@@ -46,6 +46,9 @@ def annotation(position: str, *, anchor: bool = False) -> dict:
             "proven_seasons": 2,
             "comparable_minutes": 3000.0,
             "level_adjusted_minutes": 3200.0,
+            "youth_adjusted_minutes": 900.0,
+            "youth_adjusted_contributions": 8.0,
+            "youth_score": 26.0,
         },
         "evidence": [
             {

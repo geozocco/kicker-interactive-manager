@@ -40,7 +40,8 @@ from market_snapshot import (
 )
 
 
-MODEL_VERSION = "transfermarkt-career-v1-league-context"
+MODEL_VERSION = "transfermarkt-career-v2-youth-foreign-context"
+YOUTH_REFERENCE_STRENGTH = 0.35
 BASE_URL = "https://www.transfermarkt.co.uk"
 USER_AGENT = (
     "Mozilla/5.0 (compatible; kicker-interactive-manager/1.0; "
@@ -563,6 +564,8 @@ def aggregate_history(
         comparable_minutes = 0.0
         comparable_goals = 0
         comparable_assists = 0
+        youth_adjusted_minutes = 0.0
+        youth_adjusted_contributions = 0.0
         for item in competitions:
             if not item["rated"]:
                 continue
@@ -577,6 +580,15 @@ def aggregate_history(
                     comparable_assists += int(item["assists"])
             elif kind in {"continental", "international"}:
                 level_adjusted_minutes += int(item["minutes"]) * ratio * 0.45
+            elif kind == "youth":
+                youth_ratio = min(
+                    1.5,
+                    factor / YOUTH_REFERENCE_STRENGTH,
+                )
+                youth_adjusted_minutes += int(item["minutes"]) * youth_ratio
+                youth_adjusted_contributions += (
+                    int(item["goals"]) + int(item["assists"])
+                ) * youth_ratio
         proven = season_is_proven(
             position,
             comparable_minutes=comparable_minutes,
@@ -590,6 +602,11 @@ def aggregate_history(
                 **totals,
                 "level_adjusted_minutes": round(level_adjusted_minutes, 1),
                 "comparable_minutes": round(comparable_minutes, 1),
+                "youth_adjusted_minutes": round(youth_adjusted_minutes, 1),
+                "youth_adjusted_contributions": round(
+                    youth_adjusted_contributions,
+                    2,
+                ),
                 "proven": proven,
                 "competitions": competitions,
             }
@@ -612,6 +629,16 @@ def aggregate_history(
         float(season["comparable_minutes"]) for season in seasons
     )
     proven_seasons = sum(bool(season["proven"]) for season in seasons)
+    youth_adjusted_minutes = sum(
+        float(season["youth_adjusted_minutes"]) for season in seasons
+    )
+    youth_adjusted_contributions = sum(
+        float(season["youth_adjusted_contributions"]) for season in seasons
+    )
+    youth_score = clamp(
+        min(55, youth_adjusted_minutes / 60)
+        + min(40, youth_adjusted_contributions * 1.4)
+    )
     recent_adjusted_minutes = sum(
         float(season["level_adjusted_minutes"])
         for season in seasons[:2]
@@ -644,6 +671,12 @@ def aggregate_history(
         "level_adjusted_minutes": round(level_adjusted_minutes, 1),
         "comparable_minutes": round(comparable_minutes, 1),
         "proven_seasons": int(proven_seasons),
+        "youth_adjusted_minutes": round(youth_adjusted_minutes, 1),
+        "youth_adjusted_contributions": round(
+            youth_adjusted_contributions,
+            2,
+        ),
+        "youth_score": youth_score,
         "confirmed_score": confirmed_score,
         "recent_minutes_score": recent_minutes_score,
         "role_score": role_score,
@@ -661,6 +694,9 @@ def empty_career() -> dict[str, Any]:
         "level_adjusted_minutes": 0.0,
         "comparable_minutes": 0.0,
         "proven_seasons": 0,
+        "youth_adjusted_minutes": 0.0,
+        "youth_adjusted_contributions": 0.0,
+        "youth_score": 0.0,
         "confirmed_score": 0.0,
         "recent_minutes_score": 0.0,
         "role_score": 0.0,
