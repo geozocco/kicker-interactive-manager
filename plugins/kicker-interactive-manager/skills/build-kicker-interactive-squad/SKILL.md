@@ -1,9 +1,9 @@
 ---
 name: build-kicker-interactive-squad
-description: Plane, optimiere und ändere Kader im kicker Managerspiel Interactive über eine bereits angemeldete Chrome-Sitzung. Verwende diesen Skill bei Anfragen zu kicker Interactive, automatischer Kaderzusammenstellung, Transfers, Mannschaftsoptimierung, Geheimtipps oder Strategieprofilen für Bundesliga, 2. Bundesliga und 3. Liga. Die WM ist ausdrücklich ausgeschlossen. Unterstützt konservative, ausgewogene und ausbruchsorientierte Auswahl sowie kontrolliert unterschiedliche Kader für mehrere Personen.
+description: Plane, optimiere, bewerte und ändere Kader im kicker Managerspiel Interactive über eine bereits angemeldete Chrome-Sitzung. Verwende diesen Skill bei Anfragen zu kicker Interactive, automatischer Kaderzusammenstellung, „bewerte/prüfe meinen Kader“, Verletzungs- oder Transferchecks, Mannschaftsoptimierung, Geheimtipps oder Strategieprofilen für Bundesliga, 2. Bundesliga und 3. Liga. Die WM ist ausdrücklich ausgeschlossen. Unterstützt read-only Kader-Audits, konservative, ausgewogene und ausbruchsorientierte Auswahl sowie kontrolliert unterschiedliche Kader für mehrere Personen.
 ---
 
-# kicker Interactive Kader aufstellen
+# kicker Interactive Kader aufstellen und bewerten
 
 ## Grundvertrag
 
@@ -30,7 +30,8 @@ Den Wettbewerb sowie die drei Strategieparameter aus der Anfrage übernehmen.
 0. Wettbewerb:
    - ausschließlich `Bundesliga`, `2. Bundesliga` oder `3. Liga`
    - die WM und andere Turniere sind ausdrücklich ausgeschlossen
-   - fehlt die Spielklasse, vor Recherche oder Browseränderungen nachfragen; nicht aus einem zufällig geöffneten Tab raten
+   - fehlt die Spielklasse bei einer Zusammenstellung oder Änderung, vor Recherche oder Browseränderungen nachfragen; nicht aus einem zufällig geöffneten Tab raten
+   - bei einer ausdrücklich read-only angeforderten Bewertung darf die Liga aus genau einem geöffneten, eindeutig erkennbaren kicker-Interactive-Kadertab übernommen werden; bei mehreren passenden Tabs oder uneindeutiger Seite nachfragen
    - ist der kicker-Transfermarkt der gewählten Liga noch nicht geöffnet oder fehlt der Spieler-Daten-Export, keine andere Liga auswählen und keinen Kader erfinden; den Nutzer knapp auf den noch geschlossenen Markt hinweisen
 
 1. Strategie:
@@ -57,7 +58,7 @@ Die Kombination `verlässlich` und `gering` ist das konservative Kollegenprofil:
 ## Arbeitsmodus bestimmen
 
 - „Stelle auf“, „optimiere“, „ändere“ oder gleichwertige Formulierungen autorisieren die inkrementelle Umsetzung im Kicker-Kader.
-- „Vorschlag“, „Liste“, „bewerte“ oder „was hältst du“ bleiben zunächst read-only.
+- „Vorschlag“, „Liste“, „bewerte“, „prüfe“ oder „was hältst du“ bleiben read-only. Insbesondere bei einer Kaderbewertung keine Browseränderung ausführen.
 - Bei mehreren Wettbewerben jeden Kader getrennt analysieren und verifizieren.
 - Bei fehlender Anmeldung den Nutzer auffordern, sich in Chrome bei kicker anzumelden und anschließend Bescheid zu geben. Nicht auf einen anderen Browser ausweichen.
 
@@ -69,6 +70,18 @@ Die Kombination `verlässlich` und `gering` ist das konservative Kollegenprofil:
 - Den Link „Spieler-Daten Export“ der aktuellen Saison verwenden und die CSV als maßgeblichen Preis-/Positionsbestand behandeln.
 - Standardmäßig alle Torhüter aus demselben Verein wählen. Nur auf ausdrücklichen Wunsch mit `--mixed-goalkeepers` abweichen.
 - Weichen die sichtbaren Positionsvorgaben von 3/7/7/5 ab, dem Skript die tatsächlichen Werte über `--goalkeepers`, `--defenders`, `--midfielders` und `--forwards` übergeben.
+
+### 1a. Bestehenden Kader read-only bewerten
+
+Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüfen lassen möchte, [references/squad-evaluation.md](references/squad-evaluation.md) vollständig lesen und diesen Zweig statt der Kaderoptimierung ausführen.
+
+- Aktuellen Kader zweimal aus dem sichtbaren Chrome-Zustand erfassen und eindeutig gegen die offizielle CSV auflösen.
+- Jeden gewählten Spieler vollständig und aktuell annotieren. Für Verbesserungsvorschläge zusätzlich bezahlbare Alternativen recherchieren; für eine reine Sicherheitsprüfung reicht der vollständig geprüfte Zielkader.
+- Bei 2. Bundesliga und 3. Liga den frischen zentralen Feed mit `--require-news-snapshot --require-news-coverage` verlangen. Fehlende oder widersprüchliche Daten verhindern eine grüne Bestätigung.
+- `scripts/evaluate_squad.py` mit sichtbarem Budget, Positionszahlen, Strategie und Betreuungsaufwand ausführen.
+- `avoidable_error_free: true` als einzige grüne Bestätigung behandeln. Bei `blocked` keine numerische Scheinsicherheit erzeugen, sondern die fehlenden Prüfungen nennen.
+- Verletzungs-, Transfer- und Rollenwarnungen mit spielerbezogenen aktuellen Quellen nennen. Bezahlbare Alternativen als Prüfhinweise behandeln.
+- Im Browser nichts verändern. Erst eine spätere ausdrückliche Aufforderung zum Umbau autorisiert den Schreibworkflow.
 
 ### 2. Kandidatenpool bilden
 
@@ -160,4 +173,6 @@ Generische drei bis fünf Gründe für den Gesamtkader genügen diesem Vertrag n
 
 ## Ergebnis
 
-Den unter „Auswahl begründen und gegenprüfen“ vorbereiteten Ergebnisentwurf vollständig liefern und um Profil, Variabilität, Betreuungsaufwand, Seed, Kadergröße, Restbudget und den vollständigen Kader ergänzen. Bei ausgeführter Änderung ausdrücklich bestätigen, dass Namen, Positionen und Budget anschließend in Chrome verifiziert wurden.
+Bei einer Kaderbewertung das Urteil nach `squad-evaluation.md` liefern und ausdrücklich bestätigen, dass Chrome unverändert blieb.
+
+Bei einer Zusammenstellung den unter „Auswahl begründen und gegenprüfen“ vorbereiteten Ergebnisentwurf vollständig liefern und um Profil, Variabilität, Betreuungsaufwand, Seed, Kadergröße, Restbudget und den vollständigen Kader ergänzen. Bei ausgeführter Änderung ausdrücklich bestätigen, dass Namen, Positionen und Budget anschließend in Chrome verifiziert wurden.

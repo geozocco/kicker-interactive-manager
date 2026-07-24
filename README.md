@@ -1,6 +1,6 @@
 # kicker Interactive Manager für Codex
 
-Dieses öffentliche Codex-Marketplace enthält den Skill `kicker-interactive-manager`. Er recherchiert und optimiert Kader für das kicker Managerspiel Interactive in der Bundesliga, 2. Bundesliga oder 3. Liga und setzt sie über eine bereits angemeldete Chrome-Sitzung um. Die WM ist ausdrücklich ausgeschlossen.
+Dieses öffentliche Codex-Marketplace enthält den Skill `kicker-interactive-manager`. Er recherchiert, bewertet und optimiert Kader für das kicker Managerspiel Interactive in der Bundesliga, 2. Bundesliga oder 3. Liga und setzt gewünschte Änderungen über eine bereits angemeldete Chrome-Sitzung um. Die WM ist ausdrücklich ausgeschlossen.
 
 ## Installation
 
@@ -66,6 +66,26 @@ Beispiel für die 3. Liga:
 Beispiel für die Bundesliga:
 
 > Stelle meinen Kader für die Bundesliga im kicker Managerspiel Interactive verlässlich und wartungsarm zusammen und nutze meine geöffnete Chrome-Sitzung.
+
+### Einen selbst zusammengestellten Kader prüfen
+
+Du kannst deinen Kader weiterhin selbst zusammenstellen und anschließend read-only prüfen lassen:
+
+> Bewerte meinen aktuell in Chrome geöffneten kicker-Interactive-Kader für die 2. Bundesliga. Prüfe insbesondere aktuelle Verletzungen, Transfers, Startelfchancen, Budgetverteilung und vermeidbare Risiken. Verändere den Kader nicht.
+
+Ist nur ein eindeutig erkennbarer kicker-Interactive-Kadertab geöffnet, genügt auch:
+
+> Bewerte meinen aktuell in Chrome geöffneten Kader und verändere nichts.
+
+Codex liest den sichtbaren Kader, gleicht die Spieler mit den offiziellen Kicker-Daten ab und prüft aktuelle News. Das Ergebnis enthält:
+
+- eine Gesamteinschätzung mit klarer Datenkonfidenz,
+- Warnungen zu Verletzungen, Transfers und unsicheren Rollen,
+- die Verteilung des Kaderwerts auf Startelf und Bank,
+- verlässliche Ankerspieler und Vereinskonzentrationen sowie
+- bei ausreichender Recherche bezahlbare Alternativen.
+
+Eine grüne Bestätigung wird nur erteilt, wenn alle gewählten Spieler aktuell geprüft wurden und keine kritischen News-Lücken oder vermeidbaren hohen Risiken offen sind. Bei fehlenden oder widersprüchlichen Informationen nennt Codex stattdessen die notwendigen Nachprüfungen. Der Chrome-Kader bleibt bei dieser Funktion unverändert.
 
 Der Bundesliga-Kader kann erst aufgestellt werden, wenn kicker den zugehörigen Transfermarkt für die neue Saison geöffnet hat. Bis dahin soll Codex keine andere Liga auswählen und keinen Kader erfinden. Die Weltmeisterschaft wird von diesem Plugin nicht unterstützt.
 

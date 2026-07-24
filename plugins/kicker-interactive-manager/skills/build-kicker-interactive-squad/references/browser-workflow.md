@@ -15,6 +15,14 @@
 4. Wettbewerb, Saison-ID, Kaderzahl, Budget, Positionszahlen und aktuellen Kader aus sichtbaren Elementen lesen.
 5. Den sichtbaren Link „Spieler-Daten Export“ verwenden. Keine private API aus Browserzuständen rekonstruieren.
 
+## Read-only-Bewertung
+
+- Bei „Bewerte meinen Kader“, „prüfe meinen Kader“ oder vergleichbaren Formulierungen ausschließlich lesen.
+- Jeden sichtbaren Spieler mit Name, Verein, Position und Preis erfassen und anschließend gegen die offizielle CSV auflösen.
+- Keine Verkaufs-, Kauf-, Aufstellungs- oder Bestätigungsbuttons betätigen.
+- Den Zustand nach der Erfassung erneut lesen und Spielerzahl, Positionen sowie Budget gegen die Bewertungsdatei prüfen.
+- Das Ergebnis nach `squad-evaluation.md` liefern. Erst eine spätere ausdrückliche Änderungsanweisung wechselt in den Schreibmodus.
+
 ## Schreiben
 
 Eine ausdrückliche Aufforderung wie „stelle auf“, „optimiere“ oder „ändere meinen Kader“ autorisiert die dafür notwendigen Kaderänderungen.
