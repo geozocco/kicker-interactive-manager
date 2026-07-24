@@ -100,6 +100,7 @@ Variabilität darf keine blinde Zufallsauswahl sein. Zuerst das beste Ergebnis i
 - Den Seed im Ergebnis ausgeben, damit ein Kader reproduzierbar bleibt.
 - Bei bekannten Kollegenkadern Überschneidungen über `--avoid-roster` bestrafen. Niemals einen klar schlechteren Spieler allein zur Abgrenzung wählen.
 - Innerhalb einer Gruppe darf ein gemeinsamer Ankerkern bestehen. Unterschiedliche Seeds sollen vor allem mittlere Preisklassen, Bankplätze und ähnlich bewertete Alternativen variieren.
+- Technische Läufe mit `--allow-unannotated` begrenzen bei sehr großen Rohpools nur die Variationssuche auf das globale Optimum, Anker/Benchmarks sowie starke und günstige Positionsalternativen. Vollständig recherchierte Endläufe bleiben exakt und berechnen weiterhin die Gegenfaktual-Begründungen.
 
 ## Portfolioregeln
 

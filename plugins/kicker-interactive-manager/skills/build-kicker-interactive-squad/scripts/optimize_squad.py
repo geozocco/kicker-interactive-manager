@@ -460,6 +460,11 @@ def player_name_match_score(left: str, right: str) -> int:
         return 0
     left_first = left_words[0]
     right_first = right_words[0]
+    if (
+        min(len(left_first), len(right_first)) == 1
+        and left_first[0] == right_first[0]
+    ):
+        return 1
     if min(len(left_first), len(right_first)) >= 3 and (
         left_first.startswith(right_first)
         or right_first.startswith(left_first)
@@ -1533,6 +1538,67 @@ def load_avoid_ids(paths: list[Path]) -> set[str]:
     return avoid
 
 
+def technical_variation_pool(
+    players: list[Player],
+    scores: dict[str, float],
+    optimum: Squad,
+    slots: dict[str, int],
+) -> list[Player]:
+    """Bound unannotated smoke tests while preserving strong and cheap options."""
+
+    if len(players) <= 160:
+        return players
+    retained_ids = set(optimum.ids)
+    retained_ids.update(
+        player.player_id
+        for player in players
+        if player.reliable_anchor or player.benchmark
+    )
+    for position, slot_count in slots.items():
+        position_players = [
+            player for player in players if player.position == position
+        ]
+        strongest_count = max(slot_count * 4, 16)
+        cheapest_count = max(slot_count * 3, 12)
+        strongest = sorted(
+            position_players,
+            key=lambda player: (
+                -scores[player.player_id],
+                player.cost,
+                player.player_id,
+            ),
+        )[:strongest_count]
+        cheapest = sorted(
+            position_players,
+            key=lambda player: (
+                player.cost,
+                -scores[player.player_id],
+                player.player_id,
+            ),
+        )[:cheapest_count]
+        retained_ids.update(player.player_id for player in (*strongest, *cheapest))
+
+    goalkeeper_clubs = {
+        player.club
+        for player in players
+        if (
+            player.position == "GOALKEEPER"
+            and player.player_id in retained_ids
+        )
+    }
+    retained_ids.update(
+        player.player_id
+        for player in players
+        if (
+            player.position == "GOALKEEPER"
+            and player.club in goalkeeper_clubs
+        )
+    )
+    return [
+        player for player in players if player.player_id in retained_ids
+    ]
+
+
 def varied_squad(
     players: list[Player],
     budget: int,
@@ -1546,6 +1612,7 @@ def varied_squad(
     avoid_ids: set[str],
     same_club_goalkeepers: bool = True,
     min_reliable_anchors: int = 0,
+    technical_smoke: bool = False,
 ) -> tuple[Squad, Squad, int, bool]:
     optimum = optimize(
         players,
@@ -1568,11 +1635,16 @@ def varied_squad(
     )
     allowed_gap = config["gap"] * profile_factor
     target_distance = int(config["distance"])
+    variation_players = (
+        technical_variation_pool(players, base_scores, optimum, slots)
+        if technical_smoke
+        else players
+    )
     optimum_score = sum(base_scores[player.player_id] for player in optimum.players)
     score_denominator = max(abs(optimum_score), 1e-9)
     quality_floor = optimum_score - allowed_gap * score_denominator
     base_buckets = optimize_distance_buckets(
-        players,
+        variation_players,
         budget,
         base_scores,
         club_cap,
@@ -1608,19 +1680,22 @@ def varied_squad(
     base_candidate = base_buckets[chosen_bucket]
     base_candidate_score = base_bucket_scores[chosen_bucket]
     slack = max(0.0, base_candidate_score - quality_floor)
-    squad_size = sum(slots.values())
-    # For N-player squads and per-player perturbations in [-a, a], two
-    # perturbation sums differ by at most 2*N*a. Using a quarter of the
-    # available slack therefore leaves a defensive half-slack quality margin.
+    # Spread the available quality slack across the intended swaps instead of
+    # all 22 roster slots. The selected result is checked against the unchanged
+    # baseline quality floor below, so an over-aggressive seeded result safely
+    # falls back to the exact base candidate.
     max_player_perturbation = (
-        slack / (4.0 * squad_size)
-        if squad_size > 0
+        slack / max(2.0 * target_distance, 1.0)
+        if target_distance > 0
         else 0.0
     )
 
     rng = random.Random(seed)
     raw_preferences: dict[str, float] = {}
-    for player in sorted(players, key=lambda item: (item.player_id, item.name)):
+    for player in sorted(
+        variation_players,
+        key=lambda item: (item.player_id, item.name),
+    ):
         avoid_match = player.player_id in avoid_ids or player.name in avoid_ids
         avoid_penalty = config["avoid"] if avoid_match else 0.0
         raw_preferences[player.player_id] = (
@@ -1640,10 +1715,10 @@ def varied_squad(
             base_scores[player.player_id]
             + raw_preferences[player.player_id] * preference_scale
         )
-        for player in players
+        for player in variation_players
     }
     seeded_buckets = optimize_distance_buckets(
-        players,
+        variation_players,
         budget,
         seeded_scores,
         club_cap,
@@ -1841,6 +1916,14 @@ def output_payload(
     force_bonus = 2.0 * sum(abs(score) for score in utility_scores.values()) + 1.0
 
     def counterfactual_for(player: Player) -> dict[str, Any]:
+        if bool(getattr(args, "allow_unannotated", False)):
+            return {
+                "feasible": None,
+                "reason": (
+                    "counterfactual omitted for an unannotated technical smoke "
+                    "test; final researched squads still compute it"
+                ),
+            }
         forced_scores = dict(utility_scores)
         forced_scores[player.player_id] += force_bonus
         try:
@@ -2587,6 +2670,7 @@ def main() -> int:
             avoid_ids=avoid_ids,
             same_club_goalkeepers=not args.mixed_goalkeepers,
             min_reliable_anchors=args.min_reliable_anchors,
+            technical_smoke=args.allow_unannotated,
         )
     except ValueError as error:
         print(f"Optimization stopped: {error}", file=sys.stderr)

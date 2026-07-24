@@ -19,6 +19,7 @@ Provider-Schlüssel niemals in das Plugin, in Annotationen, in das Snapshot, in 
 - Ein bestätigter Transfer wird nur dann als Abgang behandelt, wenn die Richtung aus dem aktuellen Verein heraus verifiziert ist. Historische oder eingehende Transfers sind kein Ausschlussgrund.
 - Ein harter Ausschluss erfordert mindestens mittlere Konfidenz, keine offene Quellen- oder Identitätskollision und entweder bestätigte Nichtverfügbarkeit oder einen verifizierten Abgang aus dem Wettbewerb.
 - Namens- oder Vereinsabweichungen bei derselben Kicker-ID sind ein Konflikt. Ausgewählte Spieler mit offenem Konflikt blockieren den finalen Lauf.
+- Liefert ein Provider den Vornamen nur als Initiale, ist eine automatische Zuordnung ausschließlich bei passender Initiale, vollständigem identischem Nachnamen und passendem Verein zulässig. Mehrdeutige Treffer bleiben Konflikte.
 - Für jeden ausgewählten Spieler muss bei mindestens einem Provider ein verifiziertes Paar aus Spieler- und aktuellem Team-ID vorliegen. Nur so lässt sich die Richtung eines Transfers sicher bewerten. Fehlt es, den Spieler am selben Tag manuell in Primärquellen prüfen und die zentrale Zuordnung ergänzen, bevor Chrome geändert wird.
 - Direkt vor dem ersten Verkauf Snapshot erneut laden. Liegt die letzte Prüfung mehr als zwei Stunden zurück oder gab es neue Meldungen, finalen Lauf mit demselben Seed wiederholen.
 

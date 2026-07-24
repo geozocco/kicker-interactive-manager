@@ -94,6 +94,73 @@ def varied_pool() -> tuple[list[optimizer.Player], dict[str, float]]:
 
 
 class DistanceOptimizerTests(unittest.TestCase):
+    def test_technical_variation_pool_preserves_optimum_and_goalkeeper_blocks(
+        self,
+    ) -> None:
+        candidates: list[optimizer.Player] = []
+        for index in range(48):
+            candidates.append(
+                player(
+                    f"g{index}",
+                    f"GK Club {index // 3}",
+                    "GOALKEEPER",
+                    100 + index,
+                )
+            )
+        for position, prefix in (
+            ("DEFENDER", "d"),
+            ("MIDFIELDER", "m"),
+            ("FORWARD", "f"),
+        ):
+            for index in range(60):
+                candidates.append(
+                    player(
+                        f"{prefix}{index}",
+                        f"Club {prefix}{index}",
+                        position,
+                        100 + index,
+                    )
+                )
+        scores = {
+            candidate.player_id: float(index)
+            for index, candidate in enumerate(candidates)
+        }
+        optimum_ids = {
+            "g45", "g46", "g47",
+            "d59", "d58", "d57", "d56", "d55", "d54", "d53",
+            "m59", "m58", "m57", "m56", "m55", "m54", "m53",
+            "f59", "f58", "f57", "f56", "f55",
+        }
+        optimum_players = [
+            candidate
+            for candidate in candidates
+            if candidate.player_id in optimum_ids
+        ]
+
+        bounded = optimizer.technical_variation_pool(
+            candidates,
+            scores,
+            optimizer.Squad(optimum_players, 0.0),
+            {
+                "GOALKEEPER": 3,
+                "DEFENDER": 7,
+                "MIDFIELDER": 7,
+                "FORWARD": 5,
+            },
+        )
+
+        bounded_ids = {candidate.player_id for candidate in bounded}
+        self.assertTrue(optimum_ids <= bounded_ids)
+        self.assertEqual(
+            {"g45", "g46", "g47"},
+            {
+                candidate.player_id
+                for candidate in bounded
+                if candidate.club == "GK Club 15"
+            },
+        )
+        self.assertLess(len(bounded), len(candidates))
+
     def test_distance_buckets_match_brute_force_oracle(self) -> None:
         slots = {
             "GOALKEEPER": 2,
@@ -368,6 +435,56 @@ class DistanceOptimizerTests(unittest.TestCase):
 
 
 class CentralNewsIdentityTests(unittest.TestCase):
+    def test_provider_roster_matches_kicker_full_name_to_initial(self) -> None:
+        kicker_player = optimizer.replace(
+            player("kicker-16", "Karlsruhe", "MIDFIELDER", 100),
+            name="Marvin Wanitzek",
+        )
+        payload = {
+            "schema_version": 1,
+            "generated_at": "2026-07-24T08:00:00Z",
+            "expires_at": "2026-07-25T02:00:00Z",
+            "competition": "2. Bundesliga",
+            "season": "2026/27",
+            "providers": {"api_sports": {"status": "ok"}},
+            "players": {
+                "api_sports:101": {
+                    "name": "M. Wanitzek",
+                    "club": "Karlsruher SC",
+                    "mapping": {
+                        "api_sports_player_id": 101,
+                        "api_sports_team_id": 10,
+                        "confidence": "verified",
+                    },
+                    "signals": [],
+                    "consensus": {
+                        "injury": 0,
+                        "transfer": 0,
+                        "rotation": 0,
+                        "fitness_cap": 100,
+                        "exclude": False,
+                        "confidence": "low",
+                        "conflicts": [],
+                    },
+                }
+            },
+        }
+
+        _, audit, exclusions = optimizer.apply_news_snapshot(
+            [kicker_player],
+            payload,
+        )
+
+        self.assertEqual([], exclusions)
+        self.assertEqual(
+            ["kicker-16"],
+            audit["provider_mapped_player_ids"],
+        )
+        self.assertEqual(
+            "api_sports:101",
+            audit["identity_bindings"]["kicker-16"],
+        )
+
     def test_provider_roster_matches_kicker_nickname_and_club_variant(self) -> None:
         kicker_player = optimizer.replace(
             player("kicker-17", "Hamburg", "MIDFIELDER", 100),
@@ -1043,6 +1160,81 @@ class ReliableCorePolicyTests(unittest.TestCase):
         )
         self.assertIn("components", payload["squad"][0])
         self.assertTrue(payload["squad"][0]["evidence"])
+
+    def test_unannotated_smoke_output_skips_expensive_counterfactuals(self) -> None:
+        all_players = [
+            player("g1", "GK Club", "GOALKEEPER", 100),
+            player("d1", "Club D", "DEFENDER", 100),
+            player("d2", "Club D2", "DEFENDER", 100),
+            player("m1", "Club M", "MIDFIELDER", 100),
+            player("m2", "Club M2", "MIDFIELDER", 100),
+            player("f1", "Club F", "FORWARD", 100),
+            player("f2", "Club F2", "FORWARD", 100),
+        ]
+        selected = [all_players[index] for index in (0, 1, 3, 5)]
+        scores = {
+            candidate.player_id: 100.0 - index
+            for index, candidate in enumerate(all_players)
+        }
+        payload = optimizer.output_payload(
+            squad=optimizer.Squad(
+                selected,
+                sum(scores[candidate.player_id] for candidate in selected),
+            ),
+            optimum=optimizer.Squad(
+                selected,
+                sum(scores[candidate.player_id] for candidate in selected),
+            ),
+            players=all_players,
+            raw_scores=scores,
+            utility_scores=scores,
+            core_multipliers={
+                candidate.player_id: 1.0 for candidate in all_players
+            },
+            args=SimpleNamespace(
+                profile="balanced",
+                maintenance="medium",
+                variation="none",
+                budget=400,
+                max_outfield_per_club=4,
+                mixed_goalkeepers=True,
+                min_reliable_anchors=0,
+                allow_unannotated=True,
+                slots={
+                    "GOALKEEPER": 1,
+                    "DEFENDER": 1,
+                    "MIDFIELDER": 1,
+                    "FORWARD": 1,
+                },
+                min_spend_ratio=0.0,
+            ),
+            seed=1,
+            distance=0,
+            variation_target_met=True,
+            annotated_count=0,
+            annotated_by_position={
+                "GOALKEEPER": 0,
+                "DEFENDER": 0,
+                "MIDFIELDER": 0,
+                "FORWARD": 0,
+            },
+            annotation_requirements={
+                "GOALKEEPER": 1,
+                "DEFENDER": 1,
+                "MIDFIELDER": 1,
+                "FORWARD": 1,
+            },
+            annotated_goalkeeper_blocks=0,
+            hard_exclusions=[],
+        )
+
+        self.assertTrue(payload["comparison_candidates"])
+        self.assertTrue(
+            all(
+                item["counterfactual"]["feasible"] is None
+                for item in payload["comparison_candidates"]
+            )
+        )
 
     def test_starting_lineup_places_required_anchors_in_the_core(self) -> None:
         players: list[optimizer.Player] = [
