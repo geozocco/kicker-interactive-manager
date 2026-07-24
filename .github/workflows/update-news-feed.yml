@@ -71,6 +71,7 @@ jobs:
             --market public/v1/market/2-bundesliga.json \
             --mapping config/history/2-bundesliga.json \
             --strengths config/history/competition-strength.json \
+            --identity-seed config/history/identities/2-bundesliga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/history/2-bundesliga.json \
             --output public/v1/history/2-bundesliga.json
 
@@ -80,6 +81,7 @@ jobs:
             --market public/v1/market/3-liga.json \
             --mapping config/history/3-liga.json \
             --strengths config/history/competition-strength.json \
+            --identity-seed config/history/identities/3-liga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/history/3-liga.json \
             --output public/v1/history/3-liga.json
 

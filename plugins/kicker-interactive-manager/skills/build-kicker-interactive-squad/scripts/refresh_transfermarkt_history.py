@@ -684,6 +684,74 @@ def previous_by_transfermarkt_id(
     return values
 
 
+def load_identity_seed(
+    path: Path | None,
+    *,
+    competition: str,
+    season: str,
+) -> list[dict[str, Any]]:
+    if path is None:
+        return []
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != 1
+        or payload.get("competition") != competition
+        or payload.get("season") != season
+        or not isinstance(payload.get("players"), list)
+    ):
+        raise RuntimeError("Transfermarkt identity seed is invalid")
+    players: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for player in payload["players"]:
+        if not isinstance(player, dict):
+            raise RuntimeError("Transfermarkt identity seed contains an invalid player")
+        player_id = player.get("player_id")
+        if (
+            isinstance(player_id, bool)
+            or not isinstance(player_id, int)
+            or player_id <= 0
+            or player_id in seen
+            or not str(player.get("name", "")).strip()
+            or not str(player.get("club", "")).strip()
+            or not str(player.get("profile_url", "")).startswith("https://")
+        ):
+            raise RuntimeError("Transfermarkt identity seed contains an invalid identity")
+        seen.add(player_id)
+        players.append(
+            {
+                "player_id": player_id,
+                "name": str(player["name"]),
+                "club": str(player["club"]),
+                "profile_url": str(player["profile_url"]),
+            }
+        )
+    return players
+
+
+def identities_from_previous(
+    previous: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if not previous:
+        return []
+    values: dict[int, dict[str, Any]] = {}
+    for player in previous["players"].values():
+        mapping = player["mapping"]
+        transfermarkt_id = mapping.get("transfermarkt_player_id")
+        if (
+            mapping["status"] not in {"verified", "probable"}
+            or not isinstance(transfermarkt_id, int)
+        ):
+            continue
+        values[transfermarkt_id] = {
+            "player_id": transfermarkt_id,
+            "name": str(mapping["transfermarkt_name"]),
+            "club": str(mapping.get("transfermarkt_club", player["club"])),
+            "profile_url": str(mapping["profile_url"]),
+        }
+    return sorted(values.values(), key=lambda item: item["player_id"])
+
+
 def history_is_reusable(
     player: dict[str, Any],
     *,
@@ -700,6 +768,7 @@ def build_snapshot(
     strength_model: dict[str, Any],
     *,
     previous: dict[str, Any] | None,
+    identity_seed: list[dict[str, Any]],
     ttl_hours: int,
     minimum_refresh_age_hours: int,
     request_delay: float,
@@ -728,11 +797,22 @@ def build_snapshot(
             file=sys.stderr,
         )
         previous = None
-    _, squad_players = discover_squads(
-        config,
-        timeout=timeout,
-        request_delay=request_delay,
-    )
+    try:
+        _, squad_players = discover_squads(
+            config,
+            timeout=timeout,
+            request_delay=request_delay,
+        )
+    except RuntimeError as error:
+        squad_players = identity_seed or identities_from_previous(previous)
+        if not squad_players:
+            raise
+        print(
+            "Live Transfermarkt squad discovery unavailable; using the "
+            f"validated identity bootstrap ({len(squad_players)} players): "
+            f"{error}",
+            file=sys.stderr,
+        )
     market_players = [
         player
         for player in market_payload["players"]
@@ -927,6 +1007,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--market", required=True)
     parser.add_argument("--mapping", type=Path, required=True)
     parser.add_argument("--strengths", type=Path, required=True)
+    parser.add_argument("--identity-seed", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--previous")
     parser.add_argument("--ttl-hours", type=int, default=192)
@@ -942,11 +1023,17 @@ def main() -> int:
     config = json.loads(args.mapping.read_text(encoding="utf-8"))
     strength_model = json.loads(args.strengths.read_text(encoding="utf-8"))
     market_payload = load_market_snapshot(args.market)
+    identity_seed = load_identity_seed(
+        args.identity_seed,
+        competition=str(config["competition"]),
+        season=str(config["season"]),
+    )
     payload = build_snapshot(
         market_payload,
         config,
         strength_model,
         previous=load_previous(args.previous),
+        identity_seed=identity_seed,
         ttl_hours=args.ttl_hours,
         minimum_refresh_age_hours=args.minimum_refresh_age_hours,
         request_delay=args.request_delay,
