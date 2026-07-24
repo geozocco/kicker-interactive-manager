@@ -50,6 +50,9 @@ jobs:
             --output public/v1/news/2-bundesliga.json \
             --provider api_sports
 
+      - name: Respect API-Sports minute limit
+        run: sleep 65
+
       - name: Refresh 3. Liga
         env:
           API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
