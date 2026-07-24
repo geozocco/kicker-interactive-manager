@@ -28,6 +28,7 @@ Ein konfiguriertes zentrales News-Snapshot wird anschließend konservativ darüb
         "unknown_role": 10
       },
       "reliable_anchor": true,
+      "proven_seasons": 4,
       "anchor_reason": "Mehrjährig bestätigte Leistung, feste Rolle und aktuell hohe Einsatzwahrscheinlichkeit.",
       "benchmark": true,
       "evidence": [
@@ -44,7 +45,7 @@ Ein konfiguriertes zentrales News-Snapshot wird anschließend konservativ darüb
 }
 ```
 
-Spieler-ID bevorzugen. Der vollständige Anzeigename ist als Fallback zulässig. Für jeden Kandidaten eines finalen Laufs müssen alle acht Komponenten und alle fünf Risiken als endliche Zahlen zwischen 0 und 100 vorliegen. Zusätzlich sind `reliable_anchor` als Wahrheitswert oder `"auto"`, `benchmark` als Wahrheitswert sowie mindestens ein aktueller Eintrag in `evidence` erforderlich. Bei `reliable_anchor: true` oder `"auto"` muss `anchor_reason` konkret und nicht leer sein; nur bei `false` darf das Feld leer bleiben.
+Spieler-ID bevorzugen. Der vollständige Anzeigename ist als Fallback zulässig. Für jeden Kandidaten eines finalen Laufs müssen alle acht Komponenten und alle fünf Risiken als endliche Zahlen zwischen 0 und 100 vorliegen. Zusätzlich sind `reliable_anchor` als Wahrheitswert oder `"auto"`, `benchmark` als Wahrheitswert sowie mindestens ein aktueller Eintrag in `evidence` erforderlich. Bei `reliable_anchor: true` oder `"auto"` müssen `proven_seasons` als ganze Zahl von mindestens 2 und `anchor_reason` konkret und nicht leer vorliegen; nur bei `false` darf das Feld fehlen.
 
 Teilannotationen dürfen als vorläufige Arbeitsnotiz in einem Recherche- oder Shortlist-Lauf verwendet werden. Fehlende Felder leitet das Skript dort vorsichtig aus CSV-Punkten, Note und Preis ab; der Spieler gilt dadurch ausdrücklich **nicht** als final geprüft und wird im normalen finalen Lauf ausgeschlossen. `--allow-unannotated` dient nur technischen Smoke-Tests und niemals einer Kaderempfehlung.
 
@@ -52,6 +53,7 @@ Teilannotationen dürfen als vorläufige Arbeitsnotiz in einem Recherche- oder S
 
 - Nur Werte zwischen 0 und 100 verwenden.
 - `confirmed_performance` nicht mit Vorjahrespunkten gleichsetzen. Andere Ligen, mehrere Saisons und individuelle Rolle einbeziehen.
+- `proven_seasons` zählt nur Spielzeiten mit belastbarer individueller Leistung auf vergleichbarem oder höherem Niveau. Eine frühere Torjägerkrone, mehrere zweistellige Scorersaisons oder jahrelang wiederholte Standards zählen auch dann, wenn die unmittelbar letzte Saison schwächer war.
 - Bei Neuzugängen `minutes`, `role`, `stability` und `unknown_role` neu bewerten.
 - Herausragende Jugendleistungen vor allem in `upside` erfassen; den Sprung in den Profibereich über `minutes` und `unknown_role` begrenzen.
 - Frühere Verletzungen getrennt bewerten: aktuelle Fitness in `fitness`, Rückfallwahrscheinlichkeit in `injury`.
@@ -79,4 +81,4 @@ Bei den üblichen Positionsvorgaben 3/7/7/5 entspricht das 6/14/14/10. Wird auf 
 
 In Abwehr, Mittelfeld und Sturm jeweils mindestens zwei aktuell auswählbare Spieler mit `benchmark: true` aufnehmen. Außerdem alle vom Nutzer genannten Spieler und alle gefundenen Premiumsignale vollständig annotieren, auch wenn dadurch die Mindestzahl überschritten wird. Premiumsignale sind insbesondere mehrjährige Spitzenleistung, wiederholbare Standards oder Schlüsselrolle, Kapitänsverantwortung, frühere Torjägerkrone, außergewöhnliche individuelle Qualität und höherklassig bestätigte Leistung.
 
-Die automatische Shortlist ist nur ein Ausgangspunkt. Zusätzlich prominente Neuzugänge, höherklassig erprobte Rebound-Kandidaten und herausragende Nachwuchsspieler ergänzen. Für das Profil `verlässlich` genügend auswählbare `reliable_anchor` erfassen, um mindestens drei davon im Kader verlangen zu können. Reicht der Pool dafür nicht aus, weiter recherchieren oder die Einschränkung offen als nicht erfüllbar melden; niemals still absenken. Ohne Mindestabdeckung bricht das Skript ab; `--allow-unannotated` ist ausschließlich für technische Tests vorgesehen.
+Die automatische Shortlist ist nur ein Ausgangspunkt. Zusätzlich prominente Neuzugänge, höherklassig erprobte Rebound-Kandidaten und herausragende Nachwuchsspieler ergänzen. Für das Profil `verlässlich` genügend auswählbare `reliable_anchor` erfassen, um mindestens vier davon im Kader verlangen zu können, davon mindestens drei in Mittelfeld oder Sturm. Reicht der Pool dafür nicht aus, weiter recherchieren oder die Einschränkung offen als nicht erfüllbar melden; niemals still absenken. Ohne Mindestabdeckung bricht das Skript ab; `--allow-unannotated` ist ausschließlich für technische Tests vorgesehen.

@@ -33,14 +33,14 @@ Risiken ebenfalls auf 0 bis 100 schätzen:
 
 | Komponente | Verlässlich | Ausgewogen | Ausbruch |
 |---|---:|---:|---:|
-| confirmed_performance | 30 | 18 | 8 |
-| minutes | 25 | 23 | 18 |
-| role | 14 | 13 | 10 |
-| stability | 12 | 10 | 6 |
+| confirmed_performance | 38 | 18 | 8 |
+| minutes | 22 | 23 | 18 |
+| role | 13 | 13 | 10 |
+| stability | 11 | 10 | 6 |
 | context | 6 | 8 | 8 |
-| fitness | 7 | 8 | 7 |
+| fitness | 6 | 8 | 7 |
 | upside | 2 | 10 | 25 |
-| value | 4 | 10 | 18 |
+| value | 2 | 10 | 18 |
 
 Risikopenalties:
 
@@ -68,8 +68,9 @@ Den Risikowert mit dem Faktor multiplizieren und vom Komponentenscore abziehen.
 
 - Gewichte für `minutes`, `role` und `stability` erhöhen.
 - `upside` und `value` leicht reduzieren.
-- Beim Profil `verlässlich` die Modellutility innerhalb jeder Position zugunsten der bestbewerteten Kandidaten krümmen: Der Spitzenkandidat behält sein volles Gewicht, während die günstigeren Ergänzungen mit einem bis auf 30 Prozent sinkenden Bankgewicht eingehen. So finanziert der Solver einen starken Aufstellungskern statt 22 annähernd gleichwertiger Spieler.
+- Beim Profil `verlässlich` die Modellutility innerhalb jeder Position zugunsten der bestbewerteten Kandidaten krümmen: Der Spitzenkandidat behält sein volles Gewicht, während Ergänzungen bis auf 10 Prozent Bankgewicht sinken. Mehrjährig bestätigte Anker behalten dabei mindestens 95 Prozent in Mittelfeld und Sturm beziehungsweise 85 Prozent in der Abwehr. So finanziert der Solver einen starken Aufstellungskern statt 22 annähernd gleichwertiger Spieler.
 - Elf bis 14 hochwertige Kernspieler anstreben. Die übrigen Plätze günstig, aber mit plausibler Einsatzchance besetzen; eine gleichwertige Premiumbank ist nicht erforderlich.
+- Mindestens 70 Prozent des gesamten Kaderwerts müssen in der stärksten legalen Startelf liegen.
 - Verletzte, stark wechselgefährdete und reine Entwicklungsprojekte höchstens als einzelne Wetten einsetzen.
 
 ### Normal
@@ -110,5 +111,5 @@ Variabilität darf keine blinde Zufallsauswahl sein. Zuerst das beste Ergebnis i
   - ausbruch: 3
 - Einen höheren Wert nur bei außergewöhnlich guter Rolle und vertretbarem Teamrisiko zulassen.
 - Bei geringem Betreuungsaufwand je Feldposition günstige, einsatzfähige Absicherung vorsehen, ohne den Premiumkern doppelt zu bezahlen.
-- Beim Profil `verlässlich` mindestens drei aktuell belastbare Feldspieler als `reliable_anchor` verlangen. Verletzungs-, Transfer- und Rollenrisiken können einen bekannten Spieler vom Ankerstatus ausschließen.
+- Beim Profil `verlässlich` mindestens vier aktuell belastbare Feldspieler als `reliable_anchor` verlangen, davon mindestens drei in Mittelfeld oder Sturm. Jeder Anker benötigt mindestens zwei belegte Spielzeiten auf vergleichbarem oder höherem Niveau. Verletzungs-, Transfer- und Rollenrisiken können einen bekannten Spieler vom Ankerstatus ausschließen.
 - Maximal ein bis drei extreme Longshots einsetzen, abhängig vom Profil.

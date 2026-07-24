@@ -93,7 +93,7 @@ Die Kombination `verlässlich` und `gering` ist das konservative Kollegenprofil:
 
 - Alle hier genannten Skript- und Referenzpfade relativ zum Verzeichnis dieses `SKILL.md` auflösen.
 - Komponenten und Risiken nach [references/annotation-schema.md](references/annotation-schema.md) erfassen.
-- Für jeden final geprüften Kandidaten zusätzlich `reliable_anchor`, `anchor_reason`, `benchmark` und belastbare `evidence` erfassen.
+- Für jeden final geprüften Kandidaten zusätzlich `reliable_anchor`, `proven_seasons`, `anchor_reason`, `benchmark` und belastbare `evidence` erfassen. `proven_seasons` zählt nur Spielzeiten mit belastbarer Leistung auf vergleichbarem oder höherem Niveau; eine einzelne starke Vorsaison reicht nicht.
 - `scripts/optimize_squad.py` mit CSV, Profil, Variabilität, Betreuungsaufwand, Budget und Annotationen ausführen.
 - Den eingebauten zentralen Feed anhand von Wettbewerb und Saison verwenden. `KICKER_NEWS_FEED_URL` und optional `KICKER_NEWS_FEED_TOKEN` aus der Laufzeit überschreiben ihn nur, wenn sie ausdrücklich zentral eingerichtet sind. Die Werte nicht ausgeben. Niemals nach `SPORTMONKS_API_TOKEN` oder `API_SPORTS_KEY` auf einem Kollegenrechner suchen; diese gehören ausschließlich in den zentralen Aktualisierungslauf.
 - Beim zentralen Feed immer Wettbewerb und Saison gegen die sichtbare Kicker-Seite prüfen und für den finalen Lauf `--require-news-snapshot --require-news-coverage` verwenden.
@@ -107,16 +107,16 @@ Die Kombination `verlässlich` und `gering` ist das konservative Kollegenprofil:
 Beispiel:
 
 ```text
-<python-3-command> scripts/optimize_squad.py --players <players-csv-path> --annotations <annotations-json-path> --competition "2. Bundesliga" --season "2026/27" --require-news-snapshot --require-news-coverage --profile reliable --variation medium --maintenance low --min-reliable-anchors 3 --seed <seed> --budget 10000000 --goalkeepers 3 --defenders 7 --midfielders 7 --forwards 5 --format json
+<python-3-command> scripts/optimize_squad.py --players <players-csv-path> --annotations <annotations-json-path> --competition "2. Bundesliga" --season "2026/27" --require-news-snapshot --require-news-coverage --profile reliable --variation medium --maintenance low --min-reliable-anchors 4 --min-attacking-anchors 3 --min-core-budget-share 0.70 --seed <seed> --budget 10000000 --goalkeepers 3 --defenders 7 --midfielders 7 --forwards 5 --format json
 ```
 
-Wettbewerb, Saison und vier Positionsargumente immer mit den zuvor von der sichtbaren Kicker-Seite erfassten Werten belegen; die gezeigten Werte sind nur ein Beispiel. Für das Profil `verlässlich` mindestens drei `reliable_anchor` verlangen. Ist das mit aktuell auswählbaren Spielern nicht möglich, den Pool erweitern oder die Einschränkung offen erklären; die Mindestzahl nicht still absenken.
+Wettbewerb, Saison und vier Positionsargumente immer mit den zuvor von der sichtbaren Kicker-Seite erfassten Werten belegen; die gezeigten Werte sind nur ein Beispiel. Für das Profil `verlässlich` mindestens vier `reliable_anchor` verlangen, davon mindestens drei in Mittelfeld oder Sturm. Ist das mit aktuell auswählbaren Spielern nicht möglich, den Pool um mehrjährig bestätigte Scorer, Kreativspieler und Standard- oder Schlüsselspieler erweitern oder die Einschränkung offen erklären; die Mindestzahl nicht still absenken.
 
 ### 4. Portfolio prüfen
 
 - Kader nicht nur nach Summenscore beurteilen:
   - einen klaren, hochwertigen Kern aus wahrscheinlichen Startern
-  - bei `verlässlich` mindestens drei aktuell belastbare `reliable_anchor`
+  - bei `verlässlich` mindestens vier aktuell belastbare `reliable_anchor`, davon mindestens drei in Mittelfeld oder Sturm
   - keine unnötige Häufung desselben Teamrisikos
   - wenige teure Spieler nur bei wiederholbarer Rolle
   - bei geringem Betreuungsaufwand die Qualität auf den Kern konzentrieren und teure Doppelbesetzungen vermeiden
@@ -124,6 +124,7 @@ Wettbewerb, Saison und vier Positionsargumente immer mit den zuvor von der sicht
 - Transfergefahr vor Saisonstart gesondert prüfen
 - `news_audit` muss frisch sein, zum Wettbewerb und zur Saison passen und darf bei ausgewählten Spielern weder fehlende Provider-Zuordnungen noch offene Konflikte enthalten
 - Für `verlässlich` plus `gering` standardmäßig 11 bis 14 Kernspieler, wenige günstige direkte Vertreter und anschließend preiswerte einsatzfähige Ergänzungen bilden. Eine gleichmäßig teure Bank ist kein Qualitätsmerkmal und erschwert die Finanzierung von Ausnahmespielern.
+- Für `verlässlich` plus `gering` müssen mindestens 70 Prozent des gesamten Kaderwerts in der stärksten legalen Startelf liegen. Ein niedrigerer Wert ist ein Abbruchgrund: Bank verbilligen, nachgewiesene Scorer und Kreativspieler finanzieren und neu rechnen.
 - Variabilität darf einzelne Kernentscheidungen und günstige Ergänzungen verändern, aber nicht die Kaderarchitektur in 22 gleichwertige Alternativen auflösen.
 - Variabilität nur innerhalb der in `strategy-profiles.md` festgelegten Qualitätsgrenze zulassen.
 - Bleiben mehr als 10 Prozent des Budgets ungenutzt, den Kandidatenpool über mehrere Preisklassen erweitern und neu rechnen. Einen solchen Rohkader nicht direkt umsetzen.

@@ -109,14 +109,14 @@ VARIATION_ALIASES = {
 
 PROFILE_WEIGHTS = {
     "reliable": {
-        "confirmed_performance": 30,
-        "minutes": 25,
-        "role": 14,
-        "stability": 12,
+        "confirmed_performance": 38,
+        "minutes": 22,
+        "role": 13,
+        "stability": 11,
         "context": 6,
-        "fitness": 7,
+        "fitness": 6,
         "upside": 2,
-        "value": 4,
+        "value": 2,
     },
     "balanced": {
         "confirmed_performance": 18,
@@ -190,6 +190,7 @@ class Player:
     anchor_reason: str = field(default="", compare=False)
     benchmark: bool = field(default=False, compare=False)
     evidence: tuple[Any, ...] = field(default=(), compare=False)
+    proven_seasons: int = field(default=0, compare=False)
 
 
 @dataclass
@@ -286,6 +287,17 @@ def annotation_is_complete(annotation: dict[str, Any]) -> bool:
         annotation.get("anchor_reason", "")
     ).strip():
         return False
+    if anchor_setting is True or (
+        isinstance(anchor_setting, str)
+        and anchor_setting.strip().lower() == "auto"
+    ):
+        proven_seasons = annotation.get("proven_seasons")
+        if (
+            isinstance(proven_seasons, bool)
+            or not isinstance(proven_seasons, int)
+            or proven_seasons < 2
+        ):
+            return False
     return evidence_is_complete(annotation)
 
 
@@ -413,6 +425,12 @@ def load_players(
                 anchor_reason=str(annotation.get("anchor_reason", "")).strip(),
                 benchmark=bool(annotation.get("benchmark", False)),
                 evidence=evidence,
+                proven_seasons=(
+                    annotation.get("proven_seasons", 0)
+                    if isinstance(annotation.get("proven_seasons", 0), int)
+                    and not isinstance(annotation.get("proven_seasons", 0), bool)
+                    else 0
+                ),
             )
         )
     return players, annotated_count, annotated_by_position
@@ -706,7 +724,6 @@ def classify_reliable_anchor(
         normalized = "auto"
     if normalized in {"false", "no", "ineligible"}:
         return False, "explicit"
-
     safety_gate = (
         components["fitness"] >= 60
         and risks["transfer"] <= 35
@@ -717,14 +734,30 @@ def classify_reliable_anchor(
     )
     if normalized in {"true", "yes", "eligible"}:
         has_reason = bool(str(annotation.get("anchor_reason", "")).strip())
+        if not has_reason:
+            return False, "explicit"
+        proven_seasons = annotation.get("proven_seasons", 0)
+        if (
+            isinstance(proven_seasons, bool)
+            or not isinstance(proven_seasons, int)
+            or proven_seasons < 2
+        ):
+            return False, "insufficient_history"
         quality_gate = (
             components["confirmed_performance"] >= 78
             and components["minutes"] >= 75
             and components["role"] >= 70
             and components["stability"] >= 65
         )
-        return safety_gate and quality_gate and has_reason, "explicit"
+        return safety_gate and quality_gate, "explicit"
 
+    proven_seasons = annotation.get("proven_seasons", 0)
+    if (
+        isinstance(proven_seasons, bool)
+        or not isinstance(proven_seasons, int)
+        or proven_seasons < 2
+    ):
+        return False, "insufficient_history"
     automatic_gate = (
         components["confirmed_performance"] >= 78
         and components["minutes"] >= 75
@@ -807,7 +840,14 @@ def core_weighted_scores(
                 rank = (
                     bisect.bisect_right(ordered_values, scores[player.player_id]) - 1
                 ) / (len(ordered_values) - 1)
-            multiplier = 0.30 + 0.70 * rank**2
+            multiplier = 0.10 + 0.90 * rank**4
+            if player.reliable_anchor:
+                anchor_floor = (
+                    0.95
+                    if player.position in {"MIDFIELDER", "FORWARD"}
+                    else 0.85
+                )
+                multiplier = max(multiplier, anchor_floor)
             raw_score = scores[player.player_id]
             weighted[player.player_id] = (
                 raw_score * multiplier if raw_score >= 0.0 else raw_score
@@ -882,6 +922,46 @@ def best_starting_lineup(
     if chosen is None:
         return "", frozenset()
     return chosen[1], chosen[2]
+
+
+def reliable_core_audit(
+    squad: Squad,
+    scores: dict[str, float],
+    min_reliable_anchors: int,
+    min_attacking_anchors: int,
+    min_core_budget_share: float,
+) -> dict[str, Any]:
+    """Measure whether a conservative squad actually funds its scoring core."""
+
+    formation, core_ids = best_starting_lineup(
+        squad.players,
+        scores,
+        min_reliable_anchors,
+    )
+    core_players = [
+        player for player in squad.players if player.player_id in core_ids
+    ]
+    reliable_anchors = sum(player.reliable_anchor for player in core_players)
+    attacking_anchors = sum(
+        player.reliable_anchor
+        and player.position in {"MIDFIELDER", "FORWARD"}
+        for player in core_players
+    )
+    core_budget = sum(player.cost for player in core_players)
+    core_budget_share = core_budget / max(squad.cost, 1)
+    return {
+        "formation": formation,
+        "player_ids": core_ids,
+        "reliable_anchors": reliable_anchors,
+        "attacking_anchors": attacking_anchors,
+        "core_budget": core_budget,
+        "core_budget_share": core_budget_share,
+        "passes": (
+            reliable_anchors >= min_reliable_anchors
+            and attacking_anchors >= min_attacking_anchors
+            and core_budget_share >= min_core_budget_share
+        ),
+    }
 
 
 def goalkeeper_options(
@@ -1723,6 +1803,7 @@ def output_payload(
             "reliable_anchor": player.reliable_anchor,
             "anchor_basis": player.anchor_basis,
             "anchor_reason": player.anchor_reason,
+            "proven_seasons": player.proven_seasons,
         }
         if selection_role is not None:
             payload["selection_role"] = selection_role
@@ -1890,6 +1971,21 @@ def output_payload(
         )
     ]
     anchor_budget = sum(player.cost for player in selected_anchors)
+    attacking_anchors = [
+        player
+        for player in selected_anchors
+        if player.position in {"MIDFIELDER", "FORWARD"}
+    ]
+    core_attacking_anchors = [
+        player
+        for player in attacking_anchors
+        if player.player_id in core_ids
+    ]
+    core_players = [
+        player for player in squad.players if player.player_id in core_ids
+    ]
+    core_budget = sum(player.cost for player in core_players)
+    core_budget_share = core_budget / max(squad.cost, 1)
     return {
         "profile": args.profile,
         "maintenance": args.maintenance,
@@ -1923,6 +2019,8 @@ def output_payload(
             "player_ids": sorted(core_ids),
             "reliable_anchors": core_anchor_count,
             "reliable_anchors_required": core_anchor_requirement,
+            "budget": core_budget,
+            "budget_share_percent": round(100.0 * core_budget_share, 3),
         },
         "reliable_anchor_policy": {
             "required": args.min_reliable_anchors,
@@ -1936,6 +2034,23 @@ def output_payload(
             "budget": anchor_budget,
             "budget_share_percent": round(
                 100.0 * anchor_budget / max(args.budget, 1),
+                3,
+            ),
+            "attacking_required": int(
+                getattr(args, "min_attacking_anchors", 0)
+            ),
+            "attacking_selected": len(attacking_anchors),
+            "attacking_selected_names": sorted(
+                player.name for player in attacking_anchors
+            ),
+            "attacking_core": len(core_attacking_anchors),
+            "attacking_core_names": sorted(
+                player.name for player in core_attacking_anchors
+            ),
+            "minimum_core_budget_share_percent": round(
+                100.0 * float(
+                    getattr(args, "min_core_budget_share", 0.0)
+                ),
                 3,
             ),
         },
@@ -2138,8 +2253,24 @@ def parse_args() -> argparse.Namespace:
         "--min-reliable-anchors",
         type=int,
         help=(
-            "Minimum repeatable premium field-player anchors; default 3 for "
+            "Minimum repeatable premium field-player anchors; default 4 for "
             "a final reliable squad and 0 otherwise"
+        ),
+    )
+    parser.add_argument(
+        "--min-attacking-anchors",
+        type=int,
+        help=(
+            "Minimum reliable anchors in midfield or attack; default 3 for "
+            "a final reliable squad and 0 otherwise"
+        ),
+    )
+    parser.add_argument(
+        "--min-core-budget-share",
+        type=float,
+        help=(
+            "Minimum share of total squad cost assigned to the best legal "
+            "starting eleven; default 0.70 for reliable plus low maintenance"
         ),
     )
     parser.add_argument(
@@ -2180,12 +2311,32 @@ def parse_args() -> argparse.Namespace:
         parser.error("--max-outfield-per-club must be positive")
     if args.min_reliable_anchors is None:
         args.min_reliable_anchors = (
+            4
+            if args.profile == "reliable" and not args.allow_unannotated
+            else 0
+        )
+    if args.min_attacking_anchors is None:
+        args.min_attacking_anchors = (
             3
             if args.profile == "reliable" and not args.allow_unannotated
             else 0
         )
+    if args.min_core_budget_share is None:
+        args.min_core_budget_share = (
+            0.70
+            if (
+                args.profile == "reliable"
+                and args.maintenance == "low"
+                and not args.allow_unannotated
+            )
+            else 0.0
+        )
     if args.min_reliable_anchors < 0:
         parser.error("--min-reliable-anchors cannot be negative")
+    if args.min_attacking_anchors < 0:
+        parser.error("--min-attacking-anchors cannot be negative")
+    if not 0.0 <= args.min_core_budget_share <= 1.0:
+        parser.error("--min-core-budget-share must be between 0 and 1")
     if not 0.0 <= args.min_spend_ratio <= 1.0:
         parser.error("--min-spend-ratio must be between 0 and 1")
     args.slots = {
@@ -2203,6 +2354,16 @@ def parse_args() -> argparse.Namespace:
     )
     if args.min_reliable_anchors > field_slots:
         parser.error("--min-reliable-anchors exceeds the number of field slots")
+    if args.min_attacking_anchors > (
+        args.slots["MIDFIELDER"] + args.slots["FORWARD"]
+    ):
+        parser.error(
+            "--min-attacking-anchors exceeds midfield and forward slots"
+        )
+    if args.min_attacking_anchors > args.min_reliable_anchors:
+        parser.error(
+            "--min-attacking-anchors cannot exceed --min-reliable-anchors"
+        )
     return args
 
 
@@ -2389,6 +2550,21 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    attacking_anchor_candidates = sum(
+        player.reliable_anchor
+        for player in eligible_players
+        if player.position in {"MIDFIELDER", "FORWARD"}
+    )
+    if attacking_anchor_candidates < args.min_attacking_anchors:
+        print(
+            "Attacking-anchor research is incomplete: "
+            f"required={args.min_attacking_anchors}, "
+            f"eligible={attacking_anchor_candidates}. Research established "
+            "multi-season scorers, creators and set-piece leaders instead of "
+            "filling the pool with similarly priced depth.",
+            file=sys.stderr,
+        )
+        return 2
     eligible_utility_scores, core_multipliers = core_weighted_scores(
         eligible_players,
         eligible_raw_scores,
@@ -2443,21 +2619,40 @@ def main() -> int:
             )
             return 2
     if args.profile == "reliable" and args.min_reliable_anchors > 0:
-        _, core_ids = best_starting_lineup(
-            squad.players,
+        core_audit = reliable_core_audit(
+            squad,
             eligible_raw_scores,
             args.min_reliable_anchors,
+            args.min_attacking_anchors,
+            args.min_core_budget_share,
         )
-        core_anchor_count = sum(
-            player.reliable_anchor
-            for player in squad.players
-            if player.player_id in core_ids
-        )
+        core_anchor_count = core_audit["reliable_anchors"]
         if core_anchor_count < args.min_reliable_anchors:
             print(
                 "Optimization stopped: the squad-level anchor floor cannot be "
                 "placed inside one legal starting formation. Recalibrate the "
                 "anchor pool instead of treating bench anchors as the reliable core.",
+                file=sys.stderr,
+            )
+            return 2
+        core_attacking_anchors = core_audit["attacking_anchors"]
+        if core_attacking_anchors < args.min_attacking_anchors:
+            print(
+                "Optimization stopped: the legal starting core contains only "
+                f"{core_attacking_anchors} reliable midfield/forward anchors; "
+                f"{args.min_attacking_anchors} are required. Strengthen the "
+                "multi-season scorer and creator pool before changing Chrome.",
+                file=sys.stderr,
+            )
+            return 2
+        core_budget_share = core_audit["core_budget_share"]
+        if core_budget_share < args.min_core_budget_share:
+            print(
+                "Optimization stopped: too much squad value remains on the "
+                f"bench. Starting-core share={core_budget_share:.1%}, "
+                f"required={args.min_core_budget_share:.1%}. Replace expensive "
+                "reserve depth with cheap playable cover and fund proven "
+                "starters instead.",
                 file=sys.stderr,
             )
             return 2

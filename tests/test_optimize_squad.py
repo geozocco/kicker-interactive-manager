@@ -62,6 +62,7 @@ def player(
                 "checked_at": "2026-07-24",
             },
         ),
+        proven_seasons=3 if reliable_anchor else 0,
     )
 
 
@@ -471,6 +472,57 @@ class CentralNewsIdentityTests(unittest.TestCase):
 
 
 class ReliableCorePolicyTests(unittest.TestCase):
+    def test_core_audit_rejects_equal_value_bench_and_accepts_star_heavy_core(
+        self,
+    ) -> None:
+        anchor_ids = {"d0", "m0", "m1", "f0"}
+        rich_core: list[optimizer.Player] = [
+            player(f"g{index}", "Goalkeeper Club", "GOALKEEPER", 100)
+            for index in range(3)
+        ]
+        for position, prefix, count, starters, starter_cost in (
+            ("DEFENDER", "d", 7, 3, 600),
+            ("MIDFIELDER", "m", 7, 4, 800),
+            ("FORWARD", "f", 5, 3, 900),
+        ):
+            for index in range(count):
+                rich_core.append(
+                    player(
+                        f"{prefix}{index}",
+                        f"{prefix.upper()} Club {index}",
+                        position,
+                        starter_cost if index < starters else 50,
+                        reliable_anchor=f"{prefix}{index}" in anchor_ids,
+                    )
+                )
+        scores = {
+            item.player_id: 100.0 - index
+            for index, item in enumerate(rich_core)
+        }
+        strong = optimizer.reliable_core_audit(
+            optimizer.Squad(rich_core, 0.0),
+            scores,
+            min_reliable_anchors=4,
+            min_attacking_anchors=3,
+            min_core_budget_share=0.70,
+        )
+        flat_players = [
+            optimizer.replace(item, cost=100) for item in rich_core
+        ]
+        flat = optimizer.reliable_core_audit(
+            optimizer.Squad(flat_players, 0.0),
+            scores,
+            min_reliable_anchors=4,
+            min_attacking_anchors=3,
+            min_core_budget_share=0.70,
+        )
+
+        self.assertTrue(strong["passes"])
+        self.assertGreaterEqual(strong["core_budget_share"], 0.70)
+        self.assertEqual(3, strong["attacking_anchors"])
+        self.assertFalse(flat["passes"])
+        self.assertAlmostEqual(0.5, flat["core_budget_share"])
+
     def test_final_annotation_requires_anchor_benchmark_and_evidence_fields(
         self,
     ) -> None:
@@ -493,7 +545,18 @@ class ReliableCorePolicyTests(unittest.TestCase):
                 {
                     **annotation,
                     "reliable_anchor": "auto",
+                    "proven_seasons": 3,
                     "anchor_reason": "Let the strict model thresholds decide",
+                }
+            )
+        )
+        self.assertFalse(
+            optimizer.annotation_is_complete(
+                {
+                    **annotation,
+                    "reliable_anchor": "auto",
+                    "proven_seasons": 1,
+                    "anchor_reason": "Only one proven season",
                 }
             )
         )
@@ -530,7 +593,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
         self.assertEqual(
             (True, "auto"),
             optimizer.classify_reliable_anchor(
-                {},
+                {"proven_seasons": 3},
                 True,
                 "MIDFIELDER",
                 80.0,
@@ -543,6 +606,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             optimizer.classify_reliable_anchor(
                 {
                     "reliable_anchor": True,
+                    "proven_seasons": 3,
                     "anchor_reason": "Multi-season performance and stable role",
                 },
                 True,
@@ -568,6 +632,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             optimizer.classify_reliable_anchor(
                 {
                     "reliable_anchor": True,
+                    "proven_seasons": 3,
                     "anchor_reason": "One unrepeatable peak season",
                 },
                 True,
@@ -582,6 +647,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             optimizer.classify_reliable_anchor(
                 {
                     "reliable_anchor": True,
+                    "proven_seasons": 3,
                     "anchor_reason": "Proven, but transfer status is unsafe",
                 },
                 True,
@@ -596,6 +662,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             optimizer.classify_reliable_anchor(
                 {
                     "reliable_anchor": True,
+                    "proven_seasons": 3,
                     "anchor_reason": "Safe role, but not premium performance",
                 },
                 True,
@@ -621,6 +688,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             optimizer.classify_reliable_anchor(
                 {
                     "reliable_anchor": True,
+                    "proven_seasons": 3,
                     "anchor_reason": "Goalkeepers do not count as field anchors",
                 },
                 True,
@@ -812,8 +880,8 @@ class ReliableCorePolicyTests(unittest.TestCase):
         )
 
         self.assertAlmostEqual(1.0, multipliers["d-high"])
-        self.assertAlmostEqual(0.475, multipliers["d-mid"])
-        self.assertAlmostEqual(0.3, multipliers["d-low"])
+        self.assertAlmostEqual(0.15625, multipliers["d-mid"])
+        self.assertAlmostEqual(0.1, multipliers["d-low"])
         self.assertGreater(
             multipliers["d-high"],
             multipliers["d-mid"],
@@ -823,8 +891,8 @@ class ReliableCorePolicyTests(unittest.TestCase):
             multipliers["d-low"],
         )
         self.assertAlmostEqual(100.0, weighted["d-high"])
-        self.assertAlmostEqual(33.25, weighted["d-mid"])
-        self.assertAlmostEqual(12.0, weighted["d-low"])
+        self.assertAlmostEqual(10.9375, weighted["d-mid"])
+        self.assertAlmostEqual(4.0, weighted["d-low"])
 
         for profile, maintenance in (
             ("balanced", "low"),
