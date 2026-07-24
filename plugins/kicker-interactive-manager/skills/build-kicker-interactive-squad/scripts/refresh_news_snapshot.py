@@ -81,12 +81,18 @@ def api_sports_pages(
     *,
     query: dict[str, Any],
     headers: dict[str, str],
+    paginate: bool = True,
 ) -> Iterable[dict[str, Any]]:
     page = 1
     while True:
+        request_query = (
+            {**query, "page": page}
+            if paginate
+            else dict(query)
+        )
         payload = request_json(
             base_url,
-            query={**query, "page": page},
+            query=request_query,
             headers=headers,
         )
         errors = payload.get("errors")
@@ -102,6 +108,8 @@ def api_sports_pages(
                 details = str(errors)
             raise RuntimeError(f"API-Sports rejected the request: {details}")
         yield payload
+        if not paginate:
+            return
         paging = payload.get("paging", {})
         total = optional_int(paging.get("total")) if isinstance(paging, dict) else None
         current = (
@@ -230,6 +238,7 @@ def discover_api_sports_roster(
         "https://v3.football.api-sports.io/teams",
         query={"league": league_id, "season": season},
         headers=headers,
+        paginate=False,
     ):
         requests += 1
         for item in response.get("response", []):
@@ -259,6 +268,7 @@ def discover_api_sports_roster(
             "https://v3.football.api-sports.io/players/squads",
             query={"team": requested_team_id},
             headers=headers,
+            paginate=False,
         ):
             requests += 1
             for squad in response.get("response", []):

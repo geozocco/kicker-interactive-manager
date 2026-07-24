@@ -250,6 +250,29 @@ class ProviderPagingTests(unittest.TestCase):
             )
 
     @patch.object(refresh, "request_json")
+    def test_api_sports_non_paginated_endpoint_omits_page(
+        self,
+        request_json,
+    ) -> None:
+        request_json.return_value = {
+            "errors": {},
+            "paging": {"current": 1, "total": 1},
+            "response": [],
+        }
+
+        pages = list(
+            refresh.api_sports_pages(
+                "https://provider.example/teams",
+                query={"league": 79, "season": 2026},
+                headers={"x-apisports-key": "secret"},
+                paginate=False,
+            )
+        )
+
+        self.assertEqual(1, len(pages))
+        self.assertNotIn("page", request_json.call_args.kwargs["query"])
+
+    @patch.object(refresh, "request_json")
     def test_sportsmonks_pagination_uses_header_auth(self, request_json) -> None:
         request_json.side_effect = [
             {
