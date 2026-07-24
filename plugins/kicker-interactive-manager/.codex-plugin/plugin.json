@@ -1,0 +1,32 @@
+{
+  "name": "kicker-interactive-manager",
+  "version": "0.1.0+codex.20260724093546",
+  "description": "Plant und setzt individuelle Kader f\u00fcr das kicker Managerspiel Interactive in einer angemeldeten Chrome-Sitzung um.",
+  "author": {
+    "name": "Jan Pies"
+  },
+  "keywords": [
+    "kicker",
+    "managerspiel",
+    "interactive",
+    "fussball",
+    "kaderoptimierung"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "kicker Interactive Kaderplaner",
+    "shortDescription": "Individuelle Kader direkt in Chrome planen",
+    "longDescription": "Erstellt und pflegt kicker-Interactive-Kader mit w\u00e4hlbarer Strategie zwischen best\u00e4tigter Leistung, ausgewogener Mischung und Ausbruchspotenzial. Kontrollierte Variabilit\u00e4t sorgt f\u00fcr hochwertige, aber unterschiedliche Mannschaften.",
+    "developerName": "Jan Pies",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Stelle meinen kicker-Kader verl\u00e4sslich und wartungsarm auf.",
+      "Baue mir einen konservativen Kader mit wenig Wechselbedarf.",
+      "Suche einen variablen Kader mit Ausbruchspotenzial."
+    ]
+  }
+}
