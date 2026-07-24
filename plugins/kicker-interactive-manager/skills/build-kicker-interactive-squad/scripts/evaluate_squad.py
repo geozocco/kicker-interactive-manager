@@ -766,7 +766,17 @@ def evaluate(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--players", type=Path, required=True)
+    player_source = parser.add_mutually_exclusive_group()
+    player_source.add_argument("--players", type=Path)
+    player_source.add_argument(
+        "--market-snapshot",
+        default=os.environ.get("KICKER_MARKET_FEED_URL"),
+    )
+    parser.add_argument(
+        "--market-token-env",
+        default="KICKER_MARKET_FEED_TOKEN",
+    )
+    parser.add_argument("--require-market-snapshot", action="store_true")
     parser.add_argument("--roster", type=Path, required=True)
     parser.add_argument("--annotations", type=Path, required=True)
     parser.add_argument(
@@ -825,6 +835,21 @@ def parse_args() -> argparse.Namespace:
         args.news_snapshot = optimizer.DEFAULT_NEWS_FEEDS.get(
             (args.competition, args.season)
         )
+    if not args.players and not args.market_snapshot:
+        args.market_snapshot = optimizer.DEFAULT_MARKET_FEEDS.get(
+            (args.competition, args.season)
+        )
+    if not args.players and not args.market_snapshot:
+        parser.error(
+            "set --players or use a competition and season with a configured "
+            "central market"
+        )
+    if args.players and args.market_snapshot:
+        parser.error("--players and --market-snapshot cannot be combined")
+    if args.require_market_snapshot and not args.market_snapshot:
+        parser.error(
+            "--require-market-snapshot cannot be used with only a local CSV"
+        )
     return args
 
 
@@ -863,15 +888,55 @@ def render_text(payload: dict[str, Any]) -> str:
 
 def main() -> int:
     args = parse_args()
-    annotations = optimizer.load_annotations(args.annotations)
-    evaluation_annotations = {
-        key: {**annotation, "exclude": False}
-        for key, annotation in annotations.items()
-    }
-    players, _, _ = optimizer.load_players(
-        args.players,
-        evaluation_annotations,
-    )
+    local_annotations = optimizer.load_annotations(args.annotations)
+    annotations = local_annotations
+    if args.market_snapshot:
+        try:
+            market_payload = optimizer.load_market_snapshot(
+                args.market_snapshot,
+                token_env=args.market_token_env,
+            )
+            if market_payload["competition"] != args.competition:
+                raise optimizer.MarketSnapshotError(
+                    "market snapshot competition does not match the visible "
+                    "Kicker league"
+                )
+            if market_payload["season"] != args.season:
+                raise optimizer.MarketSnapshotError(
+                    "market snapshot season does not match the visible "
+                    "Kicker season"
+                )
+        except (optimizer.MarketSnapshotError, OSError) as error:
+            print(
+                f"Central market loading stopped squad evaluation: {error}",
+                file=sys.stderr,
+            )
+            return 2
+        annotations = optimizer.merge_annotations(
+            market_payload.get("annotations", {}),
+            local_annotations,
+        )
+        market_audit = optimizer.market_snapshot_audit(market_payload)
+        market_audit["required"] = bool(args.require_market_snapshot)
+        players, _, _ = optimizer.load_players_from_rows(
+            optimizer.market_csv_rows(market_payload),
+            {
+                key: {**annotation, "exclude": False}
+                for key, annotation in annotations.items()
+            },
+        )
+    else:
+        market_audit = {
+            "status": "local_csv",
+            "required": False,
+        }
+        players, _, _ = optimizer.load_players(
+            args.players,
+            {
+                key: {**annotation, "exclude": False}
+                for key, annotation in annotations.items()
+            },
+        )
     roster_entries = load_roster(args.roster)
     selected_before_news, resolution_errors = resolve_roster(
         roster_entries,
@@ -964,6 +1029,7 @@ def main() -> int:
         max_evidence_age_days=args.max_evidence_age_days,
         today=datetime.now(timezone.utc).date(),
     )
+    payload["market_audit"] = market_audit
     rendered = (
         json.dumps(payload, ensure_ascii=False, indent=2)
         if args.format == "json"

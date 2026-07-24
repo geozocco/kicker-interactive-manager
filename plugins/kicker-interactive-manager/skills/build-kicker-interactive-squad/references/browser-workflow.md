@@ -13,12 +13,12 @@
 2. Nach Navigation kurz auf das Laden der angemeldeten Anwendung warten.
 3. DOM-Snapshot erfassen.
 4. Wettbewerb, Saison-ID, Kaderzahl, Budget, Positionszahlen und aktuellen Kader aus sichtbaren Elementen lesen.
-5. Den sichtbaren Link „Spieler-Daten Export“ verwenden. Keine private API aus Browserzuständen rekonstruieren.
+5. Den zentralen Marktbestand für die sichtbare Liga und Saison verwenden. Den Link „Spieler-Daten Export“ nur beim dokumentierten manuellen Fallback verwenden. Keine private API aus Browserzuständen rekonstruieren.
 
 ## Read-only-Bewertung
 
 - Bei „Bewerte meinen Kader“, „prüfe meinen Kader“ oder vergleichbaren Formulierungen ausschließlich lesen.
-- Jeden sichtbaren Spieler mit Name, Verein, Position und Preis erfassen und anschließend gegen die offizielle CSV auflösen.
+- Jeden sichtbaren Spieler mit Name, Verein, Position und Preis erfassen und anschließend gegen den zentralen Marktbestand auflösen.
 - Keine Verkaufs-, Kauf-, Aufstellungs- oder Bestätigungsbuttons betätigen.
 - Den Zustand nach der Erfassung erneut lesen und Spielerzahl, Positionen sowie Budget gegen die Bewertungsdatei prüfen.
 - Das Ergebnis nach `squad-evaluation.md` liefern. Erst eine spätere ausdrückliche Änderungsanweisung wechselt in den Schreibmodus.
@@ -28,7 +28,7 @@
 Eine ausdrückliche Aufforderung wie „stelle auf“, „optimiere“ oder „ändere meinen Kader“ autorisiert die dafür notwendigen Kaderänderungen.
 
 1. Zielkader vor dem ersten Klick vollständig berechnen.
-2. Unmittelbar davor den News-Gate erneut prüfen: Snapshot frisch, richtige Liga und Saison, vollständige Zuordnung aller Zielspieler, keine offenen Konflikte.
+2. Unmittelbar davor Markt- und News-Gate erneut prüfen: beide Snapshots frisch, richtige Liga und Saison, vollständige Zuordnung aller Zielspieler, keine offenen Konflikte.
 3. Zu verkaufende Spieler einzeln über den Kaderbereich lokalisieren.
 4. Vor jedem Klick:
    - frischen DOM-Snapshot erfassen

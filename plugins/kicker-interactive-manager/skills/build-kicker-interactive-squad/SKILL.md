@@ -51,7 +51,7 @@ Fehlende Strategieparameter auf die angegebenen Defaults setzen und knapp nennen
 
 Für exakte Gewichtungen und Qualitätsgrenzen [references/strategy-profiles.md](references/strategy-profiles.md) vollständig lesen.
 
-Vor der ersten News-Abfrage [references/news-hardening.md](references/news-hardening.md) vollständig lesen. Dort stehen Snapshot-Vertrag, Provider-Regeln, Ablaufzeit, Konfliktbehandlung und manueller Fallback.
+Vor der ersten Datenabfrage [references/market-data.md](references/market-data.md) und [references/news-hardening.md](references/news-hardening.md) vollständig lesen. Dort stehen Markt- und News-Snapshot-Vertrag, Ablaufzeit, Konfliktbehandlung und manueller Fallback.
 
 Die Kombination `verlässlich` und `gering` ist das konservative Kollegenprofil: Der Kader soll über einen möglichst sicheren, hochwertigen Kern funktionieren. Die Bank fängt einzelne Ausfälle mit günstigen Spielern ab, die realistische Einsatzminuten haben; sie muss den Kern weder preislich noch leistungsmäßig spiegeln.
 
@@ -68,7 +68,7 @@ Die Kombination `verlässlich` und `gering` ist das konservative Kollegenprofil:
 ### 1. Ist-Zustand erfassen
 
 - Prüfen, dass die sichtbare Kicker-Seite zur ausdrücklich gewählten Spielklasse gehört. Wettbewerb, Saison-ID, Budget, Positionsvorgaben, aktuellen Kader und offene Plätze erfassen.
-- Den Link „Spieler-Daten Export“ der aktuellen Saison verwenden und die CSV als maßgeblichen Preis-/Positionsbestand behandeln.
+- Für 2. Bundesliga und 3. Liga den frischen zentralen Marktbestand als maßgeblichen Preis-/Positionsbestand verwenden und gegen die sichtbare Saison prüfen. Die offizielle Roh-CSV nicht unnötig in einem Chrome-Tab öffnen.
 - Standardmäßig alle Torhüter aus demselben Verein wählen. Nur auf ausdrücklichen Wunsch mit `--mixed-goalkeepers` abweichen.
 - Weichen die sichtbaren Positionsvorgaben von 3/7/7/5 ab, dem Skript die tatsächlichen Werte über `--goalkeepers`, `--defenders`, `--midfielders` und `--forwards` übergeben.
 
@@ -76,7 +76,7 @@ Die Kombination `verlässlich` und `gering` ist das konservative Kollegenprofil:
 
 Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüfen lassen möchte, [references/squad-evaluation.md](references/squad-evaluation.md) vollständig lesen und diesen Zweig statt der Kaderoptimierung ausführen.
 
-- Aktuellen Kader zweimal aus dem sichtbaren Chrome-Zustand erfassen und eindeutig gegen die offizielle CSV auflösen.
+- Aktuellen Kader zweimal aus dem sichtbaren Chrome-Zustand erfassen und eindeutig gegen den zentralen Marktbestand auflösen.
 - Jeden gewählten Spieler vollständig und aktuell annotieren. Für Verbesserungsvorschläge zusätzlich bezahlbare Alternativen recherchieren; für eine reine Sicherheitsprüfung reicht der vollständig geprüfte Zielkader.
 - Bei 2. Bundesliga und 3. Liga den frischen zentralen Feed mit `--require-news-snapshot --require-news-coverage` verlangen. Fehlende oder widersprüchliche Daten verhindern eine grüne Bestätigung.
 - `scripts/evaluate_squad.py` mit sichtbarem Budget, Positionszahlen, Strategie und Betreuungsaufwand ausführen.
@@ -89,7 +89,7 @@ Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüf
 - Zuerst einen breiten Recherchepool erzeugen:
 
 ```text
-<python-3-command> scripts/optimize_squad.py --players <players-csv-path> --profile reliable --budget 10000000 --shortlist-only
+<python-3-command> scripts/optimize_squad.py --competition "2. Bundesliga" --season "2026/27" --profile reliable --budget 10000000 --shortlist-only
 ```
 
 - Je Position etablierte Kandidaten, Neuzugänge, höherklassig erprobte Spieler, Jugendtalente und Rebound-Kandidaten aufnehmen.
@@ -110,7 +110,8 @@ Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüf
 - Komponenten und Risiken nach [references/annotation-schema.md](references/annotation-schema.md) erfassen.
 - Für jeden final geprüften Kandidaten zusätzlich `reliable_anchor`, `proven_seasons`, `anchor_reason`, `benchmark` und belastbare `evidence` erfassen. `proven_seasons` zählt nur Spielzeiten mit belastbarer Leistung auf vergleichbarem oder höherem Niveau; eine einzelne starke Vorsaison reicht nicht.
 - Den Ankerpool ligaweit und ergebnisoffen recherchieren. Er muss Rollen aus mehreren Vereinen und Preisklassen enthalten. Namen, die der Nutzer als Beispiele, frühere Gedanken oder Kritik erwähnt hat, sind Vergleichskandidaten und dürfen weder den Pool definieren noch einen Auswahlbonus erhalten. Nur ein ausdrückliches „Spieler X muss in den Kader“ ist eine harte Vorgabe.
-- `scripts/optimize_squad.py` mit CSV, Profil, Variabilität, Betreuungsaufwand, Budget und Annotationen ausführen.
+- `scripts/optimize_squad.py` mit zentralem Marktbestand, Profil, Variabilität, Betreuungsaufwand, Budget und Annotationen ausführen.
+- Für einen finalen Lauf `--require-market-snapshot` verlangen. `market_audit` muss frisch sein und zur sichtbaren Liga und Saison passen. Nur beim dokumentierten manuellen Fallback eine aktuelle lokale Kicker-CSV mit `--players` verwenden.
 - Den eingebauten zentralen Feed anhand von Wettbewerb und Saison verwenden. `KICKER_NEWS_FEED_URL` und optional `KICKER_NEWS_FEED_TOKEN` aus der Laufzeit überschreiben ihn nur, wenn sie ausdrücklich zentral eingerichtet sind. Die Werte nicht ausgeben. Niemals nach `SPORTMONKS_API_TOKEN` oder `API_SPORTS_KEY` auf einem Kollegenrechner suchen; diese gehören ausschließlich in den zentralen Aktualisierungslauf.
 - Beim zentralen Feed immer Wettbewerb und Saison gegen die sichtbare Kicker-Seite prüfen und für den finalen Lauf `--require-news-snapshot --require-news-coverage` verwenden.
 - Ist kein zentraler Feed eingerichtet oder erreichbar, den in `news-hardening.md` beschriebenen manuellen Tagescheck für jeden möglichen Zielspieler und entscheidenden Near-Miss durchführen. Ein abgelaufenes Snapshot niemals als aktuellen Beleg verwenden.
@@ -126,7 +127,7 @@ Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüf
 Beispiel:
 
 ```text
-<python-3-command> scripts/optimize_squad.py --players <players-csv-path> --annotations <annotations-json-path> --competition "2. Bundesliga" --season "2026/27" --require-news-snapshot --require-news-coverage --profile reliable --variation medium --maintenance low --min-reliable-anchors 4 --min-attacking-anchors 3 --min-core-budget-share 0.70 --budget 10000000 --goalkeepers 3 --defenders 7 --midfielders 7 --forwards 5 --format json
+<python-3-command> scripts/optimize_squad.py --annotations <annotations-json-path> --competition "2. Bundesliga" --season "2026/27" --require-market-snapshot --require-news-snapshot --require-news-coverage --profile reliable --variation medium --maintenance low --min-reliable-anchors 4 --min-attacking-anchors 3 --min-core-budget-share 0.70 --budget 10000000 --goalkeepers 3 --defenders 7 --midfielders 7 --forwards 5 --format json
 ```
 
 Beispiel für eine ausdrücklich gewünschte neue persönliche Variante:
@@ -148,6 +149,7 @@ Wettbewerb, Saison und vier Positionsargumente immer mit den zuvor von der sicht
   - günstige Bankspieler nur mit belegbarer Einsatzchance wählen; keine Bank voller unklarer Entwicklungsprojekte
 - Transfergefahr vor Saisonstart gesondert prüfen
 - `news_audit` muss frisch sein, zum Wettbewerb und zur Saison passen und darf bei ausgewählten Spielern weder fehlende Provider-Zuordnungen noch offene Konflikte enthalten
+- `market_audit` muss frisch sein, zum Wettbewerb und zur Saison passen und die vollständige zentrale Spielerliste ausweisen
 - Für `verlässlich` plus `gering` standardmäßig 11 bis 14 Kernspieler, wenige günstige direkte Vertreter und anschließend preiswerte einsatzfähige Ergänzungen bilden. Eine gleichmäßig teure Bank ist kein Qualitätsmerkmal und erschwert die Finanzierung von Ausnahmespielern.
 - Für `verlässlich` plus `gering` müssen mindestens 70 Prozent des gesamten Kaderwerts in der stärksten legalen Startelf liegen. Ein niedrigerer Wert ist ein Abbruchgrund: Bank verbilligen, nachgewiesene Scorer und Kreativspieler finanzieren und neu rechnen.
 - Variabilität darf einzelne Kernentscheidungen und günstige Ergänzungen verändern, aber nicht die Kaderarchitektur in 22 gleichwertige Alternativen auflösen.

@@ -1,4 +1,4 @@
-name: Update central news feed
+name: Update central Kicker data
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: central-news-feed
+  group: central-kicker-data
   cancel-in-progress: false
 
 jobs:
@@ -28,6 +28,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Refresh 2. Bundesliga market
+        run: |
+          python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_market_snapshot.py \
+            --mapping config/market/2-bundesliga.json \
+            --output public/v1/market/2-bundesliga.json
+
+      - name: Refresh 3. Liga market
+        run: |
+          python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_market_snapshot.py \
+            --mapping config/market/3-liga.json \
+            --output public/v1/market/3-liga.json
 
       - name: Refresh 2. Bundesliga
         env:
@@ -59,9 +71,18 @@ jobs:
           )
           sys.path.insert(0, str(scripts))
           from news_snapshot import load_snapshot
+          from market_snapshot import load_snapshot as load_market_snapshot
 
           for path in sorted(Path("public/v1/news").glob("*.json")):
               snapshot = load_snapshot(path)
+              print(
+                  path,
+                  snapshot["competition"],
+                  snapshot["season"],
+                  len(snapshot["players"]),
+              )
+          for path in sorted(Path("public/v1/market").glob("*.json")):
+              snapshot = load_market_snapshot(path)
               print(
                   path,
                   snapshot["competition"],

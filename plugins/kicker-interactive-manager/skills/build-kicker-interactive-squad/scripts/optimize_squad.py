@@ -31,6 +31,12 @@ if str(SCRIPT_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIRECTORY))
 
 from news_snapshot import NewsSnapshotError, load_snapshot, snapshot_audit
+from market_snapshot import (
+    MarketSnapshotError,
+    csv_rows as market_csv_rows,
+    load_snapshot as load_market_snapshot,
+    snapshot_audit as market_snapshot_audit,
+)
 
 
 DEFAULT_SLOTS = {
@@ -68,6 +74,16 @@ DEFAULT_NEWS_FEEDS = {
     ("3. Liga", "2026/27"): (
         "https://geozocco.github.io/kicker-interactive-manager/"
         "v1/news/3-liga.json"
+    ),
+}
+DEFAULT_MARKET_FEEDS = {
+    ("2. Bundesliga", "2026/27"): (
+        "https://geozocco.github.io/kicker-interactive-manager/"
+        "v1/market/2-bundesliga.json"
+    ),
+    ("3. Liga", "2026/27"): (
+        "https://geozocco.github.io/kicker-interactive-manager/"
+        "v1/market/3-liga.json"
     ),
 }
 CLUB_IDENTITY_STOPWORDS = {
@@ -443,14 +459,36 @@ def load_annotations(path: Path | None) -> dict[str, dict[str, Any]]:
     return {str(key): value for key, value in entries.items() if isinstance(value, dict)}
 
 
-def load_players(
-    path: Path,
+def merge_annotations(
+    central: dict[str, dict[str, Any]],
+    local: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    merged = {
+        str(key): dict(value)
+        for key, value in central.items()
+        if isinstance(value, dict)
+    }
+    for key, local_value in local.items():
+        current = merged.get(str(key), {})
+        combined = {**current, **local_value}
+        for nested_key in ("components", "risks"):
+            central_nested = current.get(nested_key, {})
+            local_nested = local_value.get(nested_key, {})
+            if isinstance(central_nested, dict) and isinstance(local_nested, dict):
+                combined[nested_key] = {
+                    **central_nested,
+                    **local_nested,
+                }
+        merged[str(key)] = combined
+    return merged
+
+
+def load_players_from_rows(
+    rows: list[dict[str, str]],
     annotations: dict[str, dict[str, Any]],
 ) -> tuple[list[Player], int, dict[str, int]]:
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        rows = list(csv.DictReader(handle, delimiter=";"))
     if not rows:
-        raise ValueError("player CSV is empty")
+        raise ValueError("player market is empty")
 
     points_by_position: dict[str, list[float]] = {
         position: [] for position in DEFAULT_SLOTS
@@ -565,6 +603,15 @@ def load_players(
             )
         )
     return players, annotated_count, annotated_by_position
+
+
+def load_players(
+    path: Path,
+    annotations: dict[str, dict[str, Any]],
+) -> tuple[list[Player], int, dict[str, int]]:
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle, delimiter=";"))
+    return load_players_from_rows(rows, annotations)
 
 
 def identity_words(value: str) -> tuple[str, ...]:
@@ -2218,6 +2265,7 @@ def output_payload(
     hard_exclusions: list[dict[str, Any]],
     news_audit: dict[str, Any] | None = None,
     portfolio_audit: dict[str, Any] | None = None,
+    market_audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     news_audit = news_audit or {
         "status": "not_configured",
@@ -2648,6 +2696,10 @@ def output_payload(
         "benchmark_audit": benchmark_audit,
         "hard_exclusions": hard_exclusions,
         "news_audit": news_audit,
+        "market_audit": market_audit or {
+            "status": "not_configured",
+            "required": False,
+        },
         "warnings": warnings,
         "squad": [
             serialize_player(
@@ -2666,12 +2718,16 @@ def shortlist_payload(
     scores: dict[str, float],
     profile: str,
     slots: dict[str, int],
+    market_audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "profile": profile,
         "purpose": (
             "Research these baseline and unproven-value candidates before final optimization."
         ),
+        "market_audit": market_audit or {
+            "status": "not_configured",
+        },
         "shortlist": {},
     }
     for position, slot_count in slots.items():
@@ -2784,7 +2840,30 @@ def print_text(payload: dict[str, Any]) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--players", type=Path, required=True, help="Official Kicker semicolon CSV")
+    player_source = parser.add_mutually_exclusive_group()
+    player_source.add_argument(
+        "--players",
+        type=Path,
+        help="Local official Kicker semicolon CSV fallback",
+    )
+    player_source.add_argument(
+        "--market-snapshot",
+        default=os.environ.get("KICKER_MARKET_FEED_URL"),
+        help=(
+            "Central market JSON path or HTTPS URL; defaults by competition "
+            "and season when no local CSV is supplied"
+        ),
+    )
+    parser.add_argument(
+        "--market-token-env",
+        default="KICKER_MARKET_FEED_TOKEN",
+        help="Environment variable containing an optional market feed token",
+    )
+    parser.add_argument(
+        "--require-market-snapshot",
+        action="store_true",
+        help="Stop unless a fresh, matching central market snapshot is available",
+    )
     parser.add_argument("--annotations", type=Path, help="Current player annotations JSON")
     parser.add_argument(
         "--competition",
@@ -2934,6 +3013,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--format", choices=("json", "text"), default="text")
     parser.add_argument("--output", type=Path, help="Optional output file")
     args = parser.parse_args()
+    if not args.players and not args.market_snapshot and args.competition and args.season:
+        args.market_snapshot = DEFAULT_MARKET_FEEDS.get(
+            (args.competition, args.season)
+        )
     if not args.news_snapshot and args.competition and args.season:
         args.news_snapshot = DEFAULT_NEWS_FEEDS.get(
             (args.competition, args.season)
@@ -2941,6 +3024,17 @@ def parse_args() -> argparse.Namespace:
     args.profile = PROFILE_ALIASES[args.profile]
     args.maintenance = MAINTENANCE_ALIASES[args.maintenance]
     args.variation = VARIATION_ALIASES[args.variation]
+    if args.players and args.market_snapshot:
+        parser.error("--players and --market-snapshot cannot be combined")
+    if not args.players and not args.market_snapshot:
+        parser.error(
+            "set --players or --market-snapshot, or use a competition and "
+            "season with a configured central market"
+        )
+    if args.require_market_snapshot and not args.market_snapshot:
+        parser.error(
+            "--require-market-snapshot cannot be used with only a local CSV"
+        )
     if args.max_outfield_per_club is None:
         args.max_outfield_per_club = DEFAULT_CLUB_CAP[args.profile]
     if args.max_outfield_per_club < 1:
@@ -3055,7 +3149,68 @@ def main() -> int:
             file=sys.stderr,
             flush=True,
         )
-    annotations = load_annotations(args.annotations)
+    local_annotations = load_annotations(args.annotations)
+    annotations = local_annotations
+    market_audit: dict[str, Any]
+    if args.market_snapshot:
+        try:
+            market_payload = load_market_snapshot(
+                args.market_snapshot,
+                token_env=args.market_token_env,
+            )
+        except (MarketSnapshotError, OSError) as error:
+            print(
+                f"Central market loading stopped optimization: {error}",
+                file=sys.stderr,
+            )
+            return 2
+        if (
+            args.competition
+            and market_payload["competition"] != args.competition
+        ):
+            print(
+                "Central market loading stopped optimization: snapshot "
+                f"competition {market_payload['competition']!r} does not "
+                f"match {args.competition!r}.",
+                file=sys.stderr,
+            )
+            return 2
+        if args.season and market_payload["season"] != args.season:
+            print(
+                "Central market loading stopped optimization: snapshot "
+                f"season {market_payload['season']!r} does not match "
+                f"{args.season!r}.",
+                file=sys.stderr,
+            )
+            return 2
+        annotations = merge_annotations(
+            market_payload.get("annotations", {}),
+            local_annotations,
+        )
+        players, annotated_count, annotated_by_position = (
+            load_players_from_rows(
+                market_csv_rows(market_payload),
+                annotations,
+            )
+        )
+        market_audit = market_snapshot_audit(market_payload)
+        market_audit["required"] = bool(args.require_market_snapshot)
+    else:
+        if args.require_market_snapshot:
+            print(
+                "Final optimization requires a fresh central market snapshot.",
+                file=sys.stderr,
+            )
+            return 2
+        players, annotated_count, annotated_by_position = load_players(
+            args.players,
+            annotations,
+        )
+        market_audit = {
+            "status": "local_csv",
+            "required": False,
+            "player_count": len(players),
+        }
     hard_exclusions = [
         {
             "annotation_key": key,
@@ -3070,10 +3225,6 @@ def main() -> int:
         for key, annotation in annotations.items()
         if bool(annotation.get("exclude", False))
     ]
-    players, annotated_count, annotated_by_position = load_players(
-        args.players,
-        annotations,
-    )
     news_audit: dict[str, Any] = {
         "status": "not_configured",
         "required": bool(args.require_news_snapshot),
@@ -3124,6 +3275,7 @@ def main() -> int:
             raw_scores,
             args.profile,
             args.slots,
+            market_audit,
         )
         rendered = json.dumps(payload, ensure_ascii=False, indent=2)
         if args.output:
@@ -3386,6 +3538,7 @@ def main() -> int:
         hard_exclusions=hard_exclusions,
         news_audit=news_audit,
         portfolio_audit=portfolio_audit,
+        market_audit=market_audit,
     )
     payload["variation_identity"] = {
         "mode": variation_source,

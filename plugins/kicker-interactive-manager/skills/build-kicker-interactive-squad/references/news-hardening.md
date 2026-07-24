@@ -106,7 +106,7 @@ KICKER_NEWS_FEED_TOKEN=<feed-token>
 ## Finaler Optimierungslauf
 
 ```text
-<python-3-command> scripts/optimize_squad.py --players <players-csv> --annotations <annotations-json> --competition "2. Bundesliga" --season "2026/27" --news-snapshot <https-url-oder-datei> --require-news-snapshot --require-news-coverage --profile reliable --variation medium --maintenance low --min-reliable-anchors 3 --budget <budget> --format json
+<python-3-command> scripts/optimize_squad.py --annotations <annotations-json> --competition "2. Bundesliga" --season "2026/27" --require-market-snapshot --news-snapshot <https-url-oder-datei> --require-news-snapshot --require-news-coverage --profile reliable --variation medium --maintenance low --min-reliable-anchors 3 --budget <budget> --format json
 ```
 
 `news_audit` im Ergebnis dokumentiert Snapshot-Prüfsumme, Providerstatus, Erzeugungs- und Ablaufzeit, angewandte Spieler, fehlende Zuordnungen, Konflikte und harte Ausschlüsse. Dieses Audit vor jeder Browseränderung lesen.

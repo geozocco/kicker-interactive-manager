@@ -40,7 +40,7 @@ Für 2. Bundesliga und 3. Liga das frische zentrale Snapshot verlangen. Fehlende
 ## Skriptlauf
 
 ```text
-<python-3-command> scripts/evaluate_squad.py --players <players-csv-path> --roster <current-roster-json> --annotations <annotations-json-path> --competition "2. Bundesliga" --season "2026/27" --require-news-snapshot --require-news-coverage --profile reliable --maintenance low --budget 10000000 --goalkeepers 3 --defenders 7 --midfielders 7 --forwards 5 --format json
+<python-3-command> scripts/evaluate_squad.py --roster <current-roster-json> --annotations <annotations-json-path> --competition "2. Bundesliga" --season "2026/27" --require-market-snapshot --require-news-snapshot --require-news-coverage --profile reliable --maintenance low --budget 10000000 --goalkeepers 3 --defenders 7 --midfielders 7 --forwards 5 --format json
 ```
 
 Wettbewerb, Saison, Budget und Positionszahlen immer aus der sichtbaren Seite übernehmen.

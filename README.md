@@ -137,9 +137,13 @@ Sind dafür nicht genügend gleichwertige und vollständig geprüfte Anker vorha
 
 Vor dem Umbau prüft das Plugin außerdem aktuelle Verletzungs- und Transfermeldungen. Für die 2. Bundesliga und 3. Liga der Saison 2026/27 verwendet das Plugin automatisch den zentralen API-Sports-Feed dieses Projekts. Dafür müssen Kollegen weder einen API-Key noch eine Feed-Adresse einrichten. Der Feed wird viermal täglich aktualisiert und enthält nur normalisierte Spieler-, Verletzungs- und Transferdaten; der geheime Provider-Schlüssel bleibt im geschützten GitHub-Secret-Speicher.
 
+Auch die offiziellen Kicker-Spielerlisten und Preise werden für beide Ligen viermal täglich zentral aktualisiert. Dadurch laden alle Installationen denselben geprüften Marktstand, statt die CSV auf jedem Rechner erneut im Browser zu öffnen. Das Snapshot enthält Kicker-ID, Name, Verein, Position, Marktwert und die von Kicker bereitgestellten Leistungswerte. Es enthält keine Kollegenkader, persönlichen Präferenzen oder lokalen Variantenkennungen.
+
+Die eigentliche Bewertung und Kaderauswahl bleibt lokal. Deshalb können unterschiedliche Profile und persönliche Varianten weiterhin zu unterschiedlichen Mannschaften führen. Der zentrale Marktbestand ist eine gemeinsame Faktengrundlage und kein vorgegebener Ankerkern.
+
 Veraltete Daten, falsche Liga- oder Saisonangaben, fehlende Spielerzuordnungen und widersprüchliche Meldungen stoppen den automatischen Umbau, bis Codex die betroffenen Spieler in aktuellen Primärquellen geprüft hat. API-Sports ist ein zusätzlicher Frühwarnkanal und ersetzt diese gezielte Gegenprüfung nicht. Für normale Nutzer ändert sich am oben beschriebenen Ablauf nichts.
 
-Der technische Betrieb und die Feed-Endpunkte sind in der Plugin-Referenz `references/news-hardening.md` dokumentiert. Provider-Zugangsdaten werden nie an Kollegen verteilt.
+Der technische Betrieb und die Feed-Endpunkte sind in den Plugin-Referenzen `references/market-data.md` und `references/news-hardening.md` dokumentiert. Provider-Zugangsdaten werden nie an Kollegen verteilt.
 
 Falls Codex nicht auf Chrome zugreifen kann, prüfe zuerst, ob:
 

@@ -1,0 +1,8 @@
+{
+  "competition": "2. Bundesliga",
+  "season": "2026/27",
+  "source_url": "https://www.kicker-libero.de/api/sportsdata/v1/players-details/se-k00022026.csv",
+  "expected_team_count": 18,
+  "minimum_player_count": 350,
+  "maximum_player_count": 700
+}
