@@ -89,6 +89,18 @@ def api_sports_pages(
             query={**query, "page": page},
             headers=headers,
         )
+        errors = payload.get("errors")
+        if errors:
+            if isinstance(errors, dict):
+                details = "; ".join(
+                    f"{key}: {value}"
+                    for key, value in sorted(errors.items())
+                )
+            elif isinstance(errors, list):
+                details = "; ".join(str(value) for value in errors)
+            else:
+                details = str(errors)
+            raise RuntimeError(f"API-Sports rejected the request: {details}")
         yield payload
         paging = payload.get("paging", {})
         total = optional_int(paging.get("total")) if isinstance(paging, dict) else None

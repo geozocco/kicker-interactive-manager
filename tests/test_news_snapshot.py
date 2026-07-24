@@ -230,6 +230,26 @@ class ProviderPagingTests(unittest.TestCase):
         self.assertEqual(2, request_json.call_args_list[1].kwargs["query"]["page"])
 
     @patch.object(refresh, "request_json")
+    def test_api_sports_surfaces_provider_errors(self, request_json) -> None:
+        request_json.return_value = {
+            "errors": {"plan": "Season is not available for this plan"},
+            "paging": {"current": 1, "total": 1},
+            "response": [],
+        }
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "plan: Season is not available for this plan",
+        ):
+            list(
+                refresh.api_sports_pages(
+                    "https://provider.example/api",
+                    query={"league": 79, "season": 2026},
+                    headers={"x-apisports-key": "secret"},
+                )
+            )
+
+    @patch.object(refresh, "request_json")
     def test_sportsmonks_pagination_uses_header_auth(self, request_json) -> None:
         request_json.side_effect = [
             {
