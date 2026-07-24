@@ -406,6 +406,7 @@ def api_sports_signals(
             "https://v3.football.api-sports.io/injuries",
             query={"league": league_id, "season": season},
             headers=headers,
+            paginate=False,
         ):
             calls += 1
             for item in response.get("response", []):
@@ -436,6 +437,7 @@ def api_sports_signals(
             "https://v3.football.api-sports.io/sidelined",
             query={"players": "-".join(str(item) for item in batch)},
             headers=headers,
+            paginate=False,
         ):
             calls += 1
             for item in response.get("response", []):
@@ -487,6 +489,7 @@ def api_sports_signals(
             "https://v3.football.api-sports.io/transfers",
             query={query_key: query_id},
             headers=headers,
+            paginate=False,
         ):
             calls += 1
             for container in response.get("response", []):
