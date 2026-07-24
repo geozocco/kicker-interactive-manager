@@ -35,15 +35,40 @@ INSTALLER="$(mktemp /tmp/install-kicker-interactive-manager.XXXXXX)"; curl -fsSL
 
 Für beide Wege gilt: Es werden keine Administratorrechte, kein Git und keine Codex-Kommandozeile benötigt.
 
-## Kader erstellen
+## Einmalig Chrome mit Codex verbinden
 
-1. Melde dich in Chrome bei kicker an und öffne das Managerspiel Interactive.
-2. Öffne in Codex einen neuen Task.
-3. Schreibe zum Beispiel:
+Das Plugin arbeitet direkt im sichtbaren Chrome-Browser. Deshalb muss Chrome einmalig mit Codex verbunden werden:
+
+1. Öffne in Codex die Plugin-Übersicht und stelle sicher, dass das Plugin **Chrome** installiert und aktiviert ist.
+2. Installiere im verwendeten Chrome-Profil die [ChatGPT Chrome Extension](https://chromewebstore.google.com/detail/codex/hehggadaopoacecdllhhajmbjkdcmajg).
+3. Prüfe unter `chrome://extensions`, dass die **ChatGPT Chrome Extension** eingeschaltet ist.
+4. Starte Chrome und Codex anschließend neu.
+
+Wichtig: Verwende später dasselbe Chrome-Profil, in dem die Erweiterung installiert wurde.
+
+## Das Plugin verwenden
+
+1. Öffne Chrome.
+2. Melde dich bei [kicker](https://www.kicker.de/) an.
+3. Öffne das **Managerspiel Interactive** und dort den Kader, den du bearbeiten möchtest.
+4. Lasse diesen Chrome-Tab geöffnet.
+5. Öffne in Codex/ChatGPT einen neuen Task beziehungsweise Chat, in dem das Plugin installiert ist.
+6. Beauftrage Codex/ChatGPT mit der Zusammenstellung. Schreibe zum Beispiel:
 
 > Stelle meinen kicker-Interactive-Kader verlässlich, wartungsarm und mit mittlerer Variabilität auf.
 
-Codex fragt bei Bedarf nach Spielklasse und Risikoprofil und stellt den Kader anschließend über die bereits angemeldete Chrome-Sitzung zusammen.
+Du kannst auch genauer vorgeben, was dir wichtig ist:
+
+> Stelle meinen Kader für die 2. Bundesliga im kicker Managerspiel Interactive zusammen. Wähle eine ausgewogene Mischung aus verlässlichen Spielern und Talenten und nutze meine geöffnete Chrome-Sitzung.
+
+Codex/ChatGPT fragt bei Bedarf nach Spielklasse, Risikoprofil und gewünschtem Betreuungsaufwand. Anschließend wird der Spielermarkt analysiert und der Kader direkt im geöffneten Chrome-Tab zusammengestellt. Bestätige den Zugriff auf Chrome, falls du danach gefragt wirst. Lasse Chrome und den kicker-Tab geöffnet, bis der fertige Kader bestätigt wurde.
+
+Falls Codex nicht auf Chrome zugreifen kann, prüfe zuerst, ob:
+
+- Google Chrome geöffnet ist,
+- die ChatGPT Chrome Extension im richtigen Chrome-Profil aktiviert ist,
+- das Chrome-Plugin in Codex aktiviert ist und
+- du in diesem Chrome-Profil bei kicker angemeldet bist.
 
 ## Alternative Installation für technisch erfahrene Nutzer
 
