@@ -25,6 +25,7 @@ import quality_snapshot
 def annotation(position: str, *, anchor: bool = False) -> dict:
     return {
         "position": position,
+        "club": "Club A",
         "components": {
             key: 75.0 for key in quality_snapshot.COMPONENTS
         },
@@ -59,6 +60,7 @@ def payload(now: datetime) -> dict:
             "candidate_count": 3,
             "anchor_count": 2,
             "attacking_anchor_count": 1,
+            "goalkeeper_block_count": 0,
         },
         "annotations": {
             "d1": annotation("DEFENDER", anchor=True),
