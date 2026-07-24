@@ -57,6 +57,7 @@ Die Kombination `verlässlich` und `gering` ist das konservative Kollegenprofil:
 
 ## Arbeitsmodus bestimmen
 
+- Fragt der Nutzer nach unterstützten Modi, Funktionen oder Beispielprompts, [references/prompt-examples.md](references/prompt-examples.md) vollständig lesen und eine kompakte Auswahl anbieten. Dabei keine Browserrecherche oder Kaderänderung starten.
 - „Stelle auf“, „optimiere“, „ändere“ oder gleichwertige Formulierungen autorisieren die inkrementelle Umsetzung im Kicker-Kader.
 - „Vorschlag“, „Liste“, „bewerte“, „prüfe“ oder „was hältst du“ bleiben read-only. Insbesondere bei einer Kaderbewertung keine Browseränderung ausführen.
 - Bei mehreren Wettbewerben jeden Kader getrennt analysieren und verifizieren.

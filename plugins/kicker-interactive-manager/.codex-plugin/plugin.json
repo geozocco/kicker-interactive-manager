@@ -1,7 +1,7 @@
 {
   "name": "kicker-interactive-manager",
-  "version": "0.1.0+codex.20260724120946",
-  "description": "Plant und setzt news-gepr\u00fcfte individuelle Kader f\u00fcr Bundesliga, 2. Bundesliga oder 3. Liga im kicker Managerspiel Interactive in einer angemeldeten Chrome-Sitzung um.",
+  "version": "0.1.0+codex.20260724121234",
+  "description": "Plant, bewertet und optimiert news-gepr\u00fcfte Kader f\u00fcr Bundesliga, 2. Bundesliga oder 3. Liga im kicker Managerspiel Interactive.",
   "author": {
     "name": "Jan Pies"
   },
@@ -15,8 +15,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "kicker Interactive Kaderplaner",
-    "shortDescription": "Individuelle Kader direkt in Chrome planen",
-    "longDescription": "Erstellt und pflegt kicker-Interactive-Kader mit w\u00e4hlbarer Strategie zwischen best\u00e4tigter Leistung, ausgewogener Mischung und Ausbruchspotenzial. Ein geh\u00e4rteter News-Gate ber\u00fccksichtigt aktuelle Verletzungen und Transfers mit Quellen-, Aktualit\u00e4ts- und Konfliktpr\u00fcfung. Das verl\u00e4ssliche Profil finanziert einen starken Aufstellungskern und erkl\u00e4rt wichtige Auswahlen sowie ausgelassene Alternativen; kontrollierte Variabilit\u00e4t sorgt dennoch f\u00fcr unterschiedliche Mannschaften.",
+    "shortDescription": "Kader in Chrome aufstellen und pr\u00fcfen",
+    "longDescription": "Stellt kicker-Interactive-Kader auf, bewertet bestehende Mannschaften read-only und optimiert sie auf ausdr\u00fccklichen Wunsch. Liga, Strategie, Variabilit\u00e4t und Betreuungsaufwand sind kombinierbar. Ein geh\u00e4rteter News-Gate ber\u00fccksichtigt aktuelle Verletzungen und Transfers; veraltete oder widerspr\u00fcchliche Daten verhindern eine gr\u00fcne Best\u00e4tigung. Verf\u00fcgbare Modi und Beispielprompts lassen sich direkt \u00fcber den ersten Starter-Prompt anzeigen.",
     "developerName": "Jan Pies",
     "category": "Productivity",
     "capabilities": [
@@ -24,9 +24,9 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Stelle meinen Kader f\u00fcr die 2. Bundesliga verl\u00e4sslich und wartungsarm auf.",
-      "Stelle meinen Kader f\u00fcr die 3. Liga ausgewogen und mit mittlerer Variabilit\u00e4t auf.",
-      "Stelle meinen Kader f\u00fcr die Bundesliga mit Ausbruchspotenzial auf, sobald der Transfermarkt ge\u00f6ffnet ist."
+      "Zeige mir die unterst\u00fctzten Modi und Beispielprompts f\u00fcr meinen kicker-Interactive-Kader.",
+      "Bewerte meinen aktuell in Chrome ge\u00f6ffneten Kader und ver\u00e4ndere nichts.",
+      "Hilf mir beim Aufstellen und frage nach Liga, Strategie, Variabilit\u00e4t und Betreuungsaufwand."
     ]
   }
 }

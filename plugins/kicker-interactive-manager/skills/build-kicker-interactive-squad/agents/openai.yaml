@@ -1,4 +1,4 @@
 interface:
   display_name: "Kicker Interactive Kaderplaner"
   short_description: "Stellt Kicker-Kader auf und prüft sie"
-  default_prompt: "Nutze $build-kicker-interactive-squad, um meinen in Chrome geöffneten kicker-Interactive-Kader für die genannte Liga entweder read-only auf Verletzungen, Transfers und vermeidbare Risiken zu prüfen oder ihn nach meinem Profil zusammenzustellen."
+  default_prompt: "Nutze $build-kicker-interactive-squad, um mir zuerst die unterstützten Modi und Beispielprompts für Aufstellen, Bewerten, Optimieren und Variantenvergleiche zu zeigen."

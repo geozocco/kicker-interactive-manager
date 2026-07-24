@@ -87,6 +87,26 @@ Codex liest den sichtbaren Kader, gleicht die Spieler mit den offiziellen Kicker
 
 Eine grüne Bestätigung wird nur erteilt, wenn alle gewählten Spieler aktuell geprüft wurden und keine kritischen News-Lücken oder vermeidbaren hohen Risiken offen sind. Bei fehlenden oder widersprüchlichen Informationen nennt Codex stattdessen die notwendigen Nachprüfungen. Der Chrome-Kader bleibt bei dieser Funktion unverändert.
 
+### Weitere Prompt-Varianten
+
+Liga, Strategie, Variabilität und Betreuungsaufwand lassen sich frei kombinieren:
+
+| Zweck | Beispiel |
+|---|---|
+| Geführter Einstieg | „Hilf mir bei der Kaderplanung und frage mich nach Liga, Strategie, Variabilität und Betreuungsaufwand.“ |
+| Verlässlich | „Stelle meinen Kader für die 2. Bundesliga verlässlich und wartungsarm auf.“ |
+| Ausgewogen | „Stelle meinen Kader für die 3. Liga ausgewogen und mit mittlerer Variabilität auf.“ |
+| Ausbruch | „Stelle meinen Kader mit Fokus auf Ausbruchspotenzial auf. Ich möchte aktiv nachsteuern.“ |
+| Read-only Bewertung | „Bewerte meinen geöffneten Kader, prüfe Verletzungen und Transfers und verändere nichts.“ |
+| Nur Vorschläge | „Zeige mir die fünf wichtigsten Verbesserungen, aber setze noch nichts in Chrome um.“ |
+| Optimieren und umsetzen | „Prüfe meinen Kader und setze nur klar begründete Verbesserungen in Chrome um.“ |
+| Variantenvergleich | „Vergleiche einen verlässlichen und einen ausgewogenen Kader, ohne Chrome zu ändern.“ |
+| Spielercheck | „Prüfe, ob [Spielername] zu meinem Kader passt, und nenne bezahlbare Alternativen.“ |
+
+Alternativ genügt:
+
+> Zeige mir alle unterstützten Modi und passende Beispielprompts.
+
 Der Bundesliga-Kader kann erst aufgestellt werden, wenn kicker den zugehörigen Transfermarkt für die neue Saison geöffnet hat. Bis dahin soll Codex keine andere Liga auswählen und keinen Kader erfinden. Die Weltmeisterschaft wird von diesem Plugin nicht unterstützt.
 
 Codex/ChatGPT fragt bei Bedarf nach Spielklasse, Risikoprofil und gewünschtem Betreuungsaufwand. Anschließend wird der Spielermarkt analysiert und der Kader direkt im geöffneten Chrome-Tab zusammengestellt. Bestätige den Zugriff auf Chrome, falls du danach gefragt wirst. Lasse Chrome und den kicker-Tab geöffnet, bis der fertige Kader bestätigt wurde.
