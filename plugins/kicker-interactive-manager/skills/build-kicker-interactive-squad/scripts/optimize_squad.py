@@ -1845,6 +1845,7 @@ def varied_squad(
     technical_smoke: bool = False,
     exposure_strength: float = 1.0,
     prepared_context: dict[str, Any] | None = None,
+    forbidden_ids: set[str] | None = None,
 ) -> tuple[Squad, Squad, int, bool]:
     context = prepared_context or prepare_variation_context(
         players=players,
@@ -1872,6 +1873,66 @@ def varied_squad(
     base_candidate = context["base_candidate"]
     base_candidate_score = context["base_candidate_score"]
     max_player_perturbation = context["max_player_perturbation"]
+    forbidden_ids = forbidden_ids or set()
+    if forbidden_ids:
+        variation_players = [
+            player
+            for player in variation_players
+            if player.player_id not in forbidden_ids
+        ]
+        base_buckets = optimize_distance_buckets(
+            variation_players,
+            budget,
+            base_scores,
+            club_cap,
+            minimum_spend,
+            slots,
+            optimum.ids,
+            target_distance,
+            same_club_goalkeepers,
+            min_reliable_anchors,
+        )
+        feasible_buckets = {
+            distance: candidate
+            for distance, candidate in base_buckets.items()
+            if sum(
+                base_scores[player.player_id]
+                for player in candidate.players
+            )
+            >= quality_floor
+        }
+        if not feasible_buckets:
+            raise ValueError(
+                "anchor-diverse portfolio is infeasible inside the quality "
+                "corridor; broaden the league-wide reliable-anchor pool"
+            )
+        if target_distance in feasible_buckets:
+            chosen_bucket = target_distance
+            variation_target_met = True
+        else:
+            lower_buckets = [
+                distance
+                for distance in feasible_buckets
+                if distance < target_distance
+            ]
+            if not lower_buckets:
+                raise ValueError(
+                    "anchor-diverse portfolio cannot meet the requested "
+                    "variation distance inside the quality corridor"
+                )
+            chosen_bucket = max(lower_buckets)
+            variation_target_met = False
+        base_candidate = feasible_buckets[chosen_bucket]
+        base_candidate_score = sum(
+            base_scores[player.player_id]
+            for player in base_candidate.players
+        )
+        slack = max(0.0, base_candidate_score - quality_floor)
+        max_player_perturbation = (
+            slack / max(2.0 * target_distance, 1.0)
+            if target_distance > 0
+            else 0.0
+        )
 
     rng = random.Random(seed)
     raw_preferences: dict[str, float] = {}
@@ -1957,6 +2018,7 @@ def varied_portfolio(
     same_club_goalkeepers: bool = True,
     min_reliable_anchors: int = 0,
     technical_smoke: bool = False,
+    max_reliable_anchor_exposure: int = 1,
 ) -> tuple[Squad, Squad, int, bool, dict[str, Any]]:
     """Build a reproducible set of near-optimal squads with balanced exposure."""
 
@@ -1964,6 +2026,27 @@ def varied_portfolio(
         raise ValueError("portfolio size must be positive")
     if not 1 <= portfolio_index <= portfolio_size:
         raise ValueError("portfolio index must be inside the portfolio size")
+    if max_reliable_anchor_exposure < 1:
+        raise ValueError("maximum reliable-anchor exposure must be positive")
+
+    reliable_anchor_ids = {
+        player.player_id
+        for player in players
+        if player.reliable_anchor and player.position != "GOALKEEPER"
+    }
+    required_anchor_slots = portfolio_size * min_reliable_anchors
+    available_anchor_slots = (
+        len(reliable_anchor_ids) * max_reliable_anchor_exposure
+    )
+    if available_anchor_slots < required_anchor_slots:
+        raise ValueError(
+            "anchor-diverse portfolio is infeasible: "
+            f"required_anchor_slots={required_anchor_slots}, "
+            f"eligible_reliable_anchors={len(reliable_anchor_ids)}, "
+            f"max_anchor_exposure={max_reliable_anchor_exposure}. "
+            "Broaden the league-wide anchor research instead of repeating "
+            "named examples."
+        )
 
     exposure = Counter(
         {
@@ -1989,6 +2072,11 @@ def varied_portfolio(
     used_rosters: set[frozenset[str]] = set()
     for slot in range(1, portfolio_size + 1):
         selected: tuple[Squad, Squad, int, bool, int] | None = None
+        forbidden_anchor_ids = {
+            player_id
+            for player_id in reliable_anchor_ids
+            if exposure[player_id] >= max_reliable_anchor_exposure
+        }
         for attempt in range(8):
             slot_seed = seed + slot * 104_729 + attempt * 7_919
             squad, optimum, distance, target_met = varied_squad(
@@ -2007,6 +2095,7 @@ def varied_portfolio(
                 technical_smoke=technical_smoke,
                 exposure_strength=10.0,
                 prepared_context=prepared_context,
+                forbidden_ids=forbidden_anchor_ids,
             )
             selected = (squad, optimum, distance, target_met, slot_seed)
             if squad.ids not in used_rosters:
@@ -2047,6 +2136,19 @@ def varied_portfolio(
         for squad_ids in squad_id_sets
         for player_id in squad_ids
     )
+    reliable_anchor_exposure = {
+        player_id: portfolio_exposure[player_id]
+        for player_id in sorted(reliable_anchor_ids)
+        if portfolio_exposure[player_id] > 0
+    }
+    max_anchor_exposure = max(
+        reliable_anchor_exposure.values(),
+        default=0,
+    )
+    if max_anchor_exposure > max_reliable_anchor_exposure:
+        raise RuntimeError(
+            "portfolio optimizer violated the reliable-anchor exposure limit"
+        )
     audit = {
         "size": portfolio_size,
         "index": portfolio_index,
@@ -2067,6 +2169,16 @@ def varied_portfolio(
             for player_id in common_ids
             if player_by_id[player_id].benchmark
         ),
+        "required_anchor_slots": required_anchor_slots,
+        "eligible_reliable_anchor_count": len(reliable_anchor_ids),
+        "max_reliable_anchor_exposure_allowed": (
+            max_reliable_anchor_exposure
+        ),
+        "max_reliable_anchor_exposure": max_anchor_exposure,
+        "reliable_anchor_exposure": reliable_anchor_exposure,
+        "anchor_diversity_target_met": (
+            max_anchor_exposure <= max_reliable_anchor_exposure
+        ),
         "max_player_exposure": max(portfolio_exposure.values(), default=0),
         "player_exposure": dict(sorted(portfolio_exposure.items())),
         "slots": [
@@ -2076,6 +2188,11 @@ def varied_portfolio(
                 "distance_from_optimum": entry[2],
                 "variation_target_met": entry[3],
                 "player_ids": sorted(entry[0].ids),
+                "reliable_anchor_ids": sorted(
+                    player.player_id
+                    for player in entry[0].players
+                    if player.reliable_anchor
+                ),
             }
             for slot, entry in enumerate(generated, start=1)
         ],
@@ -2472,6 +2589,13 @@ def output_payload(
                 for player in squad.players
                 if player.benchmark
             ),
+            "max_reliable_anchor_exposure_allowed": 1,
+            "max_reliable_anchor_exposure": int(bool(selected_anchors)),
+            "reliable_anchor_exposure": {
+                player.player_id: 1
+                for player in selected_anchors
+            },
+            "anchor_diversity_target_met": True,
             "max_player_exposure": 1,
         },
         "suggested_starting_lineup": {
@@ -2634,7 +2758,9 @@ def print_text(payload: dict[str, Any]) -> None:
             "Portfolio="
             f"{portfolio['index']}/{portfolio['size']} "
             f"unique={portfolio['unique_rosters']} "
-            f"common_players={portfolio['common_player_count']}"
+            f"common_players={portfolio['common_player_count']} "
+            "max_anchor_exposure="
+            f"{portfolio['max_reliable_anchor_exposure']}"
         )
     anchor_policy = payload["reliable_anchor_policy"]
     print(
@@ -2751,6 +2877,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--max-anchor-exposure",
+        type=int,
+        default=1,
+        help=(
+            "Maximum number of coordinated portfolio squads containing the "
+            "same reliable anchor; default 1"
+        ),
+    )
+    parser.add_argument(
         "--min-reliable-anchors",
         type=int,
         help=(
@@ -2812,6 +2947,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--max-outfield-per-club must be positive")
     if args.portfolio_size < 1:
         parser.error("--portfolio-size must be positive")
+    if args.max_anchor_exposure < 1:
+        parser.error("--max-anchor-exposure must be positive")
     if args.seed is not None and args.new_variant:
         parser.error("--new-variant cannot be combined with an explicit --seed")
     if args.portfolio_index is not None and not (
@@ -3145,6 +3282,7 @@ def main() -> int:
                 same_club_goalkeepers=not args.mixed_goalkeepers,
                 min_reliable_anchors=args.min_reliable_anchors,
                 technical_smoke=args.allow_unannotated,
+                max_reliable_anchor_exposure=args.max_anchor_exposure,
             )
         else:
             squad, optimum, distance, variation_target_met = varied_squad(

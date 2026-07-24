@@ -52,11 +52,15 @@ Automatisch persönliche Kollegenkader:
 
 > Stelle meinen verlässlichen, wartungsarmen Kader für die 2. Bundesliga zusammen. Nutze automatisch meine persönliche, anonyme Variante.
 
+Koordiniertes Gruppenportfolio ohne gemeinsamen Ankerkern:
+
+> Erzeuge fünf koordinierte, gleichwertige Kader für die 2. Bundesliga. Die verlässlichen Anker sollen sich zwischen den Kadern nicht überschneiden. Verändere Chrome noch nicht.
+
 Auf demselben Rechner neu würfeln:
 
 > Erzeuge mir eine neue, nahezu gleichwertige Variante meines 3.-Liga-Kaders.
 
-Das Plugin verwendet standardmäßig pro Installation eine private, nicht personenbezogene Kennung. Keine Kadernummer und keinen Gruppenseed abfragen. Nur wenn der Nutzer ausdrücklich ein koordiniertes Gruppenportfolio verlangt, die fortgeschrittene Portfoliofunktion anbieten. Genannte Spielernamen gelten nur dann als Pflicht, wenn der Nutzer das ausdrücklich formuliert.
+Das Plugin verwendet standardmäßig pro Installation eine private, nicht personenbezogene Kennung. Keine Kadernummer und keinen Gruppenseed abfragen. Nur wenn der Nutzer ausdrücklich ein koordiniertes Gruppenportfolio verlangt, die fortgeschrittene Portfoliofunktion mit maximal einer Verwendung jedes verlässlichen Ankers anbieten. Genannte Spielernamen gelten nur dann als Pflicht, wenn der Nutzer das ausdrücklich formuliert.
 
 ## Spieler gezielt prüfen
 

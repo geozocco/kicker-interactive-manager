@@ -100,13 +100,17 @@ Variabilität darf keine blinde Zufallsauswahl sein. Zuerst das beste Ergebnis i
 - Bei „neue Variante“ genau einmal `--new-variant` verwenden. Der lokale Variantenstand hält das Ergebnis anschließend reproduzierbar.
 - Im Nutzerergebnis „automatische persönliche Variante“ nennen; die private Installationskennung niemals lesen oder ausgeben. Den numerischen Seed nur bei ausdrücklich technischer Diagnose oder vom Nutzer gewünschter exakter Reproduktion nennen.
 - Bei bekannten Kollegenkadern Überschneidungen über `--avoid-roster` nach Auswahlhäufigkeit bestrafen. Niemals einen klar schlechteren Spieler allein zur Abgrenzung wählen.
-- Nur für ein ausdrücklich zentral koordiniertes Portfolio `--portfolio-size` und eindeutige `--portfolio-index`-Werte mit demselben Gruppenseed verwenden. Das ist eine fortgeschrittene Ausnahme, nicht der normale Kollegenablauf.
-- Portfolio-Diversität umfasst auch Anker und Premiumspieler. Ein Spieler darf in allen Slots stehen, wenn sein Qualitätsvorsprung innerhalb des Korridors nicht ersetzbar ist; eine frühere Erwähnung durch den Nutzer ist kein solcher Qualitätsvorsprung.
+- Nur für ein ausdrücklich zentral koordiniertes Portfolio `--portfolio-size`, `--max-anchor-exposure 1` und eindeutige `--portfolio-index`-Werte mit demselben Gruppenseed verwenden. Das ist eine fortgeschrittene Ausnahme, nicht der normale Kollegenablauf.
+- Portfolio-Diversität umfasst auch Anker und Premiumspieler. Standardmäßig darf ein verlässlicher Anker in einem koordinierten Portfolio nur einmal vorkommen. Reicht der Pool dafür nicht, muss die Recherche ligaweit verbreitert werden oder der Lauf verständlich abbrechen. Eine frühere Erwähnung durch den Nutzer begründet weder Ankerstatus noch Mehrfachexposition.
 - `benchmark: true` besitzt keinerlei Scorebonus. Es erzwingt nur, dass ein Kandidat recherchiert, verglichen und bei Nichtauswahl erklärt wird.
-- Innerhalb einer Gruppe darf ein sportlich begründeter gemeinsamer Ankerkern bestehen. Die Portfolio-Slots sollen mittlere Preisklassen, Bankplätze und ähnlich bewertete Anker beziehungsweise Premiumspieler variieren.
+- Innerhalb einer koordinierten Gruppe gibt es standardmäßig keinen gemeinsamen Ankerkern. Eine höhere Ankerexposition ist nur eine ausdrücklich vom Nutzer genehmigte Lockerung, nachdem der konkrete Qualitätskonflikt erklärt wurde.
 - Technische Läufe mit `--allow-unannotated` begrenzen bei sehr großen Rohpools nur die Variationssuche auf das globale Optimum, Anker/Benchmarks sowie starke und günstige Positionsalternativen. Vollständig recherchierte Endläufe bleiben exakt und berechnen weiterhin die Gegenfaktual-Begründungen.
 
 ## Portfolioregeln
+
+- Der zentrale Kandidatenpool ist eine gemeinsame Datengrundlage, keine gemeinsame Namensvorgabe. Er soll alle aktuell plausiblen Anker der Liga enthalten und darf nicht aus zuvor im Gespräch genannten Beispielen abgeleitet werden.
+- Für `N` Portfolioslots und `A` Pflichtanker pro Kader sind bei maximaler Ankerexposition eins mindestens `N × A` auswählbare Anker erforderlich. Da ein Kader mehr als die Mindestzahl auswählen kann und Budget sowie Positionen die Kombinierbarkeit einschränken, zusätzliche Reserve recherchieren.
+- `anchor_diversity_target_met` muss wahr und `max_reliable_anchor_exposure` höchstens eins sein, bevor ein Fünfer-Portfolio als erfolgreich präsentiert wird.
 
 - Positions- und Budgetvorgaben immer aus der aktuellen Kicker-Seite übernehmen.
 - Torwartblock standardmäßig aus einem Verein bilden.

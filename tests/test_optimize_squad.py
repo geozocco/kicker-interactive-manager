@@ -428,6 +428,108 @@ class DistanceOptimizerTests(unittest.TestCase):
             self.assertEqual(4, slot["distance_from_optimum"])
             self.assertTrue(slot["variation_target_met"])
 
+    def test_group_portfolio_uses_disjoint_league_wide_anchor_cores(
+        self,
+    ) -> None:
+        players, scores = varied_pool()
+        players = [
+            item
+            for item in players
+            if item.position != "MIDFIELDER"
+        ]
+        scores = {
+            player_id: score
+            for player_id, score in scores.items()
+            if not player_id.startswith("M")
+        }
+        for index in range(10):
+            player_id = f"A{index}"
+            players.append(
+                player(
+                    player_id,
+                    f"Anchor Club {index}",
+                    "MIDFIELDER",
+                    100,
+                    reliable_anchor=True,
+                )
+            )
+            scores[player_id] = 10.0 - 0.01 * index
+
+        _, _, _, _, audit = optimizer.varied_portfolio(
+            players=players,
+            budget=900,
+            base_scores=scores,
+            profile="balanced",
+            variation="medium",
+            seed=20260724,
+            club_cap=1,
+            minimum_spend=900,
+            slots={
+                "GOALKEEPER": 3,
+                "DEFENDER": 2,
+                "MIDFIELDER": 2,
+                "FORWARD": 2,
+            },
+            avoid_exposure=Counter(),
+            portfolio_size=5,
+            portfolio_index=1,
+            min_reliable_anchors=2,
+        )
+
+        anchor_sets = [
+            set(slot["reliable_anchor_ids"])
+            for slot in audit["slots"]
+        ]
+        self.assertTrue(
+            all(
+                left.isdisjoint(right)
+                for index, left in enumerate(anchor_sets)
+                for right in anchor_sets[index + 1 :]
+            )
+        )
+        self.assertEqual([], audit["common_reliable_anchor_ids"])
+        self.assertEqual(1, audit["max_reliable_anchor_exposure"])
+        self.assertTrue(audit["anchor_diversity_target_met"])
+
+    def test_group_portfolio_rejects_too_small_anchor_pool(self) -> None:
+        players, scores = varied_pool()
+        anchor_count = 0
+        for index, item in enumerate(players):
+            if item.position == "MIDFIELDER" and anchor_count < 5:
+                players[index] = optimizer.replace(
+                    item,
+                    reliable_anchor=True,
+                    anchor_basis="explicit",
+                    anchor_reason="Repeated performance and stable role",
+                    proven_seasons=3,
+                )
+                anchor_count += 1
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Broaden the league-wide anchor research",
+        ):
+            optimizer.varied_portfolio(
+                players=players,
+                budget=900,
+                base_scores=scores,
+                profile="balanced",
+                variation="medium",
+                seed=20260724,
+                club_cap=1,
+                minimum_spend=900,
+                slots={
+                    "GOALKEEPER": 3,
+                    "DEFENDER": 2,
+                    "MIDFIELDER": 2,
+                    "FORWARD": 2,
+                },
+                avoid_exposure=Counter(),
+                portfolio_size=5,
+                portfolio_index=1,
+                min_reliable_anchors=2,
+            )
+
     def test_benchmark_flag_does_not_increase_player_score(self) -> None:
         baseline = player("m1", "Club A", "MIDFIELDER", 100)
         benchmark = optimizer.Player(

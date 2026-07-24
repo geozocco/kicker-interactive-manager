@@ -129,6 +129,12 @@ Wer auf demselben Rechner eine weitere Alternative sehen möchte, schreibt einfa
 
 Das Plugin würfelt dann kontrolliert neu und erklärt die Unterschiede. Bewährte Ausnahmespieler dürfen trotzdem in mehreren Kadern vorkommen; Varianz ist kein Selbstzweck und verdrängt keine klar bessere Wahl. Eine garantierte weltweite Einzigartigkeit gibt es ohne zentralen Kaderspeicher nicht, zufällige Überschneidungen bleiben also möglich. Ein namentlich erwähnter Spieler wird nur recherchiert und verglichen; er erhält dadurch keinen Bonus und wird nur auf ausdrücklichen Wunsch zwingend gekauft.
 
+Wenn fünf Kader gemeinsam in einem Lauf erzeugt werden sollen, kann Codex ein **koordiniertes Gruppenportfolio** erstellen. Dabei wird ein breiter, ligaweiter Ankerpool verwendet und jeder verlässliche Anker standardmäßig höchstens einem Kader zugeteilt:
+
+> Erzeuge fünf koordinierte, gleichwertige Kader für die 2. Bundesliga. Die Ankerkerne sollen sich nicht überschneiden. Verändere Chrome noch nicht.
+
+Sind dafür nicht genügend gleichwertige und vollständig geprüfte Anker vorhanden, bricht das Plugin mit einer verständlichen Meldung ab und erweitert zuerst die Recherche. Es setzt dann nicht heimlich dieselben bekannten Namen in alle fünf Kader. Diese Garantie gilt für gemeinsam erzeugte Portfolios. Fünf völlig unabhängig gestartete Rechner kennen die Auswahl der anderen nicht; dafür wäre zusätzlich ein zentraler Belegungsdienst nötig. Eine zentral gespeicherte Preis- und Kandidatenliste beschleunigt die Recherche, ersetzt diese Koordination aber nicht.
+
 Vor dem Umbau prüft das Plugin außerdem aktuelle Verletzungs- und Transfermeldungen. Für die 2. Bundesliga und 3. Liga der Saison 2026/27 verwendet das Plugin automatisch den zentralen API-Sports-Feed dieses Projekts. Dafür müssen Kollegen weder einen API-Key noch eine Feed-Adresse einrichten. Der Feed wird viermal täglich aktualisiert und enthält nur normalisierte Spieler-, Verletzungs- und Transferdaten; der geheime Provider-Schlüssel bleibt im geschützten GitHub-Secret-Speicher.
 
 Veraltete Daten, falsche Liga- oder Saisonangaben, fehlende Spielerzuordnungen und widersprüchliche Meldungen stoppen den automatischen Umbau, bis Codex die betroffenen Spieler in aktuellen Primärquellen geprüft hat. API-Sports ist ein zusätzlicher Frühwarnkanal und ersetzt diese gezielte Gegenprüfung nicht. Für normale Nutzer ändert sich am oben beschriebenen Ablauf nichts.
