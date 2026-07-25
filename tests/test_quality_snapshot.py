@@ -60,6 +60,25 @@ def annotation(position: str, *, anchor: bool = False) -> dict:
             "observation_count": 2,
             "trend_score": 55.0,
         },
+        "preseason_summary": {
+            "available": False,
+            "classification": "insufficient",
+            "confidence": "low",
+            "appearances": 0,
+            "starts": 0,
+            "minutes": 0,
+            "goals": 0,
+            "assists": 0,
+            "signal_score": 50.0,
+            "availability_score": 50.0,
+            "role_score": 50.0,
+            "performance_score": 50.0,
+            "opponent_score": 50.0,
+            "effective_factor": 0.0,
+            "applied_weight": 0.0,
+            "readiness_delta": 0.0,
+            "talent_status": "unchanged",
+        },
         "evidence": [
             {
                 "claim": "Current role",
@@ -79,9 +98,11 @@ def payload(now: datetime) -> dict:
         "season": "2026/27",
         "market_sha256": "market",
         "news_sha256": "news",
+        "preseason_sha256": "preseason",
         "history_sha256": "history",
         "kicker_history_sha256": "kicker-history",
         "model_version": "test-v1",
+        "preseason_model_version": "preseason-readiness-v1",
         "requirements": {
             "candidate_count": 3,
             "anchor_count": 2,
@@ -100,6 +121,15 @@ def payload(now: datetime) -> dict:
 
 
 class QualitySnapshotTests(unittest.TestCase):
+    def test_preseason_extension_keeps_v3_wire_schema_for_rolling_clients(
+        self,
+    ) -> None:
+        self.assertEqual(3, quality_snapshot.SCHEMA_VERSION)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        value = payload(now)
+        self.assertIn("preseason_sha256", value)
+        self.assertIn("preseason_summary", value["annotations"]["f1"])
+
     def test_previous_model_remains_readable_during_feed_rollout(self) -> None:
         now = datetime.now(timezone.utc).replace(microsecond=0)
         value = payload(now)

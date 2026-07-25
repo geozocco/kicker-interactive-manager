@@ -687,6 +687,116 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
         self.assertFalse(annotation["reliable_anchor"])
         self.assertTrue(annotation["benchmark"])
 
+    def test_preseason_evidence_promotes_high_upside_status_not_senior_proof(
+        self,
+    ) -> None:
+        young_history = api_history()
+        for index, season in enumerate(young_history):
+            season["age"] = 18 - index
+            season["appearances"] = 4
+            season["minutes"] = 120
+            season["lineups"] = 0
+            season["goals"] = 1 if index == 0 else 0
+            season["assists"] = 0
+        mapped_news = news_player()
+        mapped_news["mapping"]["age"] = 18
+        preseason = {
+            "observations": [
+                {
+                    "date": "2026-07-14",
+                    "claim": "Scored in the first friendly.",
+                    "source_url": "https://club.example/first",
+                },
+                {
+                    "date": "2026-07-18",
+                    "claim": "Started the next friendly.",
+                    "source_url": "https://club.example/second",
+                },
+            ],
+            "summary": {
+                "appearances": 2,
+                "starts": 1,
+                "minutes": 105,
+                "goals": 1,
+                "assists": 0,
+                "availability_score": 82,
+                "role_score": 68,
+                "performance_score": 64,
+                "opponent_score": 70,
+                "signal_score": 72,
+                "effective_factor": 100,
+                "confidence": "medium",
+                "classification": "strong",
+            },
+        }
+        annotation = quality.build_annotation(
+            market_player(points=20),
+            "news-1",
+            mapped_news,
+            young_history,
+            transfermarkt_history(
+                proven_seasons=0,
+                youth_score=95,
+            ),
+            preseason_player=preseason,
+            competition="3. Liga",
+            points_pct=15,
+            price_pct=20,
+            generated_at="2026-07-25T12:00:00Z",
+        )
+
+        self.assertEqual(
+            "high_upside_pre_breakthrough",
+            annotation["preseason_summary"]["talent_status"],
+        )
+        self.assertGreater(
+            annotation["preseason_summary"]["readiness_delta"],
+            0,
+        )
+        self.assertLessEqual(
+            annotation["preseason_summary"]["applied_weight"],
+            0.25,
+        )
+        self.assertEqual(0, annotation["proven_seasons"])
+        self.assertFalse(annotation["reliable_anchor"])
+        self.assertGreaterEqual(annotation["risks"]["unknown_role"], 18)
+
+    def test_single_preseason_goal_cannot_create_high_upside_status(self) -> None:
+        adjustment = quality.preseason_adjustment(
+            {
+                "summary": {
+                    "appearances": 1,
+                    "starts": 0,
+                    "minutes": 20,
+                    "goals": 1,
+                    "assists": 0,
+                    "availability_score": 55,
+                    "role_score": 45,
+                    "performance_score": 80,
+                    "opponent_score": 60,
+                    "signal_score": 64,
+                    "effective_factor": 100,
+                    "confidence": "medium",
+                    "classification": "positive",
+                }
+            },
+            age=18,
+            proven_seasons=0,
+            comparable_minutes=60,
+            youth_score=95,
+            talent_score=62,
+            minutes=40,
+            role=50,
+            upside=95,
+            value=60,
+            unknown_role=42,
+        )
+        self.assertNotEqual(
+            "high_upside_pre_breakthrough",
+            adjustment["talent_status"],
+        )
+        self.assertLessEqual(adjustment["applied_weight"], 0.1)
+
     def test_role_events_reward_repeatable_actions_not_only_provider_rating(self) -> None:
         rich = quality.build_annotation(
             market_player(),

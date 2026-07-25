@@ -37,6 +37,18 @@ GOALKEEPER_STATUSES = {
     "challenger",
     "backup",
 }
+PRESEASON_CLASSIFICATIONS = {
+    "insufficient",
+    "negative",
+    "neutral",
+    "positive",
+    "strong",
+}
+PRESEASON_TALENT_STATUSES = {
+    "unchanged",
+    "preseason_watchlist",
+    "high_upside_pre_breakthrough",
+}
 
 
 class QualitySnapshotError(ValueError):
@@ -212,9 +224,11 @@ def validate_snapshot(
         "season",
         "market_sha256",
         "news_sha256",
+        "preseason_sha256",
         "history_sha256",
         "kicker_history_sha256",
         "model_version",
+        "preseason_model_version",
     ):
         if not str(payload.get(field_name, "")).strip():
             raise QualitySnapshotError(
@@ -337,6 +351,77 @@ def validate_snapshot(
         ):
             raise QualitySnapshotError(
                 f"quality provider rating weight is invalid for {player_id}"
+            )
+        preseason_summary = annotation.get("preseason_summary")
+        if not isinstance(preseason_summary, dict):
+            raise QualitySnapshotError(
+                f"quality preseason summary is missing for {player_id}"
+            )
+        if not isinstance(preseason_summary.get("available"), bool):
+            raise QualitySnapshotError(
+                f"quality preseason availability is invalid for {player_id}"
+            )
+        if (
+            preseason_summary.get("classification")
+            not in PRESEASON_CLASSIFICATIONS
+            or preseason_summary.get("talent_status")
+            not in PRESEASON_TALENT_STATUSES
+            or preseason_summary.get("confidence")
+            not in {"low", "medium", "high"}
+        ):
+            raise QualitySnapshotError(
+                f"quality preseason classification is invalid for {player_id}"
+            )
+        for field_name in (
+            "signal_score",
+            "availability_score",
+            "role_score",
+            "performance_score",
+            "opponent_score",
+            "effective_factor",
+        ):
+            value = preseason_summary.get(field_name)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not 0 <= float(value) <= 100
+            ):
+                raise QualitySnapshotError(
+                    f"quality preseason {field_name} is invalid for {player_id}"
+                )
+        applied_weight = preseason_summary.get("applied_weight")
+        if (
+            isinstance(applied_weight, bool)
+            or not isinstance(applied_weight, (int, float))
+            or not 0 <= float(applied_weight) <= 0.25
+        ):
+            raise QualitySnapshotError(
+                f"quality preseason applied_weight is invalid for {player_id}"
+            )
+        for field_name in (
+            "appearances",
+            "starts",
+            "minutes",
+            "goals",
+            "assists",
+        ):
+            value = preseason_summary.get(field_name)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value < 0
+            ):
+                raise QualitySnapshotError(
+                    f"quality preseason {field_name} is invalid for {player_id}"
+                )
+        readiness_delta = preseason_summary.get("readiness_delta")
+        if (
+            isinstance(readiness_delta, bool)
+            or not isinstance(readiness_delta, (int, float))
+            or not -25 <= float(readiness_delta) <= 25
+        ):
+            raise QualitySnapshotError(
+                f"quality preseason readiness_delta is invalid for {player_id}"
             )
         kicker_trend = annotation.get("kicker_trend")
         if not isinstance(kicker_trend, dict):
@@ -554,9 +639,20 @@ def snapshot_audit(payload: dict[str, Any]) -> dict[str, Any]:
         "sha256": canonical_sha256(payload),
         "market_sha256": payload["market_sha256"],
         "news_sha256": payload["news_sha256"],
+        "preseason_sha256": payload["preseason_sha256"],
         "history_sha256": payload["history_sha256"],
         "kicker_history_sha256": payload["kicker_history_sha256"],
         "model_version": payload["model_version"],
+        "preseason_model_version": payload["preseason_model_version"],
+        "preseason_covered_count": sum(
+            annotation["preseason_summary"]["available"]
+            for annotation in annotations.values()
+        ),
+        "preseason_high_upside_count": sum(
+            annotation["preseason_summary"]["talent_status"]
+            == "high_upside_pre_breakthrough"
+            for annotation in annotations.values()
+        ),
         "candidate_count": len(annotations),
         "anchor_count": len(anchors),
         "attacking_anchor_count": sum(

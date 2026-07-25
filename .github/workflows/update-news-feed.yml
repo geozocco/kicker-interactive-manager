@@ -80,6 +80,27 @@ jobs:
       - name: Respect API-Sports minute limit before quality history
         run: sleep 65
 
+      - name: Refresh 2. Bundesliga preseason evidence
+        env:
+          API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
+        run: |
+          python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_preseason_snapshot.py \
+            --news public/v1/news/2-bundesliga.json \
+            --mapping config/preseason/2-bundesliga.json \
+            --output public/v1/preseason/2-bundesliga.json
+
+      - name: Refresh 3. Liga preseason evidence
+        env:
+          API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
+        run: |
+          python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_preseason_snapshot.py \
+            --news public/v1/news/3-liga.json \
+            --mapping config/preseason/3-liga.json \
+            --output public/v1/preseason/3-liga.json
+
+      - name: Respect API-Sports minute limit before player histories
+        run: sleep 65
+
       - name: Refresh Transfermarkt history for 2. Bundesliga
         run: |
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_transfermarkt_history.py \
@@ -109,6 +130,7 @@ jobs:
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_quality_snapshot.py \
             --market public/v1/market/2-bundesliga.json \
             --news public/v1/news/2-bundesliga.json \
+            --preseason public/v1/preseason/2-bundesliga.json \
             --history public/v1/history/2-bundesliga.json \
             --kicker-history public/v1/kicker-history/2-bundesliga.json \
             --mapping config/quality/2-bundesliga.json \
@@ -121,6 +143,7 @@ jobs:
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_quality_snapshot.py \
             --market public/v1/market/3-liga.json \
             --news public/v1/news/3-liga.json \
+            --preseason public/v1/preseason/3-liga.json \
             --history public/v1/history/3-liga.json \
             --kicker-history public/v1/kicker-history/3-liga.json \
             --mapping config/quality/3-liga.json \
@@ -138,6 +161,7 @@ jobs:
           )
           sys.path.insert(0, str(scripts))
           from news_snapshot import load_snapshot
+          from preseason_snapshot import load_snapshot as load_preseason_snapshot
           from market_snapshot import load_snapshot as load_market_snapshot
           from quality_snapshot import load_snapshot as load_quality_snapshot
           from history_snapshot import load_snapshot as load_history_snapshot
@@ -155,6 +179,14 @@ jobs:
               )
           for path in sorted(Path("public/v1/market").glob("*.json")):
               snapshot = load_market_snapshot(path)
+              print(
+                  path,
+                  snapshot["competition"],
+                  snapshot["season"],
+                  len(snapshot["players"]),
+              )
+          for path in sorted(Path("public/v1/preseason").glob("*.json")):
+              snapshot = load_preseason_snapshot(path)
               print(
                   path,
                   snapshot["competition"],

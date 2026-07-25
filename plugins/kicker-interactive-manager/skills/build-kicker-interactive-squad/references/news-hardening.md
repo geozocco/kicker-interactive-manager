@@ -6,10 +6,12 @@ Die News-Prüfung ist hybrid:
 
 1. Ein zentraler Lauf liest API-Sports viermal täglich mit dem geheimen Provider-Schlüssel aus. Sportmonks ist als optionale unabhängige Zweitquelle zugeschaltet, sobald Token sowie verifizierte Team- und Spielerzuordnungen vorliegen.
 2. Er veröffentlicht ausschließlich ein normalisiertes Snapshot ohne Schlüssel und ohne vollständige Rohantworten.
-3. Jeder Optimierungslauf lädt dieses Snapshot, prüft Alter, Wettbewerb, Saison, Prüfsumme, Spielerzuordnung und Provider-Konflikte.
+3. Der zentrale Qualitätslauf verbindet dieses Snapshot mit einem getrennten, ebenfalls frischen Vorbereitungssnapshot und prüft Alter, Wettbewerb, Saison, Prüfsummen, Spielerzuordnung und Provider-Konflikte.
 4. Offizielle Vereins-, Liga- und Transfermeldungen bleiben der gezielte Fallback für fehlende Zuordnungen, Konflikte und besonders folgenreiche Meldungen.
 
 Provider-Schlüssel niemals in das Plugin, in Annotationen, in das Snapshot, in Browseraktionen oder in eine Antwort an den Nutzer schreiben. Die offiziellen Team-Feeds für 2. Bundesliga und 3. Liga 2026/27 sind im Optimierer hinterlegt; Kollegen benötigen weder Provider-Schlüssel noch lokale Feed-Konfiguration.
+
+Vorbereitung nicht als gewöhnliche News-Risikomeldung modellieren. Testspiele besitzen eigene Stichproben-, Quellen- und Verfallsregeln nach [preseason-evidence.md](preseason-evidence.md). Der News-Gate bleibt für Verletzung, Transfer und Verfügbarkeit maßgeblich.
 
 ## Sicherheitsregeln
 

@@ -66,4 +66,10 @@ Das Plugin verwendet standardmäßig pro Installation eine private, nicht person
 
 > Prüfe, ob [Spielername] in meinen Kader passt. Berücksichtige Preis, Rolle, Verletzungen, Transferlage und bezahlbare Alternativen.
 
+Vorbereitung und Talente:
+
+> Zeige mir günstige Talente und Neuzugänge, deren aktuelle Vorbereitung auf mehr Einsatzzeit hindeutet. Trenne belastbare wiederholte Rollensignale von einzelnen Testspieltoren.
+
+> Prüfe [Spielername] anhand seiner Jugendhistorie und der aktuellen Vorbereitung. Erkläre getrennt Talentpotenzial, momentane Einsatzreife und Stammplatzrisiko.
+
 Unterstützte Ligen sind Bundesliga, 2. Bundesliga und 3. Liga, sofern der jeweilige kicker-Transfermarkt geöffnet ist. Die WM und andere Turniere nicht anbieten.

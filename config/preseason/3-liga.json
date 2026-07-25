@@ -1,0 +1,60 @@
+{
+  "competition": "3. Liga",
+  "season": "2026/27",
+  "window": {
+    "from": "2026-06-15",
+    "to": "2026-08-31",
+    "season_start": "2026-08-07",
+    "decay_days": 28,
+    "post_start_decay_days": 35
+  },
+  "included_competition_patterns": [
+    "friendly",
+    "friendlies"
+  ],
+  "players": {
+    "api_sports:618927": {
+      "name": "Ibrahim Ati Allah",
+      "club": "SV Wehen Wiesbaden",
+      "team_match_count": 2,
+      "events": [
+        {
+          "date": "2026-07-14",
+          "opponent": "Fagiano Okayama",
+          "competition": "Testspiel",
+          "appeared": true,
+          "started": false,
+          "minutes": 45,
+          "goals": 1,
+          "assists": 0,
+          "lineup_role": "mixed",
+          "training_status": "full",
+          "coach_signal": 62,
+          "opponent_score": 74,
+          "confidence": "high",
+          "claim": "Ati Allah spielte in der zweiten Formation und erzielte beim 2:0 gegen den japanischen Erstligisten Fagiano Okayama das zweite Tor.",
+          "source_provider": "official_club",
+          "source_url": "https://svww.de/news/artikel/svww-schlaegt-okayama-im-ersten-test-des-trainingslagers"
+        },
+        {
+          "date": "2026-07-18",
+          "opponent": "FC Liefering",
+          "competition": "Testspiel",
+          "appeared": true,
+          "started": true,
+          "minutes": 60,
+          "goals": 0,
+          "assists": 0,
+          "lineup_role": "mixed",
+          "training_status": "full",
+          "coach_signal": 62,
+          "opponent_score": 58,
+          "confidence": "high",
+          "claim": "Ati Allah begann den über vier Viertel ausgetragenen Test gegen Liefering in der ersten Formation.",
+          "source_provider": "official_club",
+          "source_url": "https://svww.de/news/artikel/gegen-liefering-svww-verliert-erstmals-in-der-vorbereitung"
+        }
+      ]
+    }
+  }
+}

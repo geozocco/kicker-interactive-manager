@@ -1,0 +1,16 @@
+{
+  "competition": "2. Bundesliga",
+  "season": "2026/27",
+  "window": {
+    "from": "2026-06-15",
+    "to": "2026-08-31",
+    "season_start": "2026-08-07",
+    "decay_days": 28,
+    "post_start_decay_days": 35
+  },
+  "included_competition_patterns": [
+    "friendly",
+    "friendlies"
+  ],
+  "players": {}
+}

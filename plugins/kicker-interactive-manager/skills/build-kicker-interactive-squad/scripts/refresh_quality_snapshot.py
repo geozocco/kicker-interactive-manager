@@ -36,11 +36,16 @@ from news_snapshot import (
     canonical_sha256 as news_sha256,
     load_snapshot as load_news_snapshot,
 )
+from preseason_snapshot import (
+    canonical_sha256 as preseason_sha256,
+    load_snapshot as load_preseason_snapshot,
+)
 from quality_snapshot import SCHEMA_VERSION, canonical_sha256, validate_snapshot
 from refresh_news_snapshot import api_sports_pages, optional_int
 
 
 MODEL_VERSION = "multi-season-v6-goalkeeper-hierarchy"
+PRESEASON_MODEL_VERSION = "preseason-readiness-v1"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
 
 
@@ -354,6 +359,7 @@ def select_candidates(
     history_payload: dict[str, Any],
     quotas: dict[str, int],
     forced_candidate_ids: set[str] | None = None,
+    preseason_payload: dict[str, Any] | None = None,
 ) -> list[tuple[dict[str, Any], str, dict[str, Any]]]:
     market_players = available_market_players(market_payload)
     points_by_position = {
@@ -474,10 +480,20 @@ def select_candidates(
         )
     selected_ids = {str(item[0]["id"]) for item in selected}
     forced_ids = forced_candidate_ids or set()
+    preseason_news_ids = {
+        str(news_id)
+        for news_id, item in (preseason_payload or {}).get("players", {}).items()
+        if isinstance(item, dict)
+        and isinstance(item.get("summary"), dict)
+        and float(item["summary"].get("signal_score", 0)) >= 60
+        and int(item["summary"].get("appearances", 0)) >= 2
+    }
     for position in POSITIONS:
         for _, player, news_id, news_player in ranked[position]:
             player_id = str(player["id"])
-            if player_id in forced_ids and player_id not in selected_ids:
+            if (
+                player_id in forced_ids or news_id in preseason_news_ids
+            ) and player_id not in selected_ids:
                 selected.append((player, news_id, news_player))
                 selected_ids.add(player_id)
     return selected
@@ -798,6 +814,155 @@ def kicker_trend_summary(
     return summary
 
 
+def preseason_adjustment(
+    preseason_player: dict[str, Any] | None,
+    *,
+    age: int,
+    proven_seasons: int,
+    comparable_minutes: float,
+    youth_score: float,
+    talent_score: float,
+    minutes: float,
+    role: float,
+    upside: float,
+    value: float,
+    unknown_role: float,
+) -> dict[str, Any]:
+    """Blend preparation into readiness without turning friendlies into proof."""
+
+    empty = {
+        "available": False,
+        "classification": "insufficient",
+        "confidence": "low",
+        "appearances": 0,
+        "starts": 0,
+        "minutes": 0,
+        "goals": 0,
+        "assists": 0,
+        "signal_score": 50.0,
+        "availability_score": 50.0,
+        "role_score": 50.0,
+        "performance_score": 50.0,
+        "opponent_score": 50.0,
+        "effective_factor": 0.0,
+        "applied_weight": 0.0,
+        "readiness_delta": 0.0,
+        "talent_status": "unchanged",
+        "components": {
+            "minutes": minutes,
+            "role": role,
+            "upside": upside,
+            "value": value,
+        },
+        "unknown_role": unknown_role,
+    }
+    if not isinstance(preseason_player, dict):
+        return empty
+    summary = preseason_player.get("summary", {})
+    if not isinstance(summary, dict) or int(summary.get("appearances", 0)) <= 0:
+        return empty
+    confidence = str(summary.get("confidence", "low"))
+    confidence_factor = {"low": 0.55, "medium": 0.78, "high": 1.0}.get(
+        confidence,
+        0.55,
+    )
+    appearances = int(summary.get("appearances", 0))
+    sample_factor = min(1.0, appearances / 3.0)
+    effective_factor = clamp(summary.get("effective_factor"), 0) / 100.0
+    thin_history = proven_seasons == 0 or comparable_minutes < 900
+    base_weight = (
+        0.25
+        if age <= 21 and thin_history
+        else 0.18
+        if thin_history
+        else 0.10
+        if age <= 23
+        else 0.06
+    )
+    applied_weight = base_weight * confidence_factor * sample_factor * effective_factor
+    availability_score = clamp(summary.get("availability_score"), 50)
+    role_score = clamp(summary.get("role_score"), 50)
+    signal_score = clamp(summary.get("signal_score"), 50)
+    adjusted_minutes = clamp(
+        minutes + applied_weight * (availability_score - minutes)
+    )
+    adjusted_role = clamp(role + applied_weight * (role_score - role))
+    positive_signal = max(0.0, signal_score - 50.0)
+    adjusted_upside = max(
+        upside,
+        clamp(talent_score + 0.22 * positive_signal),
+    )
+    adjusted_value = max(
+        value,
+        clamp(
+            0.58 * value
+            + 0.24 * signal_score
+            + 0.18 * availability_score
+        ),
+    )
+    adjusted_unknown_role = clamp(
+        max(
+            18.0,
+            unknown_role - applied_weight * positive_signal * 0.75,
+        )
+    )
+    high_upside = (
+        age <= 21
+        and proven_seasons == 0
+        and (
+            talent_score >= 68
+            or (talent_score >= 52 and youth_score >= 80)
+            or youth_score >= 90
+        )
+        and signal_score >= 61
+        and appearances >= 2
+        and confidence in {"medium", "high"}
+    )
+    watchlist = (
+        age <= 22
+        and proven_seasons == 0
+        and max(talent_score, youth_score) >= 52
+        and signal_score >= 56
+    )
+    talent_status = (
+        "high_upside_pre_breakthrough"
+        if high_upside
+        else "preseason_watchlist"
+        if watchlist
+        else "unchanged"
+    )
+    return {
+        "available": True,
+        "classification": str(summary.get("classification", "insufficient")),
+        "confidence": confidence,
+        "appearances": appearances,
+        "starts": int(summary.get("starts", 0)),
+        "minutes": int(summary.get("minutes", 0)),
+        "goals": int(summary.get("goals", 0)),
+        "assists": int(summary.get("assists", 0)),
+        "signal_score": signal_score,
+        "availability_score": availability_score,
+        "role_score": role_score,
+        "performance_score": clamp(summary.get("performance_score"), 50),
+        "opponent_score": clamp(summary.get("opponent_score"), 50),
+        "effective_factor": clamp(summary.get("effective_factor"), 0),
+        "applied_weight": round(applied_weight, 4),
+        "readiness_delta": round(
+            0.5 * (adjusted_minutes - minutes)
+            + 0.5 * (adjusted_role - role),
+            2,
+        ),
+        "talent_status": talent_status,
+        "components": {
+            "minutes": adjusted_minutes,
+            "role": adjusted_role,
+            "upside": adjusted_upside,
+            "value": adjusted_value,
+        },
+        "unknown_role": adjusted_unknown_role,
+    }
+
+
 def build_annotation(
     market_player: dict[str, Any],
     news_id: str,
@@ -806,6 +971,7 @@ def build_annotation(
     history_player: dict[str, Any],
     kicker_history_player: dict[str, Any] | None = None,
     talent_evidence: dict[str, Any] | None = None,
+    preseason_player: dict[str, Any] | None = None,
     *,
     competition: str,
     points_pct: float,
@@ -993,19 +1159,40 @@ def build_annotation(
             + 0.20 * role
         )
         value = max(value, talent_value)
+    baseline_unknown_role = clamp(
+        max(
+            20.0,
+            62.0 - 0.42 * readiness_score,
+            74.0 - role,
+        )
+        if age <= 21 and talent_score >= 52
+        else 74.0 - role
+    )
+    preseason_summary = preseason_adjustment(
+        preseason_player,
+        age=age,
+        proven_seasons=proven_seasons,
+        comparable_minutes=float(
+            history_career.get("comparable_minutes", 0)
+        ),
+        youth_score=history_youth_score,
+        talent_score=talent_score,
+        minutes=minutes,
+        role=role,
+        upside=upside,
+        value=value,
+        unknown_role=baseline_unknown_role,
+    )
+    minutes = float(preseason_summary["components"]["minutes"])
+    role = float(preseason_summary["components"]["role"])
+    upside = float(preseason_summary["components"]["upside"])
+    value = float(preseason_summary["components"]["value"])
     risks = {
         "transfer": transfer_risk,
         "injury": injury_risk,
         "rotation": max(rotation_risk, clamp(82 - minutes)),
         "outlier": clamp(42 - 15 * proven_seasons + max(0, points_pct - 88) * 1.2),
-        "unknown_role": clamp(
-            min(
-                74 - role,
-                max(18.0, 62.0 - 0.42 * readiness_score),
-            )
-            if age <= 21 and talent_score >= 68
-            else 74 - role
-        ),
+        "unknown_role": float(preseason_summary["unknown_role"]),
     }
     components = {
         "confirmed_performance": confirmed,
@@ -1086,6 +1273,19 @@ def build_annotation(
                     "checked_at": str(item["checked_at"]),
                 }
             )
+    for item in (preseason_player or {}).get("observations", []):
+        if (
+            isinstance(item, dict)
+            and str(item.get("claim", "")).strip()
+            and str(item.get("source_url", "")).startswith("https://")
+        ):
+            evidence.append(
+                {
+                    "claim": str(item["claim"]),
+                    "source_url": str(item["source_url"]),
+                    "checked_at": str(item.get("date", generated_at)),
+                }
+            )
     history_summary = {
         "mapping_status": history_status,
         "confidence": str(history_mapping.get("confidence", "none")),
@@ -1154,6 +1354,16 @@ def build_annotation(
                     if talent_score >= 52
                     else ""
                 ),
+                (
+                    "Vorbereitung: "
+                    f"{preseason_summary['classification']} "
+                    f"({preseason_summary['signal_score']:.1f}/100; "
+                    f"{preseason_summary['appearances']} Einsätze, "
+                    f"{preseason_summary['starts']} Startelf). "
+                    f"Status {preseason_summary['talent_status']}."
+                    if preseason_summary["available"]
+                    else ""
+                ),
                 str(talent_evidence.get("note", "")).strip(),
             )
             if part
@@ -1169,6 +1379,11 @@ def build_annotation(
         },
         "kicker_trend": trend_summary,
         "history_summary": history_summary,
+        "preseason_summary": {
+            key: value
+            for key, value in preseason_summary.items()
+            if key not in {"components", "unknown_role"}
+        },
     }
 
 
@@ -1492,6 +1707,7 @@ def apply_goalkeeper_hierarchy(
 def generate_snapshot(
     market_payload: dict[str, Any],
     news_payload: dict[str, Any],
+    preseason_payload: dict[str, Any],
     history_payload: dict[str, Any],
     kicker_history_payload: dict[str, Any],
     config: dict[str, Any],
@@ -1504,6 +1720,10 @@ def generate_snapshot(
         raise RuntimeError("market and news competition do not match")
     if market_payload["season"] != news_payload["season"]:
         raise RuntimeError("market and news season do not match")
+    if market_payload["competition"] != preseason_payload["competition"]:
+        raise RuntimeError("market and preseason competition do not match")
+    if market_payload["season"] != preseason_payload["season"]:
+        raise RuntimeError("market and preseason season do not match")
     if market_payload["competition"] != history_payload["competition"]:
         raise RuntimeError("market and history competition do not match")
     if market_payload["season"] != history_payload["season"]:
@@ -1529,6 +1749,7 @@ def generate_snapshot(
             str(player_id)
             for player_id in config.get("talent_evidence", {})
         },
+        preseason_payload,
     )
     minimum_candidates = int(config["minimum_candidates"])
     if len(candidates) < minimum_candidates:
@@ -1601,6 +1822,12 @@ def generate_snapshot(
                 str(market_player["id"]),
                 {},
             ),
+            preseason_payload.get("players", {}).get(
+                news_id,
+                preseason_payload.get("players", {}).get(
+                    str(market_player["id"])
+                ),
+            ),
             competition=str(market_payload["competition"]),
             points_pct=percentile(
                 float(market_player.get("points", 0.0)),
@@ -1645,11 +1872,13 @@ def generate_snapshot(
         "season": market_payload["season"],
         "market_sha256": market_sha256(market_payload),
         "news_sha256": news_sha256(news_payload),
+        "preseason_sha256": preseason_sha256(preseason_payload),
         "history_sha256": history_sha256(history_payload),
         "kicker_history_sha256": kicker_history_sha256(
             kicker_history_payload
         ),
         "model_version": MODEL_VERSION,
+        "preseason_model_version": PRESEASON_MODEL_VERSION,
         "requirements": {
             "candidate_count": int(config["minimum_candidates"]),
             "anchor_count": int(config["minimum_anchors"]),
@@ -1671,6 +1900,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--market", required=True)
     parser.add_argument("--news", required=True)
+    parser.add_argument("--preseason", required=True)
     parser.add_argument("--history", required=True)
     parser.add_argument("--kicker-history", required=True)
     parser.add_argument("--mapping", type=Path, required=True)
@@ -1689,6 +1919,7 @@ def main() -> int:
     config = json.loads(args.mapping.read_text(encoding="utf-8"))
     market_payload = load_market_snapshot(args.market)
     news_payload = load_news_snapshot(args.news)
+    preseason_payload = load_preseason_snapshot(args.preseason)
     history_payload = load_history_snapshot(args.history)
     kicker_history_payload = load_kicker_history_snapshot(
         args.kicker_history
@@ -1696,6 +1927,7 @@ def main() -> int:
     payload = generate_snapshot(
         market_payload,
         news_payload,
+        preseason_payload,
         history_payload,
         kicker_history_payload,
         config,
