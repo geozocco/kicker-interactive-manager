@@ -723,10 +723,10 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
                 "role_score": 68,
                 "performance_score": 64,
                 "opponent_score": 70,
-                "signal_score": 72,
+                "signal_score": 60,
                 "effective_factor": 100,
                 "confidence": "medium",
-                "classification": "strong",
+                "classification": "neutral",
             },
         }
         annotation = quality.build_annotation(

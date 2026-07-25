@@ -914,7 +914,7 @@ def preseason_adjustment(
             or (talent_score >= 52 and youth_score >= 80)
             or youth_score >= 90
         )
-        and signal_score >= 61
+        and signal_score >= 60
         and appearances >= 2
         and confidence in {"medium", "high"}
     )
