@@ -94,6 +94,14 @@ def varied_pool() -> tuple[list[optimizer.Player], dict[str, float]]:
 
 
 class DistanceOptimizerTests(unittest.TestCase):
+    def test_postprocessing_variation_corridor_is_narrow(self) -> None:
+        self.assertTrue(optimizer.variation_distance_met("medium", 4))
+        self.assertTrue(optimizer.variation_distance_met("medium", 5))
+        self.assertFalse(optimizer.variation_distance_met("medium", 3))
+        self.assertFalse(optimizer.variation_distance_met("medium", 6))
+        self.assertTrue(optimizer.variation_distance_met("none", 0))
+        self.assertFalse(optimizer.variation_distance_met("none", 1))
+
     def test_technical_variation_pool_preserves_optimum_and_goalkeeper_blocks(
         self,
     ) -> None:
@@ -907,7 +915,7 @@ class CentralNewsIdentityTests(unittest.TestCase):
 
 
 class ReliableCorePolicyTests(unittest.TestCase):
-    def test_core_weighting_reserves_anchor_floor_for_benchmarks(self) -> None:
+    def test_core_weighting_uses_evidence_not_benchmark_flag(self) -> None:
         regular_anchor = player(
             "anchor",
             "Anchor Club",
@@ -915,17 +923,31 @@ class ReliableCorePolicyTests(unittest.TestCase):
             500,
             reliable_anchor=True,
         )
-        benchmark_anchor = optimizer.Player(
+        premium_anchor = optimizer.Player(
             **{
                 **player(
-                    "benchmark",
-                    "Benchmark Club",
+                    "premium",
+                    "Premium Club",
                     "MIDFIELDER",
                     1000,
                     reliable_anchor=True,
                 ).__dict__,
-                "benchmark": True,
+                "proven_seasons": 7,
+                "components": {
+                    **player(
+                        "premium-components",
+                        "Premium Club",
+                        "MIDFIELDER",
+                        1000,
+                    ).components,
+                    "confirmed_performance": 99.0,
+                    "role": 94.0,
+                    "stability": 85.0,
+                },
             }
+        )
+        benchmark_clone = optimizer.Player(
+            **{**premium_anchor.__dict__, "player_id": "premium-benchmark", "benchmark": True}
         )
         contender = player(
             "contender",
@@ -933,10 +955,11 @@ class ReliableCorePolicyTests(unittest.TestCase):
             "MIDFIELDER",
             600,
         )
-        players = [regular_anchor, benchmark_anchor, contender]
+        players = [regular_anchor, premium_anchor, benchmark_clone, contender]
         raw_scores = {
             regular_anchor.player_id: 70.0,
-            benchmark_anchor.player_id: 95.0,
+            premium_anchor.player_id: 95.0,
+            benchmark_clone.player_id: 95.0,
             contender.player_id: 90.0,
         }
 
@@ -948,10 +971,14 @@ class ReliableCorePolicyTests(unittest.TestCase):
         )
 
         self.assertLess(multipliers[regular_anchor.player_id], 0.95)
-        self.assertGreaterEqual(multipliers[benchmark_anchor.player_id], 0.95)
+        self.assertGreaterEqual(multipliers[premium_anchor.player_id], 0.95)
         self.assertGreater(
-            weighted[benchmark_anchor.player_id],
-            raw_scores[benchmark_anchor.player_id],
+            weighted[premium_anchor.player_id],
+            raw_scores[premium_anchor.player_id],
+        )
+        self.assertEqual(
+            weighted[premium_anchor.player_id],
+            weighted[benchmark_clone.player_id],
         )
 
     def test_expensive_anchor_reserves_are_repaired_with_safe_value_depth(
@@ -1078,6 +1105,68 @@ class ReliableCorePolicyTests(unittest.TestCase):
         self.assertEqual(3, strong["attacking_anchors"])
         self.assertFalse(flat["passes"])
         self.assertAlmostEqual(0.5, flat["core_budget_share"])
+
+    def test_remaining_budget_upgrades_the_starting_core(self) -> None:
+        squad_players: list[optimizer.Player] = [
+            player(f"g{index}", "Goalkeeper Club", "GOALKEEPER", 100)
+            for index in range(3)
+        ]
+        for position, prefix, count in (
+            ("DEFENDER", "d", 7),
+            ("MIDFIELDER", "m", 7),
+            ("FORWARD", "f", 5),
+        ):
+            for index in range(count):
+                squad_players.append(
+                    player(
+                        f"{prefix}{index}",
+                        f"{prefix.upper()} Club {index}",
+                        position,
+                        400 if index < 4 else 50,
+                        reliable_anchor=index < 4,
+                    )
+                )
+        scores = {
+            item.player_id: 100.0 - index
+            for index, item in enumerate(squad_players)
+        }
+        squad = optimizer.Squad(
+            squad_players,
+            sum(scores[item.player_id] for item in squad_players),
+        )
+        audit = optimizer.reliable_core_audit(squad, scores, 4, 3, 0.70)
+        incumbent = next(
+            item
+            for item in squad_players
+            if item.player_id in audit["player_ids"]
+            and item.position == "MIDFIELDER"
+        )
+        premium = optimizer.replace(
+            incumbent,
+            player_id="premium-midfielder",
+            name="Premium Midfielder",
+            short_name="Premium",
+            club="Premium Club",
+            cost=incumbent.cost + 300,
+        )
+        scores[premium.player_id] = scores[incumbent.player_id] + 10.0
+
+        upgraded = optimizer.upgrade_core_with_remaining_budget(
+            squad,
+            [*squad_players, premium],
+            scores,
+            scores,
+            budget=squad.cost + 300,
+            club_cap=4,
+            min_reliable_anchors=4,
+            min_attacking_anchors=3,
+            min_core_budget_share=0.70,
+        )
+
+        self.assertIn(premium.player_id, upgraded.ids)
+        self.assertEqual(len(squad.players), len(upgraded.players))
+        self.assertEqual(1, len(squad.ids - upgraded.ids))
+        self.assertEqual(squad.cost + 300, upgraded.cost)
 
     def test_final_annotation_requires_anchor_benchmark_and_evidence_fields(
         self,

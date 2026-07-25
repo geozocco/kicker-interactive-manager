@@ -334,6 +334,15 @@ VARIATION_CONFIG = {
 DEFAULT_CLUB_CAP = {"reliable": 4, "balanced": 4, "breakout": 3}
 
 
+def variation_distance_met(variation: str, distance: int) -> bool:
+    """Accept the narrow post-processing corridor around a variation target."""
+
+    target = int(VARIATION_CONFIG[variation]["distance"])
+    if target == 0:
+        return distance == 0
+    return target <= distance <= target + 1
+
+
 @dataclass(frozen=True)
 class Player:
     player_id: str
@@ -1033,6 +1042,30 @@ def core_weighted_scores(
         ]
         ordered_values = sorted(scores[player.player_id] for player in position_players)
         for player in position_players:
+            premium_bonus = 0.0
+            if player.reliable_anchor:
+                premium_bonus = (
+                    2.0 * min(6, max(0, player.proven_seasons - 2))
+                    + 0.6 * max(0.0, player.components["role"] - 85.0)
+                    + 0.8
+                    * max(
+                        0.0,
+                        player.components["confirmed_performance"] - 95.0,
+                    )
+                    + 0.2
+                    * max(0.0, player.components["stability"] - 75.0)
+                )
+                premium_bonus = min(
+                    18.0
+                    if player.position in {"MIDFIELDER", "FORWARD"}
+                    else 8.0,
+                    premium_bonus
+                    * (
+                        1.0
+                        if player.position in {"MIDFIELDER", "FORWARD"}
+                        else 0.5
+                    ),
+                )
             if len(ordered_values) <= 1:
                 rank = 1.0
             else:
@@ -1041,11 +1074,10 @@ def core_weighted_scores(
                 ) / (len(ordered_values) - 1)
             multiplier = 0.10 + 0.90 * rank**4
             # A broad anchor flag proves floor-level reliability, but it must
-            # not make every established regular as valuable as the genuinely
-            # premium scorers. Reserve the multiplier floor for researched
-            # benchmark players; all other anchors still compete on their
-            # complete multi-season score and positional rank.
-            if player.reliable_anchor and player.benchmark:
+            # not make every established regular as valuable as a genuine
+            # multi-season premium player. The floor therefore depends only on
+            # repeatable performance, role, stability and proven seasons.
+            if premium_bonus >= 8.0:
                 anchor_floor = (
                     0.95
                     if player.position in {"MIDFIELDER", "FORWARD"}
@@ -1056,17 +1088,10 @@ def core_weighted_scores(
             weighted_score = (
                 raw_score * multiplier if raw_score >= 0.0 else raw_score
             )
-            if player.benchmark:
-                # The squad optimizer scores all 22 places additively. Without
-                # a modest core premium, several tiny reserve upgrades can
-                # collectively displace a proven top scorer. Benchmarks are
-                # derived from the current multi-season data, not from a
-                # hard-coded player list.
-                weighted_score += (
-                    18.0
-                    if player.position in {"MIDFIELDER", "FORWARD"}
-                    else 8.0
-                )
+            # The squad optimizer scores all 22 places additively. This
+            # bounded, evidence-derived premium prevents several tiny reserve
+            # upgrades from collectively displacing a proven top scorer.
+            weighted_score += premium_bonus
             weighted[player.player_id] = weighted_score
             multipliers[player.player_id] = multiplier
     return weighted, multipliers
@@ -1310,6 +1335,155 @@ def repair_core_budget_share(
             ),
         )
     return None
+
+
+def upgrade_core_with_remaining_budget(
+    squad: Squad,
+    candidates: list[Player],
+    quality_scores: Mapping[str, float],
+    core_scores: dict[str, float],
+    *,
+    budget: int,
+    club_cap: int,
+    min_reliable_anchors: int,
+    min_attacking_anchors: int,
+    min_core_budget_share: float,
+) -> Squad:
+    """Spend remaining budget only on safe, stronger starting-core upgrades."""
+
+    current = squad
+    for _ in range(len(current.players)):
+        remaining_budget = budget - current.cost
+        if remaining_budget <= 0:
+            break
+        audit = reliable_core_audit(
+            current,
+            core_scores,
+            min_reliable_anchors,
+            min_attacking_anchors,
+            min_core_budget_share,
+        )
+        core_ids = set(audit["player_ids"])
+        selected_ids = current.ids
+        club_counts = Counter(
+            player.club
+            for player in current.players
+            if player.position != "GOALKEEPER"
+        )
+        alternatives: list[tuple[float, float, int, Squad]] = []
+        for incumbent in current.players:
+            if (
+                incumbent.player_id not in core_ids
+                or incumbent.position == "GOALKEEPER"
+            ):
+                continue
+            for candidate in candidates:
+                if (
+                    candidate.position != incumbent.position
+                    or candidate.player_id in selected_ids
+                    or candidate.cost <= incumbent.cost
+                    or candidate.cost - incumbent.cost > remaining_budget
+                    or core_scores[candidate.player_id]
+                    <= core_scores[incumbent.player_id]
+                    or quality_scores[candidate.player_id]
+                    < quality_scores[incumbent.player_id]
+                ):
+                    continue
+                candidate_club_count = club_counts[candidate.club]
+                if candidate.club == incumbent.club:
+                    candidate_club_count -= 1
+                if candidate_club_count >= club_cap:
+                    continue
+                replacement_players = [
+                    candidate if player.player_id == incumbent.player_id else player
+                    for player in current.players
+                ]
+                replacement = Squad(
+                    replacement_players,
+                    sum(
+                        quality_scores[player.player_id]
+                        for player in replacement_players
+                    ),
+                )
+                replacement_audit = reliable_core_audit(
+                    replacement,
+                    core_scores,
+                    min_reliable_anchors,
+                    min_attacking_anchors,
+                    min_core_budget_share,
+                )
+                if (
+                    not replacement_audit["passes"]
+                    or candidate.player_id
+                    not in replacement_audit["player_ids"]
+                ):
+                    continue
+                alternatives.append(
+                    (
+                        core_scores[candidate.player_id]
+                        - core_scores[incumbent.player_id],
+                        quality_scores[candidate.player_id]
+                        - quality_scores[incumbent.player_id],
+                        -(candidate.cost - incumbent.cost),
+                        replacement,
+                    )
+                )
+        if not alternatives:
+            break
+        _, _, _, current = max(
+            alternatives,
+            key=lambda item: (item[0], item[1], item[2]),
+        )
+    return current
+
+
+def finalize_reliable_core_architecture(
+    squad: Squad,
+    candidates: list[Player],
+    quality_scores: Mapping[str, float],
+    core_scores: dict[str, float],
+    *,
+    budget: int,
+    club_cap: int,
+    min_reliable_anchors: int,
+    min_attacking_anchors: int,
+    min_core_budget_share: float,
+) -> Squad:
+    """Apply the same core-first architecture to a squad and its reference."""
+
+    current = squad
+    audit = reliable_core_audit(
+        current,
+        core_scores,
+        min_reliable_anchors,
+        min_attacking_anchors,
+        min_core_budget_share,
+    )
+    if not audit["passes"]:
+        repaired = repair_core_budget_share(
+            current,
+            candidates,
+            quality_scores,
+            core_scores,
+            club_cap=club_cap,
+            min_reliable_anchors=min_reliable_anchors,
+            min_attacking_anchors=min_attacking_anchors,
+            min_core_budget_share=min_core_budget_share,
+            quality_floor=float("-inf"),
+        )
+        if repaired is not None:
+            current = repaired
+    return upgrade_core_with_remaining_budget(
+        current,
+        candidates,
+        quality_scores,
+        core_scores,
+        budget=budget,
+        club_cap=club_cap,
+        min_reliable_anchors=min_reliable_anchors,
+        min_attacking_anchors=min_attacking_anchors,
+        min_core_budget_share=min_core_budget_share,
+    )
 
 
 def goalkeeper_options(
@@ -2431,43 +2605,50 @@ def varied_portfolio(
                 prepared_context=slot_context,
                 forbidden_ids=slot_forbidden_ids,
             )
-            core_audit = reliable_core_audit(
-                squad,
-                effective_core_scores,
-                min_reliable_anchors,
-                min_attacking_anchors,
-                min_core_budget_share,
-            )
-            last_core_audit = core_audit
-            if min_core_budget_share > 0 and not core_audit["passes"]:
-                repaired = repair_core_budget_share(
-                    squad,
+            if profile == "reliable" and min_core_budget_share > 0:
+                optimum = finalize_reliable_core_architecture(
+                    optimum,
                     slot_players,
                     slot_scores,
                     effective_core_scores,
+                    budget=budget,
                     club_cap=club_cap,
                     min_reliable_anchors=min_reliable_anchors,
                     min_attacking_anchors=min_attacking_anchors,
                     min_core_budget_share=min_core_budget_share,
-                    quality_floor=float("-inf"),
                 )
-                if repaired is not None:
-                    squad = repaired
-                    distance = len(
-                        optimum.ids.symmetric_difference(squad.ids)
-                    ) // 2
-                    target_met = (
-                        distance
-                        == int(VARIATION_CONFIG[variation]["distance"])
-                    )
-                    core_audit = reliable_core_audit(
-                        squad,
-                        effective_core_scores,
-                        min_reliable_anchors,
-                        min_attacking_anchors,
-                        min_core_budget_share,
-                    )
-                    last_core_audit = core_audit
+                squad = finalize_reliable_core_architecture(
+                    squad,
+                    slot_players,
+                    slot_scores,
+                    effective_core_scores,
+                    budget=budget,
+                    club_cap=club_cap,
+                    min_reliable_anchors=min_reliable_anchors,
+                    min_attacking_anchors=min_attacking_anchors,
+                    min_core_budget_share=min_core_budget_share,
+                )
+                distance = len(
+                    optimum.ids.symmetric_difference(squad.ids)
+                ) // 2
+                target_met = variation_distance_met(variation, distance)
+                core_audit = reliable_core_audit(
+                    squad,
+                    effective_core_scores,
+                    min_reliable_anchors,
+                    min_attacking_anchors,
+                    min_core_budget_share,
+                )
+                last_core_audit = core_audit
+            else:
+                core_audit = reliable_core_audit(
+                    squad,
+                    effective_core_scores,
+                    min_reliable_anchors,
+                    min_attacking_anchors,
+                    min_core_budget_share,
+                )
+                last_core_audit = core_audit
             if (
                 (
                     min_core_budget_share > 0
@@ -3917,36 +4098,35 @@ def main() -> int:
                 args.profile == "reliable"
                 and args.min_core_budget_share > 0
             ):
-                core_audit = reliable_core_audit(
-                    squad,
+                optimum = finalize_reliable_core_architecture(
+                    optimum,
+                    eligible_players,
+                    eligible_utility_scores,
                     eligible_raw_scores,
-                    args.min_reliable_anchors,
-                    args.min_attacking_anchors,
-                    args.min_core_budget_share,
+                    budget=args.budget,
+                    club_cap=args.max_outfield_per_club,
+                    min_reliable_anchors=args.min_reliable_anchors,
+                    min_attacking_anchors=args.min_attacking_anchors,
+                    min_core_budget_share=args.min_core_budget_share,
                 )
-                if not core_audit["passes"]:
-                    repaired = repair_core_budget_share(
-                        squad,
-                        eligible_players,
-                        eligible_utility_scores,
-                        eligible_raw_scores,
-                        club_cap=args.max_outfield_per_club,
-                        min_reliable_anchors=args.min_reliable_anchors,
-                        min_attacking_anchors=args.min_attacking_anchors,
-                        min_core_budget_share=args.min_core_budget_share,
-                        quality_floor=float("-inf"),
-                    )
-                    if repaired is not None:
-                        squad = repaired
-                        distance = len(
-                            optimum.ids.symmetric_difference(squad.ids)
-                        ) // 2
-                        variation_target_met = (
-                            distance
-                            == int(
-                                VARIATION_CONFIG[args.variation]["distance"]
-                            )
-                        )
+                squad = finalize_reliable_core_architecture(
+                    squad,
+                    eligible_players,
+                    eligible_utility_scores,
+                    eligible_raw_scores,
+                    budget=args.budget,
+                    club_cap=args.max_outfield_per_club,
+                    min_reliable_anchors=args.min_reliable_anchors,
+                    min_attacking_anchors=args.min_attacking_anchors,
+                    min_core_budget_share=args.min_core_budget_share,
+                )
+                distance = len(
+                    optimum.ids.symmetric_difference(squad.ids)
+                ) // 2
+                variation_target_met = variation_distance_met(
+                    args.variation,
+                    distance,
+                )
     except ValueError as error:
         print(f"Optimization stopped: {error}", file=sys.stderr)
         return 2
