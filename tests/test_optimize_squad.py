@@ -907,10 +907,58 @@ class CentralNewsIdentityTests(unittest.TestCase):
 
 
 class ReliableCorePolicyTests(unittest.TestCase):
-    def test_expensive_reserves_are_repaired_with_safe_value_depth(self) -> None:
+    def test_core_weighting_reserves_anchor_floor_for_benchmarks(self) -> None:
+        regular_anchor = player(
+            "anchor",
+            "Anchor Club",
+            "MIDFIELDER",
+            500,
+            reliable_anchor=True,
+        )
+        benchmark_anchor = optimizer.Player(
+            **{
+                **player(
+                    "benchmark",
+                    "Benchmark Club",
+                    "MIDFIELDER",
+                    1000,
+                    reliable_anchor=True,
+                ).__dict__,
+                "benchmark": True,
+            }
+        )
+        contender = player(
+            "contender",
+            "Contender Club",
+            "MIDFIELDER",
+            600,
+        )
+        players = [regular_anchor, benchmark_anchor, contender]
+        raw_scores = {
+            regular_anchor.player_id: 70.0,
+            benchmark_anchor.player_id: 95.0,
+            contender.player_id: 90.0,
+        }
+
+        weighted, multipliers = optimizer.core_weighted_scores(
+            players,
+            raw_scores,
+            "reliable",
+            "low",
+        )
+
+        self.assertLess(multipliers[regular_anchor.player_id], 0.95)
+        self.assertGreaterEqual(multipliers[benchmark_anchor.player_id], 0.95)
+        self.assertGreater(
+            weighted[benchmark_anchor.player_id],
+            raw_scores[benchmark_anchor.player_id],
+        )
+
+    def test_expensive_anchor_reserves_are_repaired_with_safe_value_depth(
+        self,
+    ) -> None:
         squad_players: list[optimizer.Player] = []
         scores: dict[str, float] = {}
-        anchors = {"D0", "M0", "M1", "M2"}
         for position, prefix, count in (
             ("GOALKEEPER", "G", 3),
             ("DEFENDER", "D", 7),
@@ -919,7 +967,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
         ):
             for index in range(count):
                 player_id = f"{prefix}{index}"
-                is_anchor = player_id in anchors
+                is_anchor = position != "GOALKEEPER"
                 cost = (
                     100
                     if position == "GOALKEEPER"

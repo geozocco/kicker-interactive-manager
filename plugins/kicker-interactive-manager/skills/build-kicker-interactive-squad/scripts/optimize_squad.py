@@ -1040,7 +1040,12 @@ def core_weighted_scores(
                     bisect.bisect_right(ordered_values, scores[player.player_id]) - 1
                 ) / (len(ordered_values) - 1)
             multiplier = 0.10 + 0.90 * rank**4
-            if player.reliable_anchor:
+            # A broad anchor flag proves floor-level reliability, but it must
+            # not make every established regular as valuable as the genuinely
+            # premium scorers. Reserve the multiplier floor for researched
+            # benchmark players; all other anchors still compete on their
+            # complete multi-season score and positional rank.
+            if player.reliable_anchor and player.benchmark:
                 anchor_floor = (
                     0.95
                     if player.position in {"MIDFIELDER", "FORWARD"}
@@ -1048,9 +1053,21 @@ def core_weighted_scores(
                 )
                 multiplier = max(multiplier, anchor_floor)
             raw_score = scores[player.player_id]
-            weighted[player.player_id] = (
+            weighted_score = (
                 raw_score * multiplier if raw_score >= 0.0 else raw_score
             )
+            if player.benchmark:
+                # The squad optimizer scores all 22 places additively. Without
+                # a modest core premium, several tiny reserve upgrades can
+                # collectively displace a proven top scorer. Benchmarks are
+                # derived from the current multi-season data, not from a
+                # hard-coded player list.
+                weighted_score += (
+                    18.0
+                    if player.position in {"MIDFIELDER", "FORWARD"}
+                    else 8.0
+                )
+            weighted[player.player_id] = weighted_score
             multipliers[player.player_id] = multiplier
     return weighted, multipliers
 
@@ -1193,7 +1210,7 @@ def repair_core_budget_share(
         )
         for position in DEFAULT_SLOTS
     }
-    for _ in range(len(current.players)):
+    for _ in range(2 * len(current.players)):
         audit = reliable_core_audit(
             current,
             core_scores,
@@ -1217,13 +1234,17 @@ def repair_core_budget_share(
             if (
                 reserve.player_id in core_ids
                 or reserve.position == "GOALKEEPER"
-                or reserve.reliable_anchor
             ):
                 continue
             for candidate in candidate_by_position[reserve.position]:
+                # A same-position replacement no stronger than a non-core
+                # reserve cannot displace the already optimal starting eleven.
+                # Its anchor counts and core cost therefore remain invariant.
                 if (
                     candidate.player_id in selected_ids
                     or candidate.cost >= reserve.cost
+                    or core_scores[candidate.player_id]
+                    > core_scores[reserve.player_id]
                 ):
                     continue
                 if (
@@ -1248,12 +1269,18 @@ def repair_core_budget_share(
                 )
                 if replacement_score < quality_floor:
                     continue
-                replacement_audit = reliable_core_audit(
-                    replacement,
-                    core_scores,
-                    min_reliable_anchors,
-                    min_attacking_anchors,
-                    min_core_budget_share,
+                replacement_audit = dict(audit)
+                replacement_audit["core_budget_share"] = (
+                    float(audit["core_budget"])
+                    / max(replacement.cost, 1)
+                )
+                replacement_audit["passes"] = (
+                    replacement_audit["reliable_anchors"]
+                    >= min_reliable_anchors
+                    and replacement_audit["attacking_anchors"]
+                    >= min_attacking_anchors
+                    and replacement_audit["core_budget_share"]
+                    >= min_core_budget_share
                 )
                 if (
                     replacement_audit["reliable_anchors"]
@@ -3886,6 +3913,40 @@ def main() -> int:
                 min_reliable_anchors=args.min_reliable_anchors,
                 technical_smoke=args.allow_unannotated,
             )
+            if (
+                args.profile == "reliable"
+                and args.min_core_budget_share > 0
+            ):
+                core_audit = reliable_core_audit(
+                    squad,
+                    eligible_raw_scores,
+                    args.min_reliable_anchors,
+                    args.min_attacking_anchors,
+                    args.min_core_budget_share,
+                )
+                if not core_audit["passes"]:
+                    repaired = repair_core_budget_share(
+                        squad,
+                        eligible_players,
+                        eligible_utility_scores,
+                        eligible_raw_scores,
+                        club_cap=args.max_outfield_per_club,
+                        min_reliable_anchors=args.min_reliable_anchors,
+                        min_attacking_anchors=args.min_attacking_anchors,
+                        min_core_budget_share=args.min_core_budget_share,
+                        quality_floor=float("-inf"),
+                    )
+                    if repaired is not None:
+                        squad = repaired
+                        distance = len(
+                            optimum.ids.symmetric_difference(squad.ids)
+                        ) // 2
+                        variation_target_met = (
+                            distance
+                            == int(
+                                VARIATION_CONFIG[args.variation]["distance"]
+                            )
+                        )
     except ValueError as error:
         print(f"Optimization stopped: {error}", file=sys.stderr)
         return 2
