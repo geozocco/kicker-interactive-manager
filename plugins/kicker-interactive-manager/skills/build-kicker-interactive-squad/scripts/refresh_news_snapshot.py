@@ -82,6 +82,8 @@ def api_sports_pages(
     query: dict[str, Any],
     headers: dict[str, str],
     paginate: bool = True,
+    rate_limit_attempts: int = 3,
+    rate_limit_delay: float = 65.0,
 ) -> Iterable[dict[str, Any]]:
     page = 1
     while True:
@@ -90,13 +92,16 @@ def api_sports_pages(
             if paginate
             else dict(query)
         )
-        payload = request_json(
-            base_url,
-            query=request_query,
-            headers=headers,
-        )
-        errors = payload.get("errors")
-        if errors:
+        payload: dict[str, Any] | None = None
+        for attempt in range(rate_limit_attempts):
+            payload = request_json(
+                base_url,
+                query=request_query,
+                headers=headers,
+            )
+            errors = payload.get("errors")
+            if not errors:
+                break
             if isinstance(errors, dict):
                 details = "; ".join(
                     f"{key}: {value}"
@@ -106,7 +111,20 @@ def api_sports_pages(
                 details = "; ".join(str(value) for value in errors)
             else:
                 details = str(errors)
-            raise RuntimeError(f"API-Sports rejected the request: {details}")
+            normalized_details = details.casefold()
+            is_rate_limit = (
+                "ratelimit" in normalized_details
+                or "rate limit" in normalized_details
+                or "too many requests" in normalized_details
+            )
+            if is_rate_limit and attempt + 1 < rate_limit_attempts:
+                time.sleep(rate_limit_delay * (attempt + 1))
+                continue
+            raise RuntimeError(
+                f"API-Sports rejected the request: {details}"
+            )
+        if payload is None:
+            raise RuntimeError("API-Sports returned no payload")
         yield payload
         if not paginate:
             return
