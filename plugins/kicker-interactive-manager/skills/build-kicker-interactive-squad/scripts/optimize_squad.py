@@ -117,6 +117,9 @@ CLUB_IDENTITY_STOPWORDS = {
 }
 VARIATION_STATE_ENV = "KICKER_VARIATION_STATE"
 VARIATION_STATE_SCHEMA_VERSION = 1
+OPTIMIZER_CACHE_ENV = "KICKER_OPTIMIZER_CACHE"
+OPTIMIZER_CACHE_SCHEMA_VERSION = 1
+OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v3"
 
 PROFILE_ALIASES = {
     "reliable": "reliable",
@@ -148,6 +151,37 @@ VARIATION_ALIASES = {
 
 class VariationStateError(ValueError):
     """Raised when the private local variation state cannot be used safely."""
+
+
+def default_optimizer_cache_path() -> Path:
+    """Return the cross-platform cache used for seed-independent optima."""
+
+    explicit_path = os.environ.get(OPTIMIZER_CACHE_ENV)
+    if explicit_path:
+        return Path(explicit_path).expanduser()
+    codex_home = os.environ.get("CODEX_HOME")
+    if codex_home:
+        return (
+            Path(codex_home).expanduser()
+            / "cache"
+            / "kicker-interactive-manager"
+            / "optimizer"
+        )
+    if os.name == "nt" and os.environ.get("LOCALAPPDATA"):
+        return (
+            Path(os.environ["LOCALAPPDATA"])
+            / "Codex"
+            / "cache"
+            / "kicker-interactive-manager"
+            / "optimizer"
+        )
+    return (
+        Path.home()
+        / ".codex"
+        / "cache"
+        / "kicker-interactive-manager"
+        / "optimizer"
+    )
 
 
 def default_variation_state_path() -> Path:
@@ -1253,6 +1287,59 @@ def best_starting_lineup(
         by_position["GOALKEEPER"],
         scores,
     )
+    field_position_index = {
+        "DEFENDER": 0,
+        "MIDFIELDER": 1,
+        "FORWARD": 2,
+    }
+    maximum_counts = {
+        "DEFENDER": max(formation[0] for formation in FORMATIONS),
+        "MIDFIELDER": max(formation[1] for formation in FORMATIONS),
+        "FORWARD": max(formation[2] for formation in FORMATIONS),
+    }
+    states: dict[
+        tuple[int, int, int, int, int],
+        tuple[float, frozenset[str]],
+    ] = {(0, 0, 0, 0, 0): (0.0, frozenset())}
+    for player in sorted(
+        (
+            player
+            for player in players
+            if player.position != "GOALKEEPER"
+        ),
+        key=lambda player: player.player_id,
+    ):
+        position_index = field_position_index[player.position]
+        next_states = dict(states)
+        for key, (score, ids) in states.items():
+            counts = list(key[:3])
+            if counts[position_index] >= maximum_counts[player.position]:
+                continue
+            counts[position_index] += 1
+            anchors = min(
+                min_reliable_anchors,
+                key[3] + int(player.reliable_anchor),
+            )
+            premium_anchors = min(
+                min_offensive_premium_anchors,
+                key[4] + int(is_offensive_premium_anchor(player)),
+            )
+            new_key = (
+                counts[0],
+                counts[1],
+                counts[2],
+                anchors,
+                premium_anchors,
+            )
+            new_score = score + scores[player.player_id]
+            current = next_states.get(new_key)
+            if current is None or new_score > current[0]:
+                next_states[new_key] = (
+                    new_score,
+                    ids | {player.player_id},
+                )
+        states = next_states
+
     best_any: tuple[float, str, frozenset[str]] | None = None
     best_anchor_safe: tuple[float, str, frozenset[str]] | None = None
     for defenders, midfielders, forwards in FORMATIONS:
@@ -1266,45 +1353,26 @@ def best_starting_lineup(
         if any(len(by_position[position]) < count for position, count in counts.items()):
             continue
         formation = f"{defenders}-{midfielders}-{forwards}"
-        for defender_group in itertools.combinations(
-            by_position["DEFENDER"],
-            defenders,
-        ):
-            for midfielder_group in itertools.combinations(
-                by_position["MIDFIELDER"],
-                midfielders,
+        for key, (field_score, field_ids) in states.items():
+            if key[:3] != (defenders, midfielders, forwards):
+                continue
+            candidate = (
+                field_score + scores[goalkeeper.player_id],
+                formation,
+                field_ids | {goalkeeper.player_id},
+            )
+            if best_any is None or candidate[0] > best_any[0]:
+                best_any = candidate
+            if (
+                key[3] < min_reliable_anchors
+                or key[4] < min_offensive_premium_anchors
             ):
-                for forward_group in itertools.combinations(
-                    by_position["FORWARD"],
-                    forwards,
-                ):
-                    selected = (
-                        goalkeeper,
-                        *defender_group,
-                        *midfielder_group,
-                        *forward_group,
-                    )
-                    score = sum(scores[player.player_id] for player in selected)
-                    ids = frozenset(player.player_id for player in selected)
-                    candidate = (score, formation, ids)
-                    if best_any is None or score > best_any[0]:
-                        best_any = candidate
-                    anchor_count = sum(
-                        player.reliable_anchor for player in selected
-                    )
-                    if anchor_count < min_reliable_anchors:
-                        continue
-                    premium_anchor_count = sum(
-                        is_offensive_premium_anchor(player)
-                        for player in selected
-                    )
-                    if (
-                        premium_anchor_count
-                        < min_offensive_premium_anchors
-                    ):
-                        continue
-                    if best_anchor_safe is None or score > best_anchor_safe[0]:
-                        best_anchor_safe = candidate
+                continue
+            if (
+                best_anchor_safe is None
+                or candidate[0] > best_anchor_safe[0]
+            ):
+                best_anchor_safe = candidate
     chosen = best_anchor_safe or best_any
     if chosen is None:
         return "", frozenset()
@@ -1999,6 +2067,123 @@ def combine_options(
     return Squad(list(selected), score), max_reachable
 
 
+def optimizer_cache_key(
+    players: Iterable[Player],
+    scores: Mapping[str, float],
+    budget: int,
+    club_cap: int,
+    minimum_spend: int,
+    slots: Mapping[str, int],
+    same_club_goalkeepers: bool,
+    min_reliable_anchors: int,
+) -> str:
+    """Hash every input that can affect the seed-independent optimum."""
+
+    payload = {
+        "algorithm": OPTIMIZER_ALGORITHM_VERSION,
+        "players": [
+            {
+                "id": player.player_id,
+                "club": player.club,
+                "position": player.position,
+                "cost": player.cost,
+                "reliable_anchor": player.reliable_anchor,
+                "score": float(scores[player.player_id]).hex(),
+                "goalkeeper_outlook": (
+                    player.goalkeeper_outlook
+                    if player.position == "GOALKEEPER"
+                    else None
+                ),
+            }
+            for player in sorted(players, key=lambda player: player.player_id)
+        ],
+        "budget": budget,
+        "club_cap": club_cap,
+        "minimum_spend": minimum_spend,
+        "slots": dict(sorted(slots.items())),
+        "same_club_goalkeepers": same_club_goalkeepers,
+        "min_reliable_anchors": min_reliable_anchors,
+    }
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def load_cached_optimum(
+    cache_directory: Path,
+    cache_key: str,
+    players: Iterable[Player],
+    scores: Mapping[str, float],
+) -> Squad | None:
+    """Load a validated cached optimum, treating corruption as a cache miss."""
+
+    path = cache_directory / f"{cache_key}.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if (
+        payload.get("schema_version") != OPTIMIZER_CACHE_SCHEMA_VERSION
+        or payload.get("algorithm") != OPTIMIZER_ALGORITHM_VERSION
+        or payload.get("cache_key") != cache_key
+        or not isinstance(payload.get("player_ids"), list)
+    ):
+        return None
+    player_by_id = {player.player_id: player for player in players}
+    try:
+        selected = [
+            player_by_id[str(player_id)]
+            for player_id in payload["player_ids"]
+        ]
+    except KeyError:
+        return None
+    if len(selected) != len(set(payload["player_ids"])):
+        return None
+    return Squad(
+        selected,
+        sum(scores[player.player_id] for player in selected),
+    )
+
+
+def save_cached_optimum(
+    cache_directory: Path,
+    cache_key: str,
+    squad: Squad,
+) -> None:
+    """Atomically persist an optimum; cache write failures never stop a run."""
+
+    path = cache_directory / f"{cache_key}.json"
+    temporary_path = path.with_name(
+        f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
+    )
+    try:
+        cache_directory.mkdir(parents=True, exist_ok=True)
+        temporary_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": OPTIMIZER_CACHE_SCHEMA_VERSION,
+                    "algorithm": OPTIMIZER_ALGORITHM_VERSION,
+                    "cache_key": cache_key,
+                    "player_ids": sorted(squad.ids),
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary_path, path)
+    except OSError:
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def optimize(
     players: list[Player],
     budget: int,
@@ -2008,7 +2193,78 @@ def optimize(
     slots: dict[str, int],
     same_club_goalkeepers: bool = True,
     min_reliable_anchors: int = 0,
+    cache_directory: Path | None = None,
 ) -> Squad:
+    players = exact_distance_candidate_pool(
+        players,
+        scores,
+        slots,
+        club_cap,
+        frozenset(),
+        club_cap,
+        allow_cheaper_dominance=minimum_spend == 0,
+    )
+    cache_key: str | None = None
+    if cache_directory is not None:
+        cache_key = optimizer_cache_key(
+            players,
+            scores,
+            budget,
+            club_cap,
+            minimum_spend,
+            slots,
+            same_club_goalkeepers,
+            min_reliable_anchors,
+        )
+        cached = load_cached_optimum(
+            cache_directory,
+            cache_key,
+            players,
+            scores,
+        )
+        cached_position_counts = (
+            Counter(player.position for player in cached.players)
+            if cached is not None
+            else Counter()
+        )
+        cached_outfield_clubs = (
+            Counter(
+                player.club
+                for player in cached.players
+                if player.position != "GOALKEEPER"
+            )
+            if cached is not None
+            else Counter()
+        )
+        cached_goalkeeper_clubs = (
+            {
+                player.club
+                for player in cached.players
+                if player.position == "GOALKEEPER"
+            }
+            if cached is not None
+            else set()
+        )
+        if (
+            cached is not None
+            and cached_position_counts == Counter(slots)
+            and minimum_spend <= cached.cost <= budget
+            and all(
+                count <= club_cap
+                for count in cached_outfield_clubs.values()
+            )
+            and (
+                not same_club_goalkeepers
+                or len(cached_goalkeeper_clubs) == 1
+            )
+            and sum(
+                player.reliable_anchor
+                for player in cached.players
+                if player.position != "GOALKEEPER"
+            )
+            >= min_reliable_anchors
+        ):
+            return cached
     gk_options = goalkeeper_options(
         players,
         slots["GOALKEEPER"],
@@ -2060,6 +2316,8 @@ def optimize(
                 f"{max_reachable_anchors}"
             )
         raise ValueError("no complete squad fits the supplied budget and minimum spend")
+    if cache_directory is not None and cache_key is not None:
+        save_cached_optimum(cache_directory, cache_key, squad)
     return squad
 
 
@@ -2167,6 +2425,106 @@ def distance_club_outfield_options(
     return states
 
 
+def exact_distance_candidate_pool(
+    players: list[Player],
+    scores: Mapping[str, float],
+    slots: Mapping[str, int],
+    club_cap: int,
+    reference_ids: frozenset[str],
+    distance_cap: int,
+    allow_cheaper_dominance: bool = False,
+) -> list[Player]:
+    """Remove only candidates that cannot improve a capped-distance solution.
+
+    Every selected non-reference player consumes one distance slot. Within an
+    identical club, position and anchor class, a player with at least the same
+    score dominates another at the same price. A cheaper player may dominate
+    only when no minimum-spend constraint applies. We retain as many Pareto
+    layers as the roster can possibly select from that class, so the reduction
+    remains exact even when several mutually dominating players are selected.
+    Reference players and goalkeepers are always retained.
+    """
+
+    if distance_cap <= 0:
+        return [
+            player
+            for player in players
+            if (
+                player.position == "GOALKEEPER"
+                or player.player_id in reference_ids
+            )
+        ]
+
+    retained_ids = {
+        player.player_id
+        for player in players
+        if (
+            player.position == "GOALKEEPER"
+            or player.player_id in reference_ids
+        )
+    }
+    groups: dict[tuple[str, str, bool], list[Player]] = {}
+    for player in players:
+        if (
+            player.position == "GOALKEEPER"
+            or player.player_id in reference_ids
+        ):
+            continue
+        groups.setdefault(
+            (player.club, player.position, player.reliable_anchor),
+            [],
+        ).append(player)
+
+    for (_, position, _), group in groups.items():
+        remaining = sorted(
+            group,
+            key=lambda player: (
+                player.cost,
+                -scores[player.player_id],
+                player.player_id,
+            ),
+        )
+        selection_limit = min(
+            distance_cap,
+            club_cap,
+            slots[position],
+        )
+        for _ in range(selection_limit):
+            if not remaining:
+                break
+            frontier: list[Player] = []
+            for player in remaining:
+                dominated = any(
+                    other.player_id != player.player_id
+                    and (
+                        other.cost == player.cost
+                        or (
+                            allow_cheaper_dominance
+                            and other.cost < player.cost
+                        )
+                    )
+                    and scores[other.player_id] >= scores[player.player_id]
+                    and (
+                        other.cost < player.cost
+                        or scores[other.player_id] > scores[player.player_id]
+                    )
+                    for other in remaining
+                )
+                if not dominated:
+                    frontier.append(player)
+            retained_ids.update(player.player_id for player in frontier)
+            frontier_ids = {player.player_id for player in frontier}
+            remaining = [
+                player
+                for player in remaining
+                if player.player_id not in frontier_ids
+            ]
+
+    return [
+        player for player in players if player.player_id in retained_ids
+    ]
+
+
 def distance_outfield_options(
     players: list[Player],
     slots: dict[str, int],
@@ -2193,7 +2551,29 @@ def distance_outfield_options(
         slots["MIDFIELDER"],
         slots["FORWARD"],
     )
-    for club in sorted(by_club):
+    ordered_clubs = sorted(by_club)
+    remaining_counts: list[Counter[str]] = [
+        Counter() for _ in range(len(ordered_clubs) + 1)
+    ]
+    remaining_reference_counts: list[Counter[str]] = [
+        Counter() for _ in range(len(ordered_clubs) + 1)
+    ]
+    remaining_anchor_counts = [0] * (len(ordered_clubs) + 1)
+    for index in range(len(ordered_clubs) - 1, -1, -1):
+        club_players = by_club[ordered_clubs[index]]
+        remaining_counts[index] = remaining_counts[index + 1].copy()
+        remaining_reference_counts[index] = (
+            remaining_reference_counts[index + 1].copy()
+        )
+        remaining_anchor_counts[index] = remaining_anchor_counts[index + 1]
+        for player in club_players:
+            remaining_counts[index][player.position] += 1
+            if player.player_id in reference_ids:
+                remaining_reference_counts[index][player.position] += 1
+            if player.reliable_anchor:
+                remaining_anchor_counts[index] += 1
+
+    for club_index, club in enumerate(ordered_clubs):
         local_options = distance_club_outfield_options(
             by_club[club],
             slots,
@@ -2243,7 +2623,38 @@ def distance_outfield_options(
                         total_score,
                         base_players + local_players,
                     )
-        states = next_states
+        future_counts = remaining_counts[club_index + 1]
+        future_reference_counts = remaining_reference_counts[club_index + 1]
+        future_anchor_count = remaining_anchor_counts[club_index + 1]
+        states = {}
+        for key, value in next_states.items():
+            needed_counts = {
+                position: target_counts[position_index]
+                - key[position_index]
+                for position_index, position in enumerate(
+                    ("DEFENDER", "MIDFIELDER", "FORWARD")
+                )
+            }
+            if any(
+                future_counts[position] < needed
+                for position, needed in needed_counts.items()
+            ):
+                continue
+            minimum_future_distance = sum(
+                max(
+                    0,
+                    needed - future_reference_counts[position],
+                )
+                for position, needed in needed_counts.items()
+            )
+            if key[4] + minimum_future_distance > distance_cap:
+                continue
+            if (
+                key[5] < min_reliable_anchors
+                and key[5] + future_anchor_count < min_reliable_anchors
+            ):
+                continue
+            states[key] = value
         if not states:
             return {}
 
@@ -2316,6 +2727,15 @@ def optimize_distance_buckets(
 
     if distance_cap < 0:
         raise ValueError("distance cap cannot be negative")
+    players = exact_distance_candidate_pool(
+        players,
+        scores,
+        slots,
+        club_cap,
+        reference_ids,
+        distance_cap,
+        allow_cheaper_dominance=minimum_spend == 0,
+    )
     gk_options = distance_goalkeeper_options(
         players,
         slots["GOALKEEPER"],
@@ -2453,6 +2873,7 @@ def prepare_variation_context(
     same_club_goalkeepers: bool,
     min_reliable_anchors: int,
     technical_smoke: bool,
+    optimizer_cache: Path | None = None,
 ) -> dict[str, Any]:
     """Calculate the seed-independent portfolio search state once."""
 
@@ -2465,6 +2886,7 @@ def prepare_variation_context(
         slots,
         same_club_goalkeepers,
         min_reliable_anchors,
+        optimizer_cache,
     )
     config = VARIATION_CONFIG[variation]
     if variation == "none":
@@ -2557,6 +2979,7 @@ def varied_squad(
     exposure_strength: float = 1.0,
     prepared_context: dict[str, Any] | None = None,
     forbidden_ids: set[str] | None = None,
+    optimizer_cache: Path | None = None,
 ) -> tuple[Squad, Squad, int, bool]:
     context = prepared_context or prepare_variation_context(
         players=players,
@@ -2570,6 +2993,7 @@ def varied_squad(
         same_club_goalkeepers=same_club_goalkeepers,
         min_reliable_anchors=min_reliable_anchors,
         technical_smoke=technical_smoke,
+        optimizer_cache=optimizer_cache,
     )
     optimum = context["optimum"]
     if variation == "none":
@@ -2728,6 +3152,7 @@ def varied_portfolio(
     core_scores: Mapping[str, float] | None = None,
     technical_smoke: bool = False,
     max_reliable_anchor_exposure: int = 1,
+    optimizer_cache: Path | None = None,
 ) -> tuple[Squad, Squad, int, bool, dict[str, Any]]:
     """Build a reproducible set of near-optimal squads with balanced exposure."""
 
@@ -2923,6 +3348,7 @@ def varied_portfolio(
             same_club_goalkeepers=same_club_goalkeepers,
             min_reliable_anchors=min_reliable_anchors,
             technical_smoke=technical_smoke,
+            optimizer_cache=optimizer_cache,
         )
     )
     generated: list[tuple[Squad, Squad, int, bool, int]] = []
@@ -2960,6 +3386,7 @@ def varied_portfolio(
                 same_club_goalkeepers=same_club_goalkeepers,
                 min_reliable_anchors=min_reliable_anchors,
                 technical_smoke=technical_smoke,
+                optimizer_cache=optimizer_cache,
             )
             slot_forbidden_ids: set[str] = set()
         else:
@@ -2986,6 +3413,7 @@ def varied_portfolio(
                 exposure_strength=10.0,
                 prepared_context=slot_context,
                 forbidden_ids=slot_forbidden_ids,
+                optimizer_cache=optimizer_cache,
             )
             if min_core_budget_share > 0:
                 optimum = finalize_reliable_core_architecture(
@@ -3396,32 +3824,95 @@ def output_payload(
                 "feasible": None,
                 "reason": (
                     "counterfactual omitted for an unannotated technical smoke "
-                    "test; final researched squads still compute it"
+                    "test; final researched squads compute a direct replacement"
                 ),
             }
-        forced_scores = dict(utility_scores)
-        forced_scores[player.player_id] += force_bonus
-        try:
-            forced = optimize(
-                players,
-                args.budget,
-                forced_scores,
-                args.max_outfield_per_club,
-                minimum_spend,
-                roster_slots,
-                not args.mixed_goalkeepers,
-                args.min_reliable_anchors,
+        exact_counterfactuals = bool(
+            getattr(args, "exact_counterfactuals", True)
+        )
+        if exact_counterfactuals:
+            forced_scores = dict(utility_scores)
+            forced_scores[player.player_id] += force_bonus
+            try:
+                forced = optimize(
+                    players,
+                    args.budget,
+                    forced_scores,
+                    args.max_outfield_per_club,
+                    minimum_spend,
+                    roster_slots,
+                    not args.mixed_goalkeepers,
+                    args.min_reliable_anchors,
+                )
+            except ValueError as error:
+                return {
+                    "feasible": False,
+                    "reason": str(error),
+                }
+            if player.player_id not in forced.ids:
+                return {
+                    "feasible": False,
+                    "reason": (
+                        "candidate cannot be forced inside the roster constraints"
+                    ),
+                }
+            counterfactual_scope = "best_feasible_pool_squad_with_candidate"
+        else:
+            direct_replacements: list[Squad] = []
+            for displaced in squad.players:
+                if displaced.position != player.position:
+                    continue
+                replacement_players = [
+                    candidate
+                    for candidate in squad.players
+                    if candidate.player_id != displaced.player_id
+                ] + [player]
+                replacement_cost = sum(
+                    candidate.cost for candidate in replacement_players
+                )
+                if not minimum_spend <= replacement_cost <= args.budget:
+                    continue
+                replacement_clubs = Counter(
+                    candidate.club
+                    for candidate in replacement_players
+                    if candidate.position != "GOALKEEPER"
+                )
+                if any(
+                    count > args.max_outfield_per_club
+                    for count in replacement_clubs.values()
+                ):
+                    continue
+                if (
+                    sum(
+                        candidate.reliable_anchor
+                        for candidate in replacement_players
+                        if candidate.position != "GOALKEEPER"
+                    )
+                    < args.min_reliable_anchors
+                ):
+                    continue
+                replacement_score = sum(
+                    utility_scores[candidate.player_id]
+                    for candidate in replacement_players
+                )
+                direct_replacements.append(
+                    Squad(replacement_players, replacement_score)
+                )
+            if not direct_replacements:
+                return {
+                    "feasible": None,
+                    "scope": "fast_direct_replacement",
+                    "reason": (
+                        "no legal one-for-one replacement; use "
+                        "--exact-counterfactuals only when a full package "
+                        "comparison is material"
+                    ),
+                }
+            forced = max(
+                direct_replacements,
+                key=lambda candidate: candidate.objective_score,
             )
-        except ValueError as error:
-            return {
-                "feasible": False,
-                "reason": str(error),
-            }
-        if player.player_id not in forced.ids:
-            return {
-                "feasible": False,
-                "reason": "candidate cannot be forced inside the roster constraints",
-            }
+            counterfactual_scope = "best_feasible_direct_replacement"
         forced_utility = sum(
             utility_scores[forced_player.player_id]
             for forced_player in forced.players
@@ -3464,7 +3955,7 @@ def output_payload(
         )
         return {
             "feasible": True,
-            "scope": "best_feasible_pool_squad_with_candidate",
+            "scope": counterfactual_scope,
             "cost": forced.cost,
             "budget_delta_vs_selected": forced.cost - squad.cost,
             "model_utility": round(forced_utility, 3),
@@ -4046,6 +4537,30 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Allow incomplete current annotations for technical smoke tests only",
     )
+    parser.add_argument(
+        "--exact-counterfactuals",
+        action="store_true",
+        help=(
+            "Run a separate full optimization for every near-miss. The fast "
+            "default evaluates the best legal direct replacement instead."
+        ),
+    )
+    parser.add_argument(
+        "--optimizer-cache",
+        type=Path,
+        default=default_optimizer_cache_path(),
+        help=(
+            "Directory for checksum-bound seed-independent optima; defaults "
+            "to the local Codex cache"
+        ),
+    )
+    parser.add_argument(
+        "--no-optimizer-cache",
+        action="store_const",
+        const=None,
+        dest="optimizer_cache",
+        help="Disable the local seed-independent optimum cache",
+    )
     parser.add_argument("--format", choices=("json", "text"), default="text")
     parser.add_argument("--output", type=Path, help="Optional output file")
     args = parser.parse_args()
@@ -4616,6 +5131,7 @@ def main() -> int:
                 core_scores=eligible_raw_scores,
                 technical_smoke=args.allow_unannotated,
                 max_reliable_anchor_exposure=args.max_anchor_exposure,
+                optimizer_cache=args.optimizer_cache,
             )
         else:
             squad, optimum, distance, variation_target_met = varied_squad(
@@ -4632,6 +5148,7 @@ def main() -> int:
                 same_club_goalkeepers=not args.mixed_goalkeepers,
                 min_reliable_anchors=args.min_reliable_anchors,
                 technical_smoke=args.allow_unannotated,
+                optimizer_cache=args.optimizer_cache,
             )
             if args.min_core_budget_share > 0:
                 optimum = finalize_reliable_core_architecture(

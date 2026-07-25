@@ -256,6 +256,149 @@ class DistanceOptimizerTests(unittest.TestCase):
         )
         self.assertLess(len(bounded), len(candidates))
 
+    def test_exact_distance_pool_keeps_enough_pareto_layers(self) -> None:
+        candidates = [
+            player("g1", "GK", "GOALKEEPER", 100),
+            player("reference", "Club", "DEFENDER", 100),
+        ]
+        candidates.extend(
+            player(f"d{index}", "Club", "DEFENDER", 100)
+            for index in range(1, 7)
+        )
+        scores = {
+            candidate.player_id: (
+                100.0
+                if candidate.player_id in {"g1", "reference"}
+                else 100.0 - int(candidate.player_id[1:])
+            )
+            for candidate in candidates
+        }
+
+        bounded = optimizer.exact_distance_candidate_pool(
+            candidates,
+            scores,
+            {
+                "GOALKEEPER": 3,
+                "DEFENDER": 7,
+                "MIDFIELDER": 7,
+                "FORWARD": 5,
+            },
+            club_cap=4,
+            reference_ids=frozenset({"reference"}),
+            distance_cap=2,
+        )
+
+        self.assertEqual(
+            {"g1", "reference", "d1", "d2"},
+            {candidate.player_id for candidate in bounded},
+        )
+
+    def test_exact_distance_pool_does_not_cross_anchor_classes(self) -> None:
+        weak_anchor = player(
+            "anchor",
+            "Club",
+            "MIDFIELDER",
+            200,
+            reliable_anchor=True,
+        )
+        cheaper_non_anchor = player(
+            "non-anchor",
+            "Club",
+            "MIDFIELDER",
+            100,
+        )
+
+        bounded = optimizer.exact_distance_candidate_pool(
+            [weak_anchor, cheaper_non_anchor],
+            {"anchor": 10.0, "non-anchor": 20.0},
+            {
+                "GOALKEEPER": 3,
+                "DEFENDER": 7,
+                "MIDFIELDER": 7,
+                "FORWARD": 5,
+            },
+            club_cap=4,
+            reference_ids=frozenset(),
+            distance_cap=1,
+        )
+
+        self.assertEqual(
+            {"anchor", "non-anchor"},
+            {candidate.player_id for candidate in bounded},
+        )
+
+    def test_exact_distance_pool_preserves_spend_options(self) -> None:
+        cheaper = player("cheap", "Club", "FORWARD", 100)
+        expensive = player("expensive", "Club", "FORWARD", 200)
+
+        bounded = optimizer.exact_distance_candidate_pool(
+            [cheaper, expensive],
+            {"cheap": 20.0, "expensive": 10.0},
+            {
+                "GOALKEEPER": 3,
+                "DEFENDER": 7,
+                "MIDFIELDER": 7,
+                "FORWARD": 5,
+            },
+            club_cap=4,
+            reference_ids=frozenset(),
+            distance_cap=1,
+        )
+
+        self.assertEqual(
+            {"cheap", "expensive"},
+            {candidate.player_id for candidate in bounded},
+        )
+
+    def test_seed_independent_optimum_is_reused_from_validated_cache(self) -> None:
+        slots = {
+            "GOALKEEPER": 2,
+            "DEFENDER": 1,
+            "MIDFIELDER": 1,
+            "FORWARD": 1,
+        }
+        players = [
+            player("g1", "GK", "GOALKEEPER", 10),
+            player("g2", "GK", "GOALKEEPER", 10),
+            player("g3", "GK", "GOALKEEPER", 10),
+            player("d1", "D", "DEFENDER", 10),
+            player("m1", "M", "MIDFIELDER", 10),
+            player("f1", "F", "FORWARD", 10),
+        ]
+        scores = {
+            candidate.player_id: 20.0 - index
+            for index, candidate in enumerate(players)
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache_directory = Path(directory)
+            first = optimizer.optimize(
+                players,
+                50,
+                scores,
+                1,
+                50,
+                slots,
+                cache_directory=cache_directory,
+            )
+            with mock.patch.object(
+                optimizer,
+                "outfield_options",
+                side_effect=AssertionError("cache miss"),
+            ):
+                second = optimizer.optimize(
+                    players,
+                    50,
+                    scores,
+                    1,
+                    50,
+                    slots,
+                    cache_directory=cache_directory,
+                )
+
+        self.assertEqual(first.ids, second.ids)
+        self.assertEqual(first.objective_score, second.objective_score)
+
     def test_distance_buckets_match_brute_force_oracle(self) -> None:
         slots = {
             "GOALKEEPER": 2,
