@@ -333,6 +333,7 @@ VARIATION_CONFIG = {
     "high": {"noise": 6.0, "gap": 0.08, "distance": 6, "avoid": 3.0},
 }
 DEFAULT_CLUB_CAP = {"reliable": 4, "balanced": 4, "breakout": 3}
+OFFENSIVE_PREMIUM_ANCHOR_MINIMUM = 14.0
 
 
 def variation_distance_met(variation: str, distance: int) -> bool:
@@ -341,7 +342,7 @@ def variation_distance_met(variation: str, distance: int) -> bool:
     target = int(VARIATION_CONFIG[variation]["distance"])
     if target == 0:
         return distance == 0
-    return target <= distance <= target + 1
+    return max(1, target - 1) <= distance <= target + 1
 
 
 @dataclass(frozen=True)
@@ -1055,6 +1056,36 @@ def classify_reliable_anchor(
     return safety_gate and automatic_gate, "auto"
 
 
+def offensive_premium_anchor_strength(player: Player) -> float:
+    """Rate repeatable attacking excellence without using names or benchmark flags."""
+
+    if (
+        player.position not in {"MIDFIELDER", "FORWARD"}
+        or not player.reliable_anchor
+    ):
+        return 0.0
+    strength = (
+        2.0 * min(6, max(0, player.proven_seasons - 2))
+        + 0.6 * max(0.0, player.components["role"] - 85.0)
+        + 0.8
+        * max(
+            0.0,
+            player.components["confirmed_performance"] - 95.0,
+        )
+        + 0.2 * max(0.0, player.components["stability"] - 75.0)
+    )
+    return min(18.0, strength)
+
+
+def is_offensive_premium_anchor(player: Player) -> bool:
+    """Identify a multi-season premium scorer or creator from evidence only."""
+
+    return (
+        offensive_premium_anchor_strength(player)
+        >= OFFENSIVE_PREMIUM_ANCHOR_MINIMUM
+    )
+
+
 def effective_weights(profile: str, maintenance: str) -> dict[str, float]:
     weights = {key: float(value) for key, value in PROFILE_WEIGHTS[profile].items()}
     if maintenance == "low":
@@ -1117,17 +1148,19 @@ def core_weighted_scores(
         for player in position_players:
             premium_bonus = 0.0
             if player.reliable_anchor:
-                premium_bonus = (
-                    2.0 * min(6, max(0, player.proven_seasons - 2))
-                    + 0.6 * max(0.0, player.components["role"] - 85.0)
-                    + 0.8
-                    * max(
-                        0.0,
-                        player.components["confirmed_performance"] - 95.0,
+                premium_bonus = offensive_premium_anchor_strength(player)
+                if player.position == "DEFENDER":
+                    premium_bonus = (
+                        2.0 * min(6, max(0, player.proven_seasons - 2))
+                        + 0.6 * max(0.0, player.components["role"] - 85.0)
+                        + 0.8
+                        * max(
+                            0.0,
+                            player.components["confirmed_performance"] - 95.0,
+                        )
+                        + 0.2
+                        * max(0.0, player.components["stability"] - 75.0)
                     )
-                    + 0.2
-                    * max(0.0, player.components["stability"] - 75.0)
-                )
                 premium_bonus = premium_scale * min(
                     18.0
                     if player.position in {"MIDFIELDER", "FORWARD"}
@@ -1189,6 +1222,7 @@ def best_starting_lineup(
     min_reliable_anchors: int = 0,
     min_forwards: int = 1,
     max_defenders: int = 5,
+    min_offensive_premium_anchors: int = 0,
 ) -> tuple[str, frozenset[str]]:
     """Infer the strongest legal eleven while keeping the reliable core."""
 
@@ -1243,6 +1277,15 @@ def best_starting_lineup(
                     )
                     if anchor_count < min_reliable_anchors:
                         continue
+                    premium_anchor_count = sum(
+                        is_offensive_premium_anchor(player)
+                        for player in selected
+                    )
+                    if (
+                        premium_anchor_count
+                        < min_offensive_premium_anchors
+                    ):
+                        continue
                     if best_anchor_safe is None or score > best_anchor_safe[0]:
                         best_anchor_safe = candidate
     chosen = best_anchor_safe or best_any
@@ -1257,6 +1300,7 @@ def reliable_core_audit(
     min_reliable_anchors: int,
     min_attacking_anchors: int,
     min_core_budget_share: float,
+    min_offensive_premium_anchors: int = 0,
 ) -> dict[str, Any]:
     """Measure whether a conservative squad actually funds its scoring core."""
 
@@ -1266,6 +1310,7 @@ def reliable_core_audit(
         min_reliable_anchors,
         2 if min_core_budget_share > 0 else 1,
         4 if min_core_budget_share > 0 else 5,
+        min_offensive_premium_anchors,
     )
     core_players = [
         player for player in squad.players if player.player_id in core_ids
@@ -1276,6 +1321,10 @@ def reliable_core_audit(
         and player.position in {"MIDFIELDER", "FORWARD"}
         for player in core_players
     )
+    offensive_premium_anchors = sum(
+        is_offensive_premium_anchor(player)
+        for player in core_players
+    )
     core_budget = sum(player.cost for player in core_players)
     core_budget_share = core_budget / max(squad.cost, 1)
     return {
@@ -1283,11 +1332,14 @@ def reliable_core_audit(
         "player_ids": core_ids,
         "reliable_anchors": reliable_anchors,
         "attacking_anchors": attacking_anchors,
+        "offensive_premium_anchors": offensive_premium_anchors,
         "core_budget": core_budget,
         "core_budget_share": core_budget_share,
         "passes": (
             reliable_anchors >= min_reliable_anchors
             and attacking_anchors >= min_attacking_anchors
+            and offensive_premium_anchors
+            >= min_offensive_premium_anchors
             and core_budget_share >= min_core_budget_share
         ),
     }
@@ -1304,6 +1356,7 @@ def repair_core_budget_share(
     min_attacking_anchors: int,
     min_core_budget_share: float,
     quality_floor: float,
+    min_offensive_premium_anchors: int = 0,
 ) -> Squad | None:
     """Replace expensive reserves with the best safe cheaper alternatives."""
 
@@ -1330,6 +1383,7 @@ def repair_core_budget_share(
             min_reliable_anchors,
             min_attacking_anchors,
             min_core_budget_share,
+            min_offensive_premium_anchors,
         )
         if audit["passes"]:
             return current
@@ -1392,6 +1446,8 @@ def repair_core_budget_share(
                     >= min_reliable_anchors
                     and replacement_audit["attacking_anchors"]
                     >= min_attacking_anchors
+                    and replacement_audit["offensive_premium_anchors"]
+                    >= min_offensive_premium_anchors
                     and replacement_audit["core_budget_share"]
                     >= min_core_budget_share
                 )
@@ -1400,6 +1456,8 @@ def repair_core_budget_share(
                     < min_reliable_anchors
                     or replacement_audit["attacking_anchors"]
                     < min_attacking_anchors
+                    or replacement_audit["offensive_premium_anchors"]
+                    < min_offensive_premium_anchors
                     or replacement_audit["core_budget_share"]
                     <= audit["core_budget_share"]
                 ):
@@ -1436,13 +1494,14 @@ def upgrade_core_with_remaining_budget(
     min_reliable_anchors: int,
     min_attacking_anchors: int,
     min_core_budget_share: float,
+    min_offensive_premium_anchors: int = 0,
 ) -> Squad:
     """Spend remaining budget only on safe, stronger starting-core upgrades."""
 
     current = squad
     for _ in range(len(current.players)):
         remaining_budget = budget - current.cost
-        if remaining_budget <= 0:
+        if remaining_budget < 0:
             break
         audit = reliable_core_audit(
             current,
@@ -1450,6 +1509,7 @@ def upgrade_core_with_remaining_budget(
             min_reliable_anchors,
             min_attacking_anchors,
             min_core_budget_share,
+            min_offensive_premium_anchors,
         )
         core_ids = set(audit["player_ids"])
         selected_ids = current.ids
@@ -1469,7 +1529,7 @@ def upgrade_core_with_remaining_budget(
                 if (
                     candidate.position != incumbent.position
                     or candidate.player_id in selected_ids
-                    or candidate.cost <= incumbent.cost
+                    or candidate.cost < incumbent.cost
                     or candidate.cost - incumbent.cost > remaining_budget
                     or core_scores[candidate.player_id]
                     <= core_scores[incumbent.player_id]
@@ -1499,6 +1559,7 @@ def upgrade_core_with_remaining_budget(
                     min_reliable_anchors,
                     min_attacking_anchors,
                     min_core_budget_share,
+                    min_offensive_premium_anchors,
                 )
                 if (
                     not replacement_audit["passes"]
@@ -1536,6 +1597,7 @@ def finalize_reliable_core_architecture(
     min_reliable_anchors: int,
     min_attacking_anchors: int,
     min_core_budget_share: float,
+    min_offensive_premium_anchors: int = 0,
 ) -> Squad:
     """Apply the same core-first architecture to a squad and its reference."""
 
@@ -1546,6 +1608,7 @@ def finalize_reliable_core_architecture(
         min_reliable_anchors,
         min_attacking_anchors,
         min_core_budget_share,
+        min_offensive_premium_anchors,
     )
     if not audit["passes"]:
         repaired = repair_core_budget_share(
@@ -1558,6 +1621,7 @@ def finalize_reliable_core_architecture(
             min_attacking_anchors=min_attacking_anchors,
             min_core_budget_share=min_core_budget_share,
             quality_floor=float("-inf"),
+            min_offensive_premium_anchors=0,
         )
         if repaired is not None:
             current = repaired
@@ -1571,6 +1635,7 @@ def finalize_reliable_core_architecture(
         min_reliable_anchors=min_reliable_anchors,
         min_attacking_anchors=min_attacking_anchors,
         min_core_budget_share=min_core_budget_share,
+        min_offensive_premium_anchors=min_offensive_premium_anchors,
     )
 
 
@@ -2642,6 +2707,7 @@ def varied_portfolio(
     min_reliable_anchors: int = 0,
     min_attacking_anchors: int = 0,
     min_core_budget_share: float = 0.0,
+    min_offensive_premium_anchors: int = 0,
     core_scores: Mapping[str, float] | None = None,
     technical_smoke: bool = False,
     max_reliable_anchor_exposure: int = 1,
@@ -2680,6 +2746,11 @@ def varied_portfolio(
         if player.reliable_anchor
         and player.position in {"MIDFIELDER", "FORWARD"}
     }
+    offensive_premium_anchor_ids = {
+        player.player_id
+        for player in players
+        if is_offensive_premium_anchor(player)
+    }
     required_attacking_slots = portfolio_size * min_attacking_anchors
     if (
         max_reliable_anchor_exposure == 1
@@ -2689,6 +2760,19 @@ def varied_portfolio(
             "anchor-diverse portfolio is infeasible: "
             f"required_attacking_anchor_slots={required_attacking_slots}, "
             f"eligible_attacking_anchors={len(attacking_anchor_ids)}."
+        )
+    required_premium_slots = (
+        portfolio_size * min_offensive_premium_anchors
+    )
+    if (
+        max_reliable_anchor_exposure == 1
+        and len(offensive_premium_anchor_ids) < required_premium_slots
+    ):
+        raise ValueError(
+            "premium-anchor-diverse portfolio is infeasible: "
+            f"required_offensive_premium_slots={required_premium_slots}, "
+            "eligible_offensive_premium_anchors="
+            f"{len(offensive_premium_anchor_ids)}."
         )
 
     exposure = Counter(
@@ -2719,8 +2803,21 @@ def varied_portfolio(
                 player_id,
             ),
         )
+        if min_offensive_premium_anchors > 0:
+            premium_candidates = [
+                player_id
+                for player_id in attacking_candidates
+                if player_id in offensive_premium_anchor_ids
+            ]
+            attacking_candidates = [
+                player_id
+                for player_id in attacking_candidates
+                if player_id not in offensive_premium_anchor_ids
+            ]
+        else:
+            premium_candidates = []
         other_candidates = sorted(
-            reliable_anchor_ids - set(attacking_candidates),
+            reliable_anchor_ids - attacking_anchor_ids,
             key=lambda player_id: (
                 -(
                     base_scores[player_id]
@@ -2745,12 +2842,37 @@ def varied_portfolio(
                 "anchor-diverse portfolio cannot satisfy the club cap"
             )
 
-        for _ in range(min_attacking_anchors):
-            for group in assigned_anchor_groups:
-                group.add(take_candidate(attacking_candidates, group))
+        if min_offensive_premium_anchors == 0:
+            for _ in range(min_attacking_anchors):
+                for group in assigned_anchor_groups:
+                    group.add(take_candidate(attacking_candidates, group))
+        else:
+            for _ in range(min_offensive_premium_anchors):
+                for group in assigned_anchor_groups:
+                    group.add(take_candidate(premium_candidates, group))
+            remaining_attacking_requirements = max(
+                0,
+                min_attacking_anchors - min_offensive_premium_anchors,
+            )
+            for _ in range(remaining_attacking_requirements):
+                for group in assigned_anchor_groups:
+                    available_attacking_candidates = [
+                        *attacking_candidates,
+                        *premium_candidates,
+                    ]
+                    chosen = take_candidate(
+                        available_attacking_candidates,
+                        group,
+                    )
+                    group.add(chosen)
+                    if chosen in attacking_candidates:
+                        attacking_candidates.remove(chosen)
+                    else:
+                        premium_candidates.remove(chosen)
         remaining_candidates = [
             *other_candidates,
             *attacking_candidates,
+            *premium_candidates,
         ]
         remaining_candidates.sort(
             key=lambda player_id: (
@@ -2859,6 +2981,9 @@ def varied_portfolio(
                     min_reliable_anchors=min_reliable_anchors,
                     min_attacking_anchors=min_attacking_anchors,
                     min_core_budget_share=min_core_budget_share,
+                    min_offensive_premium_anchors=(
+                        min_offensive_premium_anchors
+                    ),
                 )
                 squad = finalize_reliable_core_architecture(
                     squad,
@@ -2870,6 +2995,9 @@ def varied_portfolio(
                     min_reliable_anchors=min_reliable_anchors,
                     min_attacking_anchors=min_attacking_anchors,
                     min_core_budget_share=min_core_budget_share,
+                    min_offensive_premium_anchors=(
+                        min_offensive_premium_anchors
+                    ),
                 )
                 distance = len(
                     optimum.ids.symmetric_difference(squad.ids)
@@ -2881,6 +3009,7 @@ def varied_portfolio(
                     min_reliable_anchors,
                     min_attacking_anchors,
                     min_core_budget_share,
+                    min_offensive_premium_anchors,
                 )
                 last_core_audit = core_audit
             else:
@@ -2890,6 +3019,7 @@ def varied_portfolio(
                     min_reliable_anchors,
                     min_attacking_anchors,
                     min_core_budget_share,
+                    min_offensive_premium_anchors,
                 )
                 last_core_audit = core_audit
             if (
@@ -2900,6 +3030,8 @@ def varied_portfolio(
                         < min_reliable_anchors
                         or core_audit["attacking_anchors"]
                         < min_attacking_anchors
+                        or core_audit["offensive_premium_anchors"]
+                        < min_offensive_premium_anchors
                         or core_audit["core_budget_share"]
                         < min_core_budget_share
                     )
@@ -2937,6 +3069,7 @@ def varied_portfolio(
                 min_reliable_anchors,
                 2 if min_core_budget_share > 0 else 1,
                 4 if min_core_budget_share > 0 else 5,
+                min_offensive_premium_anchors,
             )[1]
         )
         for entry in generated
@@ -3019,6 +3152,7 @@ def varied_portfolio(
                     min_reliable_anchors,
                     min_attacking_anchors,
                     min_core_budget_share,
+                    min_offensive_premium_anchors,
                 )
                 | {
                     "player_ids": sorted(
@@ -3028,6 +3162,7 @@ def varied_portfolio(
                             min_reliable_anchors,
                             min_attacking_anchors,
                             min_core_budget_share,
+                            min_offensive_premium_anchors,
                         )["player_ids"]
                     )
                 },
@@ -3144,6 +3279,7 @@ def output_payload(
         core_anchor_requirement,
         2 if args.maintenance == "low" else 1,
         4 if args.maintenance == "low" else 5,
+        int(getattr(args, "min_offensive_premium_anchors", 0)),
     )
     selected_anchors = [
         player for player in squad.players if player.reliable_anchor
@@ -3185,6 +3321,11 @@ def output_payload(
             "evidence": list(player.evidence),
             "benchmark": player.benchmark,
             "reliable_anchor": player.reliable_anchor,
+            "offensive_premium_anchor": is_offensive_premium_anchor(player),
+            "offensive_premium_strength": round(
+                offensive_premium_anchor_strength(player),
+                3,
+            ),
             "anchor_basis": player.anchor_basis,
             "anchor_reason": player.anchor_reason,
             "proven_seasons": player.proven_seasons,
@@ -3377,6 +3518,16 @@ def output_payload(
         for player in attacking_anchors
         if player.player_id in core_ids
     ]
+    offensive_premium_anchors = [
+        player
+        for player in squad.players
+        if is_offensive_premium_anchor(player)
+    ]
+    core_offensive_premium_anchors = [
+        player
+        for player in offensive_premium_anchors
+        if player.player_id in core_ids
+    ]
     core_players = [
         player for player in squad.players if player.player_id in core_ids
     ]
@@ -3450,6 +3601,16 @@ def output_payload(
             "reliable_anchors_required": core_anchor_requirement,
             "budget": core_budget,
             "budget_share_percent": round(100.0 * core_budget_share, 3),
+            "offensive_premium_anchors": len(
+                core_offensive_premium_anchors
+            ),
+            "offensive_premium_anchor_names": sorted(
+                player.name
+                for player in core_offensive_premium_anchors
+            ),
+            "offensive_premium_anchors_required": int(
+                getattr(args, "min_offensive_premium_anchors", 0)
+            ),
         },
         "reliable_anchor_policy": {
             "required": args.min_reliable_anchors,
@@ -3475,6 +3636,22 @@ def output_payload(
             "attacking_core": len(core_attacking_anchors),
             "attacking_core_names": sorted(
                 player.name for player in core_attacking_anchors
+            ),
+            "offensive_premium_required": int(
+                getattr(args, "min_offensive_premium_anchors", 0)
+            ),
+            "offensive_premium_selected": len(
+                offensive_premium_anchors
+            ),
+            "offensive_premium_selected_names": sorted(
+                player.name for player in offensive_premium_anchors
+            ),
+            "offensive_premium_core": len(
+                core_offensive_premium_anchors
+            ),
+            "offensive_premium_core_names": sorted(
+                player.name
+                for player in core_offensive_premium_anchors
             ),
             "minimum_core_budget_share_percent": round(
                 100.0 * float(
@@ -3814,7 +3991,16 @@ def parse_args() -> argparse.Namespace:
         type=float,
         help=(
             "Minimum share of total squad cost assigned to the best legal "
-            "starting eleven; default 0.70 for every low-maintenance profile"
+            "starting eleven; default 0.80 for every low-maintenance profile"
+        ),
+    )
+    parser.add_argument(
+        "--min-offensive-premium-anchors",
+        type=int,
+        help=(
+            "Minimum evidence-derived multi-season premium scorers or creators "
+            "inside the best legal starting eleven; default 1 for a final "
+            "reliable low-maintenance squad and 0 otherwise"
         ),
     )
     parser.add_argument(
@@ -3911,17 +4097,29 @@ def parse_args() -> argparse.Namespace:
         )
     if args.min_core_budget_share is None:
         args.min_core_budget_share = (
-            0.70
+            0.80
             if (
                 args.maintenance == "low"
                 and not args.allow_unannotated
             )
             else 0.0
         )
+    if args.min_offensive_premium_anchors is None:
+        args.min_offensive_premium_anchors = (
+            1
+            if (
+                args.profile == "reliable"
+                and args.maintenance == "low"
+                and not args.allow_unannotated
+            )
+            else 0
+        )
     if args.min_reliable_anchors < 0:
         parser.error("--min-reliable-anchors cannot be negative")
     if args.min_attacking_anchors < 0:
         parser.error("--min-attacking-anchors cannot be negative")
+    if args.min_offensive_premium_anchors < 0:
+        parser.error("--min-offensive-premium-anchors cannot be negative")
     if not 0.0 <= args.min_core_budget_share <= 1.0:
         parser.error("--min-core-budget-share must be between 0 and 1")
     if not 0.0 <= args.min_spend_ratio <= 1.0:
@@ -3950,6 +4148,11 @@ def parse_args() -> argparse.Namespace:
     if args.min_attacking_anchors > args.min_reliable_anchors:
         parser.error(
             "--min-attacking-anchors cannot exceed --min-reliable-anchors"
+        )
+    if args.min_offensive_premium_anchors > args.min_attacking_anchors:
+        parser.error(
+            "--min-offensive-premium-anchors cannot exceed "
+            "--min-attacking-anchors"
         )
     return args
 
@@ -4335,6 +4538,23 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    offensive_premium_candidates = sum(
+        is_offensive_premium_anchor(player)
+        for player in eligible_players
+    )
+    if (
+        offensive_premium_candidates
+        < args.min_offensive_premium_anchors
+    ):
+        print(
+            "Offensive premium-anchor research is incomplete: "
+            f"required={args.min_offensive_premium_anchors}, "
+            f"eligible={offensive_premium_candidates}. Research more "
+            "multi-season scorers, creators and set-piece leaders with "
+            "currently secure roles instead of hard-coding famous names.",
+            file=sys.stderr,
+        )
+        return 2
     eligible_utility_scores, core_multipliers = core_weighted_scores(
         eligible_players,
         eligible_raw_scores,
@@ -4369,6 +4589,9 @@ def main() -> int:
                 min_reliable_anchors=args.min_reliable_anchors,
                 min_attacking_anchors=args.min_attacking_anchors,
                 min_core_budget_share=args.min_core_budget_share,
+                min_offensive_premium_anchors=(
+                    args.min_offensive_premium_anchors
+                ),
                 core_scores=eligible_raw_scores,
                 technical_smoke=args.allow_unannotated,
                 max_reliable_anchor_exposure=args.max_anchor_exposure,
@@ -4400,6 +4623,9 @@ def main() -> int:
                     min_reliable_anchors=args.min_reliable_anchors,
                     min_attacking_anchors=args.min_attacking_anchors,
                     min_core_budget_share=args.min_core_budget_share,
+                    min_offensive_premium_anchors=(
+                        args.min_offensive_premium_anchors
+                    ),
                 )
                 squad = finalize_reliable_core_architecture(
                     squad,
@@ -4411,6 +4637,9 @@ def main() -> int:
                     min_reliable_anchors=args.min_reliable_anchors,
                     min_attacking_anchors=args.min_attacking_anchors,
                     min_core_budget_share=args.min_core_budget_share,
+                    min_offensive_premium_anchors=(
+                        args.min_offensive_premium_anchors
+                    ),
                 )
                 distance = len(
                     optimum.ids.symmetric_difference(squad.ids)
@@ -4456,6 +4685,7 @@ def main() -> int:
             args.min_reliable_anchors,
             args.min_attacking_anchors,
             args.min_core_budget_share,
+            args.min_offensive_premium_anchors,
         )
         if args.profile == "reliable" and args.min_reliable_anchors > 0:
             core_anchor_count = core_audit["reliable_anchors"]
@@ -4474,6 +4704,23 @@ def main() -> int:
                     f"{core_attacking_anchors} reliable midfield/forward anchors; "
                     f"{args.min_attacking_anchors} are required. Strengthen the "
                     "multi-season scorer and creator pool before changing Chrome.",
+                    file=sys.stderr,
+                )
+                return 2
+            core_offensive_premium_anchors = core_audit[
+                "offensive_premium_anchors"
+            ]
+            if (
+                core_offensive_premium_anchors
+                < args.min_offensive_premium_anchors
+            ):
+                print(
+                    "Optimization stopped: the legal starting core contains "
+                    f"only {core_offensive_premium_anchors} evidence-derived "
+                    "offensive premium anchors; "
+                    f"{args.min_offensive_premium_anchors} are required. "
+                    "Fund a multi-season scorer, creator or set-piece leader "
+                    "instead of carrying equivalent reserve depth.",
                     file=sys.stderr,
                 )
                 return 2

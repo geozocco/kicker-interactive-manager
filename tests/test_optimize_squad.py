@@ -11,6 +11,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -94,10 +95,96 @@ def varied_pool() -> tuple[list[optimizer.Player], dict[str, float]]:
 
 
 class DistanceOptimizerTests(unittest.TestCase):
+    def test_reliable_low_maintenance_defaults_fund_the_starting_core(self) -> None:
+        with mock.patch.object(
+            sys,
+            "argv",
+            [
+                str(SCRIPT_PATH),
+                "--players",
+                "players.csv",
+                "--profile",
+                "reliable",
+                "--maintenance",
+                "low",
+                "--budget",
+                "10000000",
+            ],
+        ):
+            args = optimizer.parse_args()
+
+        self.assertEqual(0.80, args.min_core_budget_share)
+        self.assertEqual(1, args.min_offensive_premium_anchors)
+
+    def test_starting_lineup_can_require_an_evidence_derived_premium_anchor(
+        self,
+    ) -> None:
+        players: list[optimizer.Player] = [
+            player(f"g{index}", "Goalkeeper Club", "GOALKEEPER", 100)
+            for index in range(3)
+        ]
+        for position, prefix, count in (
+            ("DEFENDER", "d", 7),
+            ("MIDFIELDER", "m", 7),
+            ("FORWARD", "f", 5),
+        ):
+            for index in range(count):
+                players.append(
+                    player(
+                        f"{prefix}{index}",
+                        f"{prefix.upper()} Club {index}",
+                        position,
+                        100,
+                        reliable_anchor=index < 4,
+                    )
+                )
+        premium = next(
+            item for item in players if item.player_id == "m6"
+        )
+        premium_components = dict(premium.components)
+        premium_components.update(
+            {
+                "confirmed_performance": 99.0,
+                "minutes": 90.0,
+                "role": 95.0,
+                "stability": 85.0,
+            }
+        )
+        premium = optimizer.replace(
+            premium,
+            components=premium_components,
+            reliable_anchor=True,
+            proven_seasons=7,
+        )
+        players = [
+            premium if item.player_id == premium.player_id else item
+            for item in players
+        ]
+        scores = {
+            item.player_id: 100.0 - index
+            for index, item in enumerate(players)
+        }
+        scores[premium.player_id] = 1.0
+
+        _, unconstrained_ids = optimizer.best_starting_lineup(
+            players,
+            scores,
+        )
+        _, constrained_ids = optimizer.best_starting_lineup(
+            players,
+            scores,
+            min_offensive_premium_anchors=1,
+        )
+
+        self.assertTrue(optimizer.is_offensive_premium_anchor(premium))
+        self.assertNotIn(premium.player_id, unconstrained_ids)
+        self.assertIn(premium.player_id, constrained_ids)
+
     def test_postprocessing_variation_corridor_is_narrow(self) -> None:
         self.assertTrue(optimizer.variation_distance_met("medium", 4))
         self.assertTrue(optimizer.variation_distance_met("medium", 5))
-        self.assertFalse(optimizer.variation_distance_met("medium", 3))
+        self.assertTrue(optimizer.variation_distance_met("medium", 3))
+        self.assertFalse(optimizer.variation_distance_met("medium", 2))
         self.assertFalse(optimizer.variation_distance_met("medium", 6))
         self.assertTrue(optimizer.variation_distance_met("none", 0))
         self.assertFalse(optimizer.variation_distance_met("none", 1))
@@ -613,15 +700,29 @@ class DistanceOptimizerTests(unittest.TestCase):
         }
         for index in range(10):
             player_id = f"A{index}"
-            players.append(
-                player(
-                    player_id,
-                    f"Anchor Club {index}",
-                    "MIDFIELDER",
-                    100,
-                    reliable_anchor=True,
-                )
+            anchor = player(
+                player_id,
+                f"Anchor Club {index}",
+                "MIDFIELDER",
+                100,
+                reliable_anchor=True,
             )
+            if index < 5:
+                premium_components = dict(anchor.components)
+                premium_components.update(
+                    {
+                        "confirmed_performance": 99.0,
+                        "minutes": 90.0,
+                        "role": 95.0,
+                        "stability": 85.0,
+                    }
+                )
+                anchor = optimizer.replace(
+                    anchor,
+                    components=premium_components,
+                    proven_seasons=7,
+                )
+            players.append(anchor)
             scores[player_id] = 10.0 - 0.01 * index
 
         _, _, _, _, audit = optimizer.varied_portfolio(
@@ -644,6 +745,7 @@ class DistanceOptimizerTests(unittest.TestCase):
             portfolio_index=1,
             min_reliable_anchors=2,
             min_attacking_anchors=2,
+            min_offensive_premium_anchors=1,
         )
 
         anchor_sets = [
@@ -663,6 +765,17 @@ class DistanceOptimizerTests(unittest.TestCase):
         self.assertEqual(
             [2, 2, 2, 2, 2],
             [len(group) for group in audit["assigned_anchor_groups"]],
+        )
+        by_id = {item.player_id: item for item in players}
+        self.assertTrue(
+            all(
+                sum(
+                    optimizer.is_offensive_premium_anchor(by_id[player_id])
+                    for player_id in group
+                )
+                == 1
+                for group in audit["assigned_anchor_groups"]
+            )
         )
 
     def test_group_portfolio_rejects_too_small_anchor_pool(self) -> None:

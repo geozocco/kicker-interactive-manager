@@ -193,6 +193,9 @@ def compact_player(
             "core" if player.player_id in core_ids else "bench"
         ),
         "reliable_anchor": player.reliable_anchor,
+        "offensive_premium_anchor": (
+            optimizer.is_offensive_premium_anchor(player)
+        ),
         "risks": {
             key: round(player.risks[key], 1) for key in optimizer.RISKS
         },
@@ -521,8 +524,11 @@ def evaluate(
     )
     min_anchors = 4 if profile == "reliable" else 0
     min_attacking_anchors = 3 if profile == "reliable" else 0
+    min_offensive_premium_anchors = (
+        1 if profile == "reliable" and maintenance == "low" else 0
+    )
     min_core_share = (
-        0.70 if profile == "reliable" and maintenance == "low" else 0.0
+        0.80 if maintenance == "low" else 0.0
     )
     core_audit = optimizer.reliable_core_audit(
         squad,
@@ -530,6 +536,7 @@ def evaluate(
         min_anchors,
         min_attacking_anchors,
         min_core_share,
+        min_offensive_premium_anchors,
     )
     core_ids = frozenset(core_audit["player_ids"])
     core_budget_share = float(core_audit["core_budget_share"])
@@ -558,6 +565,19 @@ def evaluate(
             f"Nur {core_audit['attacking_anchors']} von "
             f"{min_attacking_anchors} geforderten Ankern stehen in "
             "Mittelfeld oder Sturm.",
+        )
+    if (
+        min_offensive_premium_anchors
+        and core_audit["offensive_premium_anchors"]
+        < min_offensive_premium_anchors
+    ):
+        add_alert(
+            alerts,
+            "high",
+            "offensive_premium_anchor",
+            "Der stärksten Startelf fehlt ein evidenzbasiert mehrjährig "
+            "bestätigter Premium-Scorer, -Kreativspieler oder "
+            "Standard-Spezialist.",
         )
     if core_budget_share < min_core_share:
         add_alert(
@@ -764,6 +784,9 @@ def evaluate(
             "budget_share_percent": round(100.0 * core_budget_share, 1),
             "reliable_anchors": core_audit["reliable_anchors"],
             "attacking_anchors": core_audit["attacking_anchors"],
+            "offensive_premium_anchors": core_audit[
+                "offensive_premium_anchors"
+            ],
         },
         "bench": {
             "players": len(bench_players),

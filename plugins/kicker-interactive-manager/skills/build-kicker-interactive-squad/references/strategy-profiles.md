@@ -77,8 +77,9 @@ Den Risikowert mit dem Faktor multiplizieren und vom Komponentenscore abziehen.
 - `upside` und `value` leicht reduzieren.
 - In allen Profilen die Modellutility innerhalb jeder Position zugunsten der bestbewerteten Kandidaten krümmen. `Verlässlich` konzentriert am stärksten, `ausgewogen` und `ausbruch` behalten mehr Tiefe und schützen zugleich außergewöhnliche Talente mit belegter Einsatz- und Rollenreife. So finanziert der Solver einen starken Aufstellungskern statt 22 annähernd gleichwertiger Spieler.
 - Elf bis 14 hochwertige Kernspieler anstreben. Die übrigen Plätze günstig, aber mit plausibler Einsatzchance besetzen; eine gleichwertige Premiumbank ist nicht erforderlich.
-- Mindestens 70 Prozent des gesamten Kaderwerts müssen unabhängig vom Strategieprofil in der stärksten legalen Startelf liegen.
+- Mindestens 80 Prozent des gesamten Kaderwerts müssen unabhängig vom Strategieprofil in der stärksten legalen Startelf liegen.
 - Die stärkste wartungsarme Startelf enthält mindestens zwei Stürmer und höchstens vier Verteidiger. Dadurch bleiben mindestens zwei belastbare offensive Wege erhalten und ein fünfter teurer Abwehrspieler wird nicht als vermeintliche Kerninvestition vor einer besseren Mittelfeld- oder Sturmoption geschützt.
+- Im Profil `verlässlich` mindestens einen offensiven Premiumanker in dieser Startelf verlangen. Ihn positionsneutral innerhalb von Mittelfeld und Sturm aus mehrjähriger bestätigter Leistung, wiederholbarer Schlüssel- oder Standardrolle, Stabilität und aktueller Einsatzsicherheit ableiten. Weder `benchmark`, Bekanntheit noch eine frühere Nennung durch den Nutzer dürfen diesen Status erzeugen.
 - Beim Torwartblock muss die vereinsintern ermittelte Nummer eins enthalten sein. Die Prognose verbindet `minutes`, `role`, mehrjährige Bestätigung, den Abstand zur Konkurrenz, den relativen Kicker-Preis im Vereinsblock und die aktuelle Kader-/Transferlage. Drei billigere Vereinskeeper ohne den wahrscheinlich Spielenden sind kein gültiger Block.
 - Für `gering` sind mindestens 70 Prozent Saison-Stammplatzwahrscheinlichkeit, höchstens 40 Prozent Risiko eines externen Neuzugangs als Nummer eins und mindestens mittlere Hierarchiesicherheit Pflicht. Ein offener Konkurrenzkampf, ein wahrscheinlicher weiterer Torwarttransfer oder reine Hoffnung auf einen späteren Wechsel sperrt den gesamten Vereinsblock.
 - Verletzte, stark wechselgefährdete und reine Entwicklungsprojekte höchstens als einzelne Wetten einsetzen.
@@ -106,6 +107,7 @@ Variabilität darf keine blinde Zufallsauswahl sein. Zuerst das beste Ergebnis i
 | mittel | höchstens 5 % | genau 4 Spieler, sofern im Korridor machbar |
 | hoch | höchstens 8 % | genau 6 Spieler, sofern im Korridor machbar |
 
+- Eine nachgelagerte Kern-, Budget- oder Torwarthierarchie-Reparatur darf den Zielunterschied um genau einen Spieler unter- oder überschreiten. Damit gelten nach allen harten Regeln 1–3, 3–5 beziehungsweise 5–7 Spieler als enge zulässige Toleranz; größere Abweichungen bleiben eine Warnung.
 - Beim Profil `verlässlich` die Qualitätsgrenze mit Faktor 0,75 enger setzen.
 - Beim Profil `ausbruch` die Qualitätsgrenze mit Faktor 1,20 erweitern.
 - Ohne Nutzereingabe die automatische private Installationsvariante des Optimierers verwenden. Keine Kadernummer erfragen und keine personenbezogenen Daten ableiten.
