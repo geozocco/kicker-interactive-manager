@@ -122,6 +122,26 @@ def config() -> dict:
 
 
 class RefreshPreseasonSnapshotTests(unittest.TestCase):
+    def test_fixture_request_includes_provider_season(self) -> None:
+        captured = []
+
+        def pages(_url, *, query, headers, paginate):
+            captured.append(query)
+            yield {"response": []}
+
+        with patch.object(refresh, "api_sports_pages", side_effect=pages):
+            refresh.fetch_fixtures(
+                [10],
+                provider_season=2026,
+                window_start=datetime(2026, 6, 15).date(),
+                window_end=datetime(2026, 7, 25).date(),
+                patterns=["friendlies"],
+                headers={"x-apisports-key": "secret"},
+                request_delay=0,
+            )
+
+        self.assertEqual(2026, captured[0]["season"])
+
     def test_provider_and_official_observations_form_bounded_signal(self) -> None:
         with (
             patch.object(

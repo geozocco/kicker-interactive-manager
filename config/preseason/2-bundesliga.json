@@ -1,6 +1,9 @@
 {
   "competition": "2. Bundesliga",
   "season": "2026/27",
+  "api_sports": {
+    "season": 2026
+  },
   "window": {
     "from": "2026-06-15",
     "to": "2026-08-31",

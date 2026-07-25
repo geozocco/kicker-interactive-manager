@@ -87,6 +87,7 @@ def team_and_opponent(
 def fetch_fixtures(
     team_ids: Iterable[int],
     *,
+    provider_season: int,
     window_start: date,
     window_end: date,
     patterns: list[str],
@@ -101,6 +102,7 @@ def fetch_fixtures(
             f"{API_BASE}/fixtures",
             query={
                 "team": team_id,
+                "season": provider_season,
                 "from": window_start.isoformat(),
                 "to": window_end.isoformat(),
                 "status": "FT-AET-PEN",
@@ -469,6 +471,11 @@ def build_snapshot(
     post_start_decay_days = int(
         config["window"].get("post_start_decay_days", 35)
     )
+    provider_season = optional_int(
+        config.get("api_sports", {}).get("season")
+    ) or optional_int(str(config["season"]).split("/", 1)[0])
+    if provider_season is None:
+        raise RuntimeError("preseason API-Sports season is required")
     patterns = [
         str(value)
         for value in config.get(
@@ -498,6 +505,7 @@ def build_snapshot(
     else:
         fixtures, team_fixtures, fixture_calls = fetch_fixtures(
             team_ids,
+            provider_season=provider_season,
             window_start=window_start,
             window_end=window_end,
             patterns=patterns,
