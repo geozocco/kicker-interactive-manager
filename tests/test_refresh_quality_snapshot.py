@@ -184,6 +184,254 @@ def exceptional_goalkeeper_history() -> dict:
 
 
 class RefreshQualitySnapshotTests(unittest.TestCase):
+    def test_goalkeeper_shortlist_keeps_every_keeper_in_every_complete_club(
+        self,
+    ) -> None:
+        market_players = [
+            {
+                "id": f"{club}-{index}",
+                "name": f"{club} Keeper {index}",
+                "club": club,
+                "position": "GOALKEEPER",
+                "market_value": 100_000 * index,
+                "points": 0,
+                "available": True,
+            }
+            for club in ("Club A", "Club B")
+            for index in range(1, 5)
+        ]
+        news_players = {
+            f"api_sports:{provider_id}": {
+                "name": player["name"],
+                "club": player["club"],
+                "mapping": {
+                    "confidence": "verified",
+                    "api_sports_player_id": provider_id,
+                },
+            }
+            for provider_id, player in enumerate(
+                market_players,
+                start=1,
+            )
+        }
+        history = {
+            "players": {
+                player["id"]: {
+                    "mapping": {"status": "unmatched"},
+                    "career": {"confirmed_score": 0, "proven_seasons": 0},
+                }
+                for player in market_players
+            }
+        }
+
+        selected = quality.select_candidates(
+            {"players": market_players},
+            {"players": news_players},
+            history,
+            {
+                "GOALKEEPER": 3,
+                "DEFENDER": 0,
+                "MIDFIELDER": 0,
+                "FORWARD": 0,
+            },
+        )
+
+        self.assertEqual(8, len(selected))
+        self.assertEqual(
+            {"Club A", "Club B"},
+            {player["club"] for player, _, _ in selected},
+        )
+
+    def test_goalkeeper_hierarchy_uses_club_gap_and_price_share(self) -> None:
+        market = {
+            "players": [
+                {
+                    "id": "g1",
+                    "name": "Clear Number One",
+                    "club": "Example Club",
+                    "position": "GOALKEEPER",
+                    "market_value": 800_000,
+                    "available": True,
+                },
+                {
+                    "id": "g2",
+                    "name": "Second Keeper",
+                    "club": "Example Club",
+                    "position": "GOALKEEPER",
+                    "market_value": 100_000,
+                    "available": True,
+                },
+                {
+                    "id": "g3",
+                    "name": "Third Keeper",
+                    "club": "Example Club",
+                    "position": "GOALKEEPER",
+                    "market_value": 100_000,
+                    "available": True,
+                },
+            ]
+        }
+        news = {
+            "players": {
+                f"api_sports:{index}": {
+                    "name": player["name"],
+                    "club": "Example Club",
+                    "mapping": {
+                        "position": "Goalkeeper",
+                        "api_sports_team_id": 10,
+                        "api_sports_player_id": index,
+                        "confidence": "verified",
+                    },
+                    "signals": [],
+                }
+                for index, player in enumerate(
+                    market["players"],
+                    start=1,
+                )
+            }
+        }
+        annotations = {}
+        for index, player in enumerate(market["players"], start=1):
+            primary = index == 1
+            annotations[player["id"]] = {
+                "position": "GOALKEEPER",
+                "club": "Example Club",
+                "components": {
+                    "confirmed_performance": 86 if primary else 35,
+                    "minutes": 92 if primary else 35,
+                    "role": 90 if primary else 32,
+                    "stability": 80,
+                    "context": 70,
+                    "fitness": 85,
+                    "upside": 75 if primary else 45,
+                    "value": 60,
+                },
+                "risks": {
+                    "transfer": 5,
+                    "injury": 5,
+                    "rotation": 5 if primary else 60,
+                    "outlier": 10,
+                    "unknown_role": 5 if primary else 50,
+                },
+                "proven_seasons": 2 if primary else 0,
+                "evidence": [],
+                "note": "",
+            }
+
+        quality.apply_goalkeeper_hierarchy(
+            annotations,
+            market,
+            news,
+            {},
+        )
+
+        leader = annotations["g1"]["goalkeeper_outlook"]
+        self.assertEqual(1, leader["club_rank"])
+        self.assertEqual("high", leader["confidence"])
+        self.assertEqual("clear_favourite", leader["status"])
+        self.assertGreaterEqual(leader["starter_probability"], 80)
+        self.assertEqual(80.0, leader["club_price_share"])
+
+    def test_unpriced_incoming_keeper_blocks_false_starter_certainty(self) -> None:
+        market = {
+            "players": [
+                {
+                    "id": f"g{index}",
+                    "name": f"Keeper {index}",
+                    "club": "Example Club",
+                    "position": "GOALKEEPER",
+                    "market_value": value,
+                    "available": True,
+                }
+                for index, value in enumerate(
+                    (800_000, 100_000, 100_000),
+                    start=1,
+                )
+            ]
+        }
+        news_players = {
+            f"api_sports:{index}": {
+                "name": player["name"],
+                "club": "Example Club",
+                "mapping": {
+                    "position": "Goalkeeper",
+                    "api_sports_team_id": 10,
+                    "api_sports_player_id": index,
+                    "confidence": "verified",
+                },
+                "signals": [],
+            }
+            for index, player in enumerate(market["players"], start=1)
+        }
+        news_players["api_sports:99"] = {
+            "name": "New Goalkeeper",
+            "club": "Example Club",
+            "mapping": {
+                "position": "Goalkeeper",
+                "api_sports_team_id": 10,
+                "api_sports_player_id": 99,
+                "confidence": "verified",
+            },
+            "signals": [
+                {
+                    "kind": "transfer_confirmed",
+                    "availability_impact": "in",
+                }
+            ],
+        }
+        annotations = {
+            player["id"]: {
+                "position": "GOALKEEPER",
+                "club": "Example Club",
+                "components": {
+                    key: (
+                        90
+                        if player["id"] == "g1"
+                        and key in {"minutes", "role"}
+                        else 70
+                        if player["id"] == "g1"
+                        else 35
+                    )
+                    for key in (
+                        "confirmed_performance",
+                        "minutes",
+                        "role",
+                        "stability",
+                        "context",
+                        "fitness",
+                        "upside",
+                        "value",
+                    )
+                },
+                "risks": {
+                    key: 5 if player["id"] == "g1" else 45
+                    for key in (
+                        "transfer",
+                        "injury",
+                        "rotation",
+                        "outlier",
+                        "unknown_role",
+                    )
+                },
+                "proven_seasons": 2 if player["id"] == "g1" else 0,
+                "evidence": [],
+                "note": "",
+            }
+            for player in market["players"]
+        }
+
+        quality.apply_goalkeeper_hierarchy(
+            annotations,
+            market,
+            {"players": news_players},
+            {},
+        )
+
+        leader = annotations["g1"]["goalkeeper_outlook"]
+        self.assertEqual("external_signing_risk", leader["status"])
+        self.assertGreaterEqual(leader["external_signing_risk"], 55)
+        self.assertEqual(1, leader["incoming_unpriced_goalkeeper_count"])
+
     @patch.object(quality.time, "sleep")
     @patch.object(quality, "api_sports_pages")
     def test_fetch_player_season_normalizes_rich_provider_statistics(

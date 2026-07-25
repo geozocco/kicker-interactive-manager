@@ -163,6 +163,13 @@ def validate_snapshot(
             raise NewsSnapshotError(
                 f"invalid player age for player {kicker_id!r}"
             )
+        position = mapping.get("position")
+        if position is not None and (
+            not isinstance(position, str) or len(position.strip()) > 80
+        ):
+            raise NewsSnapshotError(
+                f"invalid player position for player {kicker_id!r}"
+            )
         consensus = player.get("consensus", {})
         if not isinstance(consensus, dict):
             raise NewsSnapshotError(

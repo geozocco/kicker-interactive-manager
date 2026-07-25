@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 COMPONENTS = {
     "confirmed_performance",
     "minutes",
@@ -27,6 +27,15 @@ COMPONENTS = {
     "value",
 }
 RISKS = {"transfer", "injury", "rotation", "outlier", "unknown_role"}
+GOALKEEPER_STATUSES = {
+    "confirmed_starter",
+    "clear_favourite",
+    "likely_starter",
+    "open_competition",
+    "external_signing_risk",
+    "challenger",
+    "backup",
+}
 
 
 class QualitySnapshotError(ValueError):
@@ -85,6 +94,95 @@ def _score_object(
         )
 
 
+def _validate_goalkeeper_outlook(
+    outlook: Any,
+    player_id: str,
+) -> dict[str, Any]:
+    if not isinstance(outlook, dict):
+        raise QualitySnapshotError(
+            f"quality goalkeeper outlook is missing for {player_id}"
+        )
+    if outlook.get("status") not in GOALKEEPER_STATUSES:
+        raise QualitySnapshotError(
+            f"quality goalkeeper status is invalid for {player_id}"
+        )
+    if outlook.get("confidence") not in {"low", "medium", "high"}:
+        raise QualitySnapshotError(
+            f"quality goalkeeper confidence is invalid for {player_id}"
+        )
+    for field_name in (
+        "starter_probability",
+        "current_hierarchy_probability",
+        "hierarchy_score",
+        "hierarchy_gap",
+        "club_price_share",
+        "global_price_percentile",
+        "external_signing_risk",
+    ):
+        value = outlook.get(field_name)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not 0 <= float(value) <= 100
+        ):
+            raise QualitySnapshotError(
+                f"quality goalkeeper {field_name} is invalid for {player_id}"
+            )
+    for field_name in (
+        "club_rank",
+        "market_goalkeeper_count",
+        "provider_goalkeeper_count",
+        "unpriced_provider_goalkeeper_count",
+        "incoming_unpriced_goalkeeper_count",
+    ):
+        value = outlook.get(field_name)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < (1 if field_name == "club_rank" else 0)
+        ):
+            raise QualitySnapshotError(
+                f"quality goalkeeper {field_name} is invalid for {player_id}"
+            )
+    basis = outlook.get("basis")
+    if (
+        not isinstance(basis, list)
+        or not basis
+        or any(not str(item).strip() for item in basis)
+    ):
+        raise QualitySnapshotError(
+            f"quality goalkeeper basis is invalid for {player_id}"
+        )
+    return outlook
+
+
+def stable_goalkeeper_block_count(
+    goalkeepers_by_club: dict[str, list[dict[str, Any]]],
+) -> int:
+    stable = 0
+    for outlooks in goalkeepers_by_club.values():
+        leaders = [
+            outlook
+            for outlook in outlooks
+            if outlook.get("club_rank") == 1
+        ]
+        if len(outlooks) < 3 or len(leaders) != 1:
+            continue
+        leader = leaders[0]
+        if (
+            leader["status"] in {
+                "confirmed_starter",
+                "clear_favourite",
+                "likely_starter",
+            }
+            and float(leader["starter_probability"]) >= 70
+            and float(leader["external_signing_risk"]) <= 40
+            and leader["confidence"] in {"medium", "high"}
+        ):
+            stable += 1
+    return stable
+
+
 def validate_snapshot(
     payload: Any,
     *,
@@ -129,7 +227,7 @@ def validate_snapshot(
     anchor_count = 0
     attacking_anchor_count = 0
     history_resolved_count = 0
-    goalkeepers_by_club: dict[str, int] = {}
+    goalkeepers_by_club: dict[str, list[dict[str, Any]]] = {}
     for player_id, annotation in annotations.items():
         if not str(player_id).strip() or not isinstance(annotation, dict):
             raise QualitySnapshotError(
@@ -284,19 +382,38 @@ def validate_snapshot(
         if annotation.get("position") == "GOALKEEPER":
             club = str(annotation.get("club", "")).strip()
             if club:
-                goalkeepers_by_club[club] = goalkeepers_by_club.get(club, 0) + 1
+                goalkeepers_by_club.setdefault(club, []).append(
+                    _validate_goalkeeper_outlook(
+                        annotation.get("goalkeeper_outlook"),
+                        str(player_id),
+                    )
+                )
 
     requirements = payload.get("requirements")
     if not isinstance(requirements, dict):
         raise QualitySnapshotError(
             "quality snapshot requirements must be an object"
         )
+    for club, outlooks in goalkeepers_by_club.items():
+        ranks = sorted(int(outlook["club_rank"]) for outlook in outlooks)
+        if ranks != list(range(1, len(outlooks) + 1)):
+            raise QualitySnapshotError(
+                f"quality goalkeeper ranks are inconsistent for {club}"
+            )
+        external_risks = {
+            round(float(outlook["external_signing_risk"]), 3)
+            for outlook in outlooks
+        }
+        if len(external_risks) != 1:
+            raise QualitySnapshotError(
+                f"quality goalkeeper club risk is inconsistent for {club}"
+            )
     actual = {
         "candidate_count": len(annotations),
         "anchor_count": anchor_count,
         "attacking_anchor_count": attacking_anchor_count,
-        "goalkeeper_block_count": sum(
-            count >= 3 for count in goalkeepers_by_club.values()
+        "goalkeeper_block_count": stable_goalkeeper_block_count(
+            goalkeepers_by_club
         ),
         "history_resolved_percent": round(
             100.0 * history_resolved_count / max(1, len(annotations))
@@ -432,17 +549,20 @@ def snapshot_audit(payload: dict[str, Any]) -> dict[str, Any]:
             annotation.get("position") in {"MIDFIELDER", "FORWARD"}
             for annotation in anchors
         ),
-        "goalkeeper_block_count": len(
+        "goalkeeper_block_count": stable_goalkeeper_block_count(
             {
-                annotation.get("club")
-                for annotation in annotations.values()
-                if annotation.get("position") == "GOALKEEPER"
-                and sum(
-                    candidate.get("position") == "GOALKEEPER"
-                    and candidate.get("club") == annotation.get("club")
-                    for candidate in annotations.values()
-                )
-                >= 3
+                club: [
+                    annotation["goalkeeper_outlook"]
+                    for annotation in annotations.values()
+                    if annotation.get("position") == "GOALKEEPER"
+                    and annotation.get("club") == club
+                ]
+                for club in {
+                    annotation.get("club")
+                    for annotation in annotations.values()
+                    if annotation.get("position") == "GOALKEEPER"
+                }
+                if club
             }
         ),
         "history_resolved_count": sum(

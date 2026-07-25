@@ -363,6 +363,10 @@ class Player:
     benchmark: bool = field(default=False, compare=False)
     evidence: tuple[Any, ...] = field(default=(), compare=False)
     proven_seasons: int = field(default=0, compare=False)
+    goalkeeper_outlook: dict[str, Any] = field(
+        default_factory=dict,
+        compare=False,
+    )
 
 
 @dataclass
@@ -424,7 +428,50 @@ def evidence_is_complete(annotation: dict[str, Any]) -> bool:
     return True
 
 
-def annotation_is_complete(annotation: dict[str, Any]) -> bool:
+def goalkeeper_outlook_is_complete(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    if value.get("status") not in {
+        "confirmed_starter",
+        "clear_favourite",
+        "likely_starter",
+        "open_competition",
+        "external_signing_risk",
+        "challenger",
+        "backup",
+    }:
+        return False
+    if value.get("confidence") not in {"low", "medium", "high"}:
+        return False
+    for key in (
+        "starter_probability",
+        "current_hierarchy_probability",
+        "hierarchy_score",
+        "hierarchy_gap",
+        "club_price_share",
+        "global_price_percentile",
+        "external_signing_risk",
+    ):
+        score = value.get(key)
+        if (
+            isinstance(score, bool)
+            or not isinstance(score, (int, float))
+            or not math.isfinite(float(score))
+            or not 0 <= float(score) <= 100
+        ):
+            return False
+    rank = value.get("club_rank")
+    return (
+        isinstance(rank, int)
+        and not isinstance(rank, bool)
+        and rank >= 1
+    )
+
+
+def annotation_is_complete(
+    annotation: dict[str, Any],
+    position: str | None = None,
+) -> bool:
     components = annotation.get("components")
     risks = annotation.get("risks")
 
@@ -470,6 +517,15 @@ def annotation_is_complete(annotation: dict[str, Any]) -> bool:
             or proven_seasons < 2
         ):
             return False
+    if (
+        annotation.get("position") == "GOALKEEPER"
+        or "goalkeeper_outlook" in annotation
+    ) and not (
+        goalkeeper_outlook_is_complete(
+            annotation.get("goalkeeper_outlook")
+        )
+    ):
+        return False
     return evidence_is_complete(annotation)
 
 
@@ -496,7 +552,7 @@ def merge_annotations(
     for key, local_value in local.items():
         current = merged.get(str(key), {})
         combined = {**current, **local_value}
-        for nested_key in ("components", "risks"):
+        for nested_key in ("components", "risks", "goalkeeper_outlook"):
             central_nested = current.get(nested_key, {})
             local_nested = local_value.get(nested_key, {})
             if isinstance(central_nested, dict) and isinstance(local_nested, dict):
@@ -575,7 +631,7 @@ def load_players_from_rows(
         annotation = annotations.get(player_id) or annotations.get(name) or {}
         if bool(annotation.get("exclude", False)):
             continue
-        researched = annotation_is_complete(annotation)
+        researched = annotation_is_complete(annotation, position)
         if researched:
             annotated_count += 1
             annotated_by_position[position] += 1
@@ -624,6 +680,14 @@ def load_players_from_rows(
                     if isinstance(annotation.get("proven_seasons", 0), int)
                     and not isinstance(annotation.get("proven_seasons", 0), bool)
                     else 0
+                ),
+                goalkeeper_outlook=(
+                    dict(annotation.get("goalkeeper_outlook", {}))
+                    if isinstance(
+                        annotation.get("goalkeeper_outlook"),
+                        dict,
+                    )
+                    else {}
                 ),
             )
         )
@@ -1513,6 +1577,28 @@ def expected_primary_goalkeeper(
 ) -> Player:
     """Return the keeper whose current evidence most strongly projects starts."""
 
+    hierarchy_leaders = [
+        player
+        for player in club_players
+        if player.goalkeeper_outlook.get("club_rank") == 1
+    ]
+    if hierarchy_leaders:
+        return max(
+            hierarchy_leaders,
+            key=lambda player: (
+                numeric(
+                    player.goalkeeper_outlook.get(
+                        "starter_probability"
+                    )
+                ),
+                numeric(
+                    player.goalkeeper_outlook.get("hierarchy_score")
+                ),
+                scores[player.player_id],
+                -player.cost,
+                player.name,
+            ),
+        )
     return max(
         club_players,
         key=lambda player: (
@@ -1524,6 +1610,106 @@ def expected_primary_goalkeeper(
             player.name,
         ),
     )
+
+
+def goalkeeper_block_assessment(
+    club_players: list[Player],
+    scores: Mapping[str, float],
+    maintenance: str,
+    *,
+    require_hierarchy: bool,
+) -> tuple[bool, list[str], Player]:
+    primary = expected_primary_goalkeeper(club_players, scores)
+    outlook = primary.goalkeeper_outlook
+    if not goalkeeper_outlook_is_complete(outlook):
+        return (
+            not require_hierarchy,
+            (
+                []
+                if not require_hierarchy
+                else ["keine vollständige Torwarthierarchie"]
+            ),
+            primary,
+        )
+    thresholds = {
+        "low": (70.0, 40.0, {"medium", "high"}),
+        "normal": (60.0, 55.0, {"medium", "high"}),
+        "active": (48.0, 70.0, {"low", "medium", "high"}),
+    }
+    minimum_probability, maximum_external_risk, confidences = thresholds[
+        maintenance
+    ]
+    reasons: list[str] = []
+    probability = numeric(outlook.get("starter_probability"))
+    external_risk = numeric(outlook.get("external_signing_risk"), 100.0)
+    confidence = str(outlook.get("confidence", "low"))
+    status = str(outlook.get("status", "open_competition"))
+    if probability < minimum_probability:
+        reasons.append(
+            f"Stammplatzwahrscheinlichkeit nur {probability:.0f}%"
+        )
+    if external_risk > maximum_external_risk:
+        reasons.append(
+            f"Risiko eines externen Stammkeepers {external_risk:.0f}%"
+        )
+    if confidence not in confidences:
+        reasons.append(f"Hierarchiesicherheit nur {confidence}")
+    if maintenance == "low" and status not in {
+        "confirmed_starter",
+        "clear_favourite",
+        "likely_starter",
+    }:
+        reasons.append(f"Torwartstatus {status}")
+    if maintenance == "normal" and status == "external_signing_risk":
+        reasons.append("konkretes externes Besetzungsrisiko")
+    return not reasons, reasons, primary
+
+
+def filter_goalkeeper_blocks_by_hierarchy(
+    players: list[Player],
+    scores: Mapping[str, float],
+    *,
+    count: int,
+    maintenance: str,
+    require_hierarchy: bool,
+) -> tuple[list[Player], list[dict[str, Any]], int]:
+    by_club: dict[str, list[Player]] = {}
+    for player in players:
+        if player.position == "GOALKEEPER":
+            by_club.setdefault(player.club, []).append(player)
+    permitted_clubs: set[str] = set()
+    exclusions: list[dict[str, Any]] = []
+    for club, club_players in by_club.items():
+        if len(club_players) < count:
+            continue
+        allowed, reasons, primary = goalkeeper_block_assessment(
+            club_players,
+            scores,
+            maintenance,
+            require_hierarchy=require_hierarchy,
+        )
+        if allowed:
+            permitted_clubs.add(club)
+            continue
+        exclusions.append(
+            {
+                "annotation_key": f"goalkeeper-club:{club}",
+                "reason": "; ".join(reasons),
+                "benchmark": False,
+                "evidence": list(primary.evidence),
+                "expected_primary": primary.name,
+                "goalkeeper_outlook": dict(
+                    primary.goalkeeper_outlook
+                ),
+            }
+        )
+    filtered = [
+        player
+        for player in players
+        if player.position != "GOALKEEPER"
+        or player.club in permitted_clubs
+    ]
+    return filtered, exclusions, len(permitted_clubs)
 
 
 def goalkeeper_options(
@@ -3000,6 +3186,10 @@ def output_payload(
             "anchor_reason": player.anchor_reason,
             "proven_seasons": player.proven_seasons,
         }
+        if player.position == "GOALKEEPER":
+            payload["goalkeeper_outlook"] = dict(
+                player.goalkeeper_outlook
+            )
         if selection_role is not None:
             payload["selection_role"] = selection_role
         if comparison_to is not None:
@@ -3293,6 +3483,20 @@ def output_payload(
         "goalkeeper_mode": (
             "mixed" if args.mixed_goalkeepers else "same_club"
         ),
+        "goalkeeper_hierarchy_policy": {
+            "maintenance": args.maintenance,
+            "season_starter_probability_minimum": (
+                70 if args.maintenance == "low"
+                else 60 if args.maintenance == "normal"
+                else 48
+            ),
+            "external_signing_risk_maximum": (
+                40 if args.maintenance == "low"
+                else 55 if args.maintenance == "normal"
+                else 70
+            ),
+            "open_competition_allowed": args.maintenance == "active",
+        },
         "annotated_players": annotated_count,
         "annotated_players_by_position": annotated_by_position,
         "annotated_goalkeeper_blocks": annotated_goalkeeper_blocks,
@@ -4042,6 +4246,33 @@ def main() -> int:
         if args.allow_unannotated
         else [player for player in players if player.researched]
     )
+    if not args.mixed_goalkeepers:
+        (
+            eligible_players,
+            goalkeeper_hierarchy_exclusions,
+            hierarchy_safe_goalkeeper_blocks,
+        ) = filter_goalkeeper_blocks_by_hierarchy(
+            eligible_players,
+            raw_scores,
+            count=args.slots["GOALKEEPER"],
+            maintenance=args.maintenance,
+            require_hierarchy=not args.allow_unannotated,
+        )
+        hard_exclusions.extend(goalkeeper_hierarchy_exclusions)
+        annotated_goalkeeper_blocks = hierarchy_safe_goalkeeper_blocks
+        if (
+            hierarchy_safe_goalkeeper_blocks < 2
+            and not args.allow_unannotated
+        ):
+            print(
+                "Goalkeeper hierarchy research is incomplete: "
+                f"only {hierarchy_safe_goalkeeper_blocks} blocks satisfy the "
+                f"{args.maintenance!r} maintenance profile. Resolve the "
+                "number-one competition and possible external signings for "
+                "at least two clubs before optimization.",
+                file=sys.stderr,
+            )
+            return 2
     eligible_raw_scores = {
         player.player_id: raw_scores[player.player_id]
         for player in eligible_players

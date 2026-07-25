@@ -294,6 +294,7 @@ def discover_api_sports_roster(
                         "name": str(player.get("name", "")).strip(),
                         "club": team_name,
                         "age": optional_int(player.get("age")),
+                        "position": str(player.get("position", "")).strip(),
                         "api_sports_player_id": player_id,
                         "api_sports_team_id": team_id,
                         "mapping_confidence": "verified",
@@ -314,7 +315,17 @@ def discover_api_sports_roster(
     configured_players = discovered.get("players", {})
     if not isinstance(configured_players, dict):
         configured_players = {}
-    discovered["players"] = {**players, **configured_players}
+    discovered["players"] = {
+        player_id: {
+            **players.get(player_id, {}),
+            **(
+                configured_players.get(player_id, {})
+                if isinstance(configured_players.get(player_id, {}), dict)
+                else {}
+            ),
+        }
+        for player_id in sorted(players.keys() | configured_players.keys())
+    }
     return discovered, {
         "status": "discovered",
         "players": len(players),
@@ -907,6 +918,7 @@ def build_snapshot(
                 "sportsmonks_player_id": mapping.get("sportsmonks_player_id"),
                 "sportsmonks_team_id": mapping.get("sportsmonks_team_id"),
                 "age": mapping.get("age"),
+                "position": str(mapping.get("position", "")).strip(),
                 "confidence": str(mapping.get("mapping_confidence", "unverified")),
             },
             "signals": signals,

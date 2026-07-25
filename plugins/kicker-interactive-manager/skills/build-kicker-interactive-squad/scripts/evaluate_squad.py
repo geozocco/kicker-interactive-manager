@@ -304,7 +304,44 @@ def evaluate(
         if player.position == "GOALKEEPER"
     }
     if len(goalkeeper_clubs) == 1 and position_counts.get("GOALKEEPER", 0):
-        strengths.append("Vollständiger Torwartblock aus einem Verein.")
+        selected_goalkeepers = [
+            player
+            for player in selected
+            if player.position == "GOALKEEPER"
+        ]
+        if any(
+            player.goalkeeper_outlook
+            for player in selected_goalkeepers
+        ):
+            allowed, reasons, primary = (
+                optimizer.goalkeeper_block_assessment(
+                    selected_goalkeepers,
+                    scores,
+                    maintenance,
+                    require_hierarchy=True,
+                )
+            )
+            if allowed:
+                probability = float(
+                    primary.goalkeeper_outlook["starter_probability"]
+                )
+                strengths.append(
+                    "Vollständiger Torwartblock mit "
+                    f"{primary.name} als belastbarer Nummer eins "
+                    f"({probability:.0f}% Saisonprognose)."
+                )
+            else:
+                add_alert(
+                    alerts,
+                    "high" if maintenance == "low" else "medium",
+                    "goalkeeper_hierarchy",
+                    "Der Torwartblock ist vollständig, aber die Nummer eins "
+                    "ist nicht ausreichend abgesichert: "
+                    + "; ".join(reasons)
+                    + ".",
+                )
+        else:
+            strengths.append("Vollständiger Torwartblock aus einem Verein.")
     elif len(goalkeeper_clubs) > 1:
         add_alert(
             alerts,

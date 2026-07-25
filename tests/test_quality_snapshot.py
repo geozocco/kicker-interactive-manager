@@ -100,6 +100,48 @@ def payload(now: datetime) -> dict:
 
 
 class QualitySnapshotTests(unittest.TestCase):
+    def test_goalkeeper_requirement_counts_only_stable_hierarchy_blocks(
+        self,
+    ) -> None:
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        value = payload(now)
+        for rank in range(1, 4):
+            goalkeeper = annotation("GOALKEEPER")
+            goalkeeper["goalkeeper_outlook"] = {
+                "status": "clear_favourite" if rank == 1 else "backup",
+                "starter_probability": 86 if rank == 1 else 7,
+                "current_hierarchy_probability": 91 if rank == 1 else 10,
+                "confidence": "high",
+                "club_rank": rank,
+                "hierarchy_score": 90 - rank * 10,
+                "hierarchy_gap": 15 if rank == 1 else rank * 15,
+                "club_price_share": 80 if rank == 1 else 10,
+                "global_price_percentile": 90 if rank == 1 else 15,
+                "external_signing_risk": 12,
+                "market_goalkeeper_count": 3,
+                "provider_goalkeeper_count": 3,
+                "unpriced_provider_goalkeeper_count": 0,
+                "incoming_unpriced_goalkeeper_count": 0,
+                "basis": ["club hierarchy"],
+            }
+            value["annotations"][f"g{rank}"] = goalkeeper
+        value["requirements"]["candidate_count"] = 6
+        value["requirements"]["goalkeeper_block_count"] = 1
+        value["content_sha256"] = quality_snapshot.canonical_sha256(value)
+
+        quality_snapshot.validate_snapshot(value, now=now)
+
+        for rank in range(1, 4):
+            value["annotations"][f"g{rank}"]["goalkeeper_outlook"][
+                "external_signing_risk"
+            ] = 60
+        value["content_sha256"] = quality_snapshot.canonical_sha256(value)
+        with self.assertRaisesRegex(
+            quality_snapshot.QualitySnapshotError,
+            "goalkeeper_block_count",
+        ):
+            quality_snapshot.validate_snapshot(value, now=now)
+
     def test_loads_complete_fresh_pool_and_reports_audit(self) -> None:
         now = datetime.now(timezone.utc).replace(microsecond=0)
         value = payload(now)

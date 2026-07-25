@@ -76,12 +76,38 @@ Teilannotationen dürfen als vorläufige Arbeitsnotiz in einem Recherche- oder S
 
 Vor einer finalen Optimierung mindestens folgende aktuell recherchierte, nicht ausgeschlossene Kandidaten annotieren:
 
-- Torhüter: doppelte Zahl der tatsächlichen Torwartplätze; im Standardmodus aus mindestens zwei vollständigen realistischen Torwartblöcken
+- Torhüter: doppelte Zahl der tatsächlichen Torwartplätze; im Standardmodus aus mindestens zwei vollständigen, für das gewählte Betreuungsprofil hierarchisch sicheren Torwartblöcken
 - Verteidiger: doppelte tatsächliche Sollzahl
 - Mittelfeldspieler: doppelte tatsächliche Sollzahl
 - Stürmer: doppelte tatsächliche Sollzahl
 
 Bei den üblichen Positionsvorgaben 3/7/7/5 entspricht das 6/14/14/10. Wird auf ausdrücklichen Wunsch `--mixed-goalkeepers` verwendet, entfällt nur die Blockanforderung; die Mindestzahl recherchierter Torhüter bleibt bestehen.
+
+Jede zentrale Torwartannotation enthält zusätzlich `goalkeeper_outlook`. Das Objekt dokumentiert `status`, `starter_probability`, `current_hierarchy_probability`, `confidence`, `club_rank`, `hierarchy_score`, `hierarchy_gap`, `club_price_share`, `global_price_percentile`, `external_signing_risk` sowie Markt-/Provider-Torwartzahlen. `starter_probability` ist die Saisonprognose nach Abzug des Risikos eines externen Neuzugangs; `current_hierarchy_probability` beschreibt nur das gegenwärtige interne Duell. Der Kicker-Preis ist dabei ein begrenztes redaktionelles Signal und niemals alleiniger Beleg.
+
+`status` ist einer von `confirmed_starter`, `clear_favourite`, `likely_starter`, `open_competition`, `external_signing_risk`, `challenger` oder `backup`. Manuelle Trainer- oder Vereinsbelege dürfen die automatische Einstufung über `goalkeeper_evidence` präzisieren, müssen aber wie alle entscheidenden Rollenbehauptungen Quelle und Prüfdatum tragen.
+
+Beispiel für einen belegten vereinsweiten Override:
+
+```json
+{
+  "goalkeeper_evidence": {
+    "clubs": {
+      "Beispielverein": {
+        "external_signing_risk": 75,
+        "note": "Der Verein sucht laut aktueller Primärquelle ausdrücklich eine neue Nummer eins.",
+        "evidence": [
+          {
+            "claim": "Der Sportdirektor kündigt die Verpflichtung eines Stammtorhüters an.",
+            "source_url": "https://verein.example/aktuelle-meldung",
+            "checked_at": "2026-07-25"
+          }
+        ]
+      }
+    }
+  }
+}
+```
 
 In Abwehr, Mittelfeld und Sturm jeweils mindestens zwei aktuell auswählbare Spieler mit `benchmark: true` aufnehmen. Außerdem alle vom Nutzer genannten Spieler und alle gefundenen Premiumsignale vollständig annotieren, auch wenn dadurch die Mindestzahl überschritten wird. Premiumsignale sind insbesondere mehrjährige Spitzenleistung, wiederholbare Standards oder Schlüsselrolle, Kapitänsverantwortung, frühere Torjägerkrone, außergewöhnliche individuelle Qualität und höherklassig bestätigte Leistung.
 

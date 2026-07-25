@@ -350,6 +350,117 @@ class DistanceOptimizerTests(unittest.TestCase):
             )
         )
 
+    def test_goalkeeper_hierarchy_overrides_generic_player_score(self) -> None:
+        keepers = [
+            player("model-favourite", "GK Club", "GOALKEEPER", 800),
+            player("actual-favourite", "GK Club", "GOALKEEPER", 700),
+            player("backup", "GK Club", "GOALKEEPER", 100),
+        ]
+        outlooks = {
+            "model-favourite": {
+                "status": "challenger",
+                "starter_probability": 25,
+                "current_hierarchy_probability": 30,
+                "confidence": "high",
+                "club_rank": 2,
+                "hierarchy_score": 70,
+                "hierarchy_gap": 8,
+                "club_price_share": 50,
+                "global_price_percentile": 80,
+                "external_signing_risk": 10,
+            },
+            "actual-favourite": {
+                "status": "likely_starter",
+                "starter_probability": 78,
+                "current_hierarchy_probability": 86,
+                "confidence": "medium",
+                "club_rank": 1,
+                "hierarchy_score": 78,
+                "hierarchy_gap": 8,
+                "club_price_share": 44,
+                "global_price_percentile": 75,
+                "external_signing_risk": 20,
+            },
+            "backup": {
+                "status": "backup",
+                "starter_probability": 5,
+                "current_hierarchy_probability": 8,
+                "confidence": "medium",
+                "club_rank": 3,
+                "hierarchy_score": 45,
+                "hierarchy_gap": 33,
+                "club_price_share": 6,
+                "global_price_percentile": 10,
+                "external_signing_risk": 20,
+            },
+        }
+        keepers = [
+            optimizer.Player(
+                **{
+                    **keeper.__dict__,
+                    "goalkeeper_outlook": outlooks[keeper.player_id],
+                }
+            )
+            for keeper in keepers
+        ]
+        scores = {
+            "model-favourite": 99,
+            "actual-favourite": 70,
+            "backup": 20,
+        }
+
+        primary = optimizer.expected_primary_goalkeeper(keepers, scores)
+
+        self.assertEqual("actual-favourite", primary.player_id)
+
+    def test_low_maintenance_rejects_open_goalkeeper_competition(self) -> None:
+        keepers = [
+            player("open-one", "Open Club", "GOALKEEPER", 500),
+            player("open-two", "Open Club", "GOALKEEPER", 400),
+            player("open-three", "Open Club", "GOALKEEPER", 100),
+        ]
+        keepers = [
+            optimizer.Player(
+                **{
+                    **keeper.__dict__,
+                    "goalkeeper_outlook": {
+                        "status": (
+                            "open_competition"
+                            if index == 1
+                            else "challenger"
+                        ),
+                        "starter_probability": 58 if index == 1 else 25,
+                        "current_hierarchy_probability": (
+                            68 if index == 1 else 30
+                        ),
+                        "confidence": "low",
+                        "club_rank": index,
+                        "hierarchy_score": 70 - index,
+                        "hierarchy_gap": 3 if index == 1 else 5 * index,
+                        "club_price_share": 60 - 20 * index,
+                        "global_price_percentile": 70 - 10 * index,
+                        "external_signing_risk": 45,
+                    },
+                }
+            )
+            for index, keeper in enumerate(keepers, start=1)
+        ]
+        scores = {keeper.player_id: 70 for keeper in keepers}
+
+        filtered, exclusions, block_count = (
+            optimizer.filter_goalkeeper_blocks_by_hierarchy(
+                keepers,
+                scores,
+                count=3,
+                maintenance="low",
+                require_hierarchy=True,
+            )
+        )
+
+        self.assertEqual([], filtered)
+        self.assertEqual(0, block_count)
+        self.assertEqual("Player open-one", exclusions[0]["expected_primary"])
+
     def test_seeded_variation_is_reproducible_and_constraint_safe(self) -> None:
         players, scores = varied_pool()
         slots = {

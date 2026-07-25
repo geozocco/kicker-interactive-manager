@@ -40,7 +40,7 @@ from quality_snapshot import SCHEMA_VERSION, canonical_sha256, validate_snapshot
 from refresh_news_snapshot import api_sports_pages, optional_int
 
 
-MODEL_VERSION = "multi-season-v5-age-curve-youth-pathway"
+MODEL_VERSION = "multi-season-v6-goalkeeper-hierarchy"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
 
 
@@ -411,32 +411,28 @@ def select_candidates(
             key=lambda item: (-item[0], int(item[1]["market_value"]), item[1]["id"]),
         )
         if position == "GOALKEEPER":
-            by_club: dict[
-                str,
-                list[tuple[float, dict[str, Any], str, dict[str, Any]]],
-            ] = defaultdict(list)
-            for item in candidates:
-                by_club[str(item[1]["club"])].append(item)
-            complete_blocks = [
-                (
-                    sum(item[0] for item in club_candidates[:3]) / 3,
-                    club,
-                    club_candidates[:3],
+            complete_clubs = {
+                str(item[1]["club"])
+                for item in candidates
+                if sum(
+                    candidate[1]["club"] == item[1]["club"]
+                    for candidate in candidates
                 )
-                for club, club_candidates in by_club.items()
-                if len(club_candidates) >= 3
-            ]
-            complete_blocks.sort(key=lambda item: (-item[0], item[1]))
+                >= 3
+            }
             requested_blocks = max(2, math.ceil(quotas[position] / 3))
-            if len(complete_blocks) < requested_blocks:
+            if len(complete_clubs) < requested_blocks:
                 raise RuntimeError(
-                    f"only {len(complete_blocks)} complete goalkeeper blocks, "
+                    f"only {len(complete_clubs)} complete goalkeeper blocks, "
                     f"{requested_blocks} required"
                 )
+            # Goalkeeper decisions are club-wide hierarchy decisions. Keep every
+            # provider-mapped market keeper instead of truncating clubs to the
+            # three highest-ranked names; a fourth challenger or a newly listed
+            # keeper can materially change the projected number one.
             selected.extend(
                 (player, news_id, news_player)
-                for _, _, block in complete_blocks[:requested_blocks]
-                for _, player, news_id, news_player in block
+                for _, player, news_id, news_player in candidates
             )
             continue
         premium_count = max(1, math.ceil(quotas[position] * 0.65))
@@ -1176,6 +1172,323 @@ def build_annotation(
     }
 
 
+def provider_position_is_goalkeeper(value: Any) -> bool:
+    normalized = name_key(str(value or ""))
+    return normalized in {"g", "gk", "goalkeeper", "keeper", "torwart"} or (
+        "goalkeeper" in normalized or "torwart" in normalized
+    )
+
+
+def goalkeeper_hierarchy_score(
+    annotation: dict[str, Any],
+    *,
+    club_price_share: float,
+    global_price_percentile: float,
+) -> float:
+    components = annotation["components"]
+    risks = annotation["risks"]
+    return clamp(
+        0.28 * float(components["minutes"])
+        + 0.22 * float(components["role"])
+        + 0.16 * float(components["confirmed_performance"])
+        + 0.12 * float(components["upside"])
+        + 0.16 * club_price_share
+        + 0.06 * global_price_percentile
+        - 0.12 * float(risks["transfer"])
+        - 0.10 * float(risks["rotation"])
+    )
+
+
+def apply_goalkeeper_hierarchy(
+    annotations: dict[str, dict[str, Any]],
+    market_payload: dict[str, Any],
+    news_payload: dict[str, Any],
+    config: dict[str, Any],
+) -> None:
+    """Attach a season-long number-one outlook to every researched keeper."""
+
+    market_goalkeepers = [
+        player
+        for player in available_market_players(market_payload)
+        if player["position"] == "GOALKEEPER"
+    ]
+    prices = [
+        float(player["market_value"])
+        for player in market_goalkeepers
+    ]
+    market_by_id = {
+        str(player["id"]): player for player in market_goalkeepers
+    }
+    by_name, by_surname = news_provider_index(news_payload)
+    matched_news_ids_by_club: dict[str, set[str]] = defaultdict(set)
+    team_ids_by_club: dict[str, set[int]] = defaultdict(set)
+    market_counts_by_club: dict[str, int] = defaultdict(int)
+    for market_player in market_goalkeepers:
+        club = str(market_player["club"])
+        market_counts_by_club[club] += 1
+        matched = match_news_player(market_player, by_name, by_surname)
+        if matched is None:
+            continue
+        news_id, news_player = matched
+        matched_news_ids_by_club[club].add(news_id)
+        team_id = optional_int(
+            news_player.get("mapping", {}).get("api_sports_team_id")
+        )
+        if team_id is not None:
+            team_ids_by_club[club].add(team_id)
+
+    provider_goalkeepers_by_team: dict[int, list[tuple[str, dict[str, Any]]]] = (
+        defaultdict(list)
+    )
+    for news_id, news_player in news_payload["players"].items():
+        mapping = news_player.get("mapping", {})
+        if not provider_position_is_goalkeeper(mapping.get("position")):
+            continue
+        team_id = optional_int(mapping.get("api_sports_team_id"))
+        if team_id is not None:
+            provider_goalkeepers_by_team[team_id].append(
+                (str(news_id), news_player)
+            )
+
+    annotation_ids_by_club: dict[str, list[str]] = defaultdict(list)
+    for player_id, annotation in annotations.items():
+        if annotation.get("position") == "GOALKEEPER":
+            annotation_ids_by_club[str(annotation["club"])].append(player_id)
+
+    hierarchy_evidence = config.get("goalkeeper_evidence", {})
+    player_overrides = (
+        hierarchy_evidence.get("players", {})
+        if isinstance(hierarchy_evidence, dict)
+        else {}
+    )
+    club_overrides = (
+        hierarchy_evidence.get("clubs", {})
+        if isinstance(hierarchy_evidence, dict)
+        else {}
+    )
+
+    for club, player_ids in annotation_ids_by_club.items():
+        club_market_players = [
+            market_by_id[player_id]
+            for player_id in player_ids
+            if player_id in market_by_id
+        ]
+        total_price = sum(
+            float(player["market_value"])
+            for player in market_goalkeepers
+            if str(player["club"]) == club
+        )
+        ranked: list[tuple[float, str, float, float]] = []
+        for player_id in player_ids:
+            market_player = market_by_id.get(player_id)
+            if market_player is None:
+                continue
+            price = float(market_player["market_value"])
+            price_share = 100.0 * price / max(1.0, total_price)
+            price_percentile = percentile(price, prices)
+            ranked.append(
+                (
+                    goalkeeper_hierarchy_score(
+                        annotations[player_id],
+                        club_price_share=price_share,
+                        global_price_percentile=price_percentile,
+                    ),
+                    player_id,
+                    price_share,
+                    price_percentile,
+                )
+            )
+        ranked.sort(key=lambda item: (-item[0], -item[2], item[1]))
+        if not ranked:
+            continue
+
+        provider_goalkeepers = [
+            item
+            for team_id in team_ids_by_club.get(club, set())
+            for item in provider_goalkeepers_by_team.get(team_id, [])
+        ]
+        provider_goalkeeper_ids = {item[0] for item in provider_goalkeepers}
+        unpriced_provider_ids = (
+            provider_goalkeeper_ids - matched_news_ids_by_club.get(club, set())
+        )
+        incoming_unpriced = 0
+        rumoured_unpriced = 0
+        for news_id, news_player in provider_goalkeepers:
+            if news_id not in unpriced_provider_ids:
+                continue
+            for signal in news_player.get("signals", []):
+                if signal.get("availability_impact") != "in":
+                    continue
+                if signal.get("kind") == "transfer_confirmed":
+                    incoming_unpriced += 1
+                    break
+                if signal.get("kind") == "transfer_rumour":
+                    rumoured_unpriced += 1
+                    break
+
+        top_score, top_id, top_share, top_price_percentile = ranked[0]
+        second_score = ranked[1][0] if len(ranked) > 1 else top_score - 4.0
+        top_gap = max(0.0, top_score - second_score)
+        confidence = (
+            "high"
+            if top_gap >= 12 and top_share >= 45
+            else "medium"
+            if top_gap >= 6 and top_share >= 35
+            else "low"
+        )
+        top_annotation = annotations[top_id]
+        external_signing_risk = (
+            12.0
+            + (25.0 if confidence == "low" else 10.0 if confidence == "medium" else 0)
+            + (18.0 if top_price_percentile < 35 else 0)
+            + (8.0 if int(top_annotation.get("proven_seasons", 0)) == 0 else 0)
+            + min(12.0, 4.0 * len(unpriced_provider_ids))
+            + min(55.0, 45.0 * incoming_unpriced)
+            + min(30.0, 20.0 * rumoured_unpriced)
+        )
+        club_override = (
+            club_overrides.get(club, {})
+            if isinstance(club_overrides, dict)
+            else {}
+        )
+        manual_club_context = isinstance(club_override, dict) and bool(
+            club_override
+        )
+        if isinstance(club_override, dict) and (
+            "external_signing_risk" in club_override
+        ):
+            external_signing_risk = clamp(
+                club_override["external_signing_risk"]
+            )
+        if isinstance(club_override, dict):
+            override_note = str(club_override.get("note", "")).strip()
+            override_evidence = club_override.get("evidence", [])
+            for player_id in player_ids:
+                if override_note:
+                    annotations[player_id]["note"] = " ".join(
+                        part
+                        for part in (
+                            annotations[player_id].get("note", ""),
+                            override_note,
+                        )
+                        if part
+                    )
+                for evidence in override_evidence:
+                    if isinstance(evidence, dict):
+                        annotations[player_id]["evidence"].append(evidence)
+        external_signing_risk = clamp(external_signing_risk)
+        current_hierarchy_probability = clamp(
+            56.0 + 2.3 * top_gap + 0.22 * (top_share - 45.0)
+        )
+        season_starter_probability = clamp(
+            current_hierarchy_probability - 0.35 * external_signing_risk
+        )
+
+        for rank, (score, player_id, price_share, price_percentile) in enumerate(
+            ranked,
+            start=1,
+        ):
+            gap_to_top = max(0.0, top_score - score)
+            player_confidence = confidence
+            if rank == 1:
+                player_probability = season_starter_probability
+                status = (
+                    "external_signing_risk"
+                    if external_signing_risk >= 55
+                    else "clear_favourite"
+                    if player_probability >= 82 and confidence == "high"
+                    else "likely_starter"
+                    if player_probability >= 70
+                    else "open_competition"
+                )
+            else:
+                player_probability = clamp(
+                    max(2.0, 42.0 - 2.2 * gap_to_top)
+                )
+                status = "challenger" if gap_to_top < 10 else "backup"
+
+            player_override = (
+                player_overrides.get(player_id, {})
+                if isinstance(player_overrides, dict)
+                else {}
+            )
+            if isinstance(player_override, dict):
+                if "starter_probability" in player_override:
+                    player_probability = clamp(
+                        player_override["starter_probability"]
+                    )
+                if str(player_override.get("confidence", "")) in {
+                    "low",
+                    "medium",
+                    "high",
+                }:
+                    player_confidence = str(player_override["confidence"])
+                if str(player_override.get("status", "")) in {
+                    "confirmed_starter",
+                    "clear_favourite",
+                    "likely_starter",
+                    "open_competition",
+                    "external_signing_risk",
+                    "challenger",
+                    "backup",
+                }:
+                    status = str(player_override["status"])
+                for evidence in player_override.get("evidence", []):
+                    if isinstance(evidence, dict):
+                        annotations[player_id]["evidence"].append(evidence)
+                override_note = str(player_override.get("note", "")).strip()
+                if override_note:
+                    annotations[player_id]["note"] = " ".join(
+                        part
+                        for part in (
+                            annotations[player_id].get("note", ""),
+                            override_note,
+                        )
+                        if part
+                    )
+
+            annotations[player_id]["goalkeeper_outlook"] = {
+                "status": status,
+                "starter_probability": round(player_probability, 2),
+                "current_hierarchy_probability": round(
+                    current_hierarchy_probability
+                    if rank == 1
+                    else max(2.0, 45.0 - 2.0 * gap_to_top),
+                    2,
+                ),
+                "confidence": player_confidence,
+                "club_rank": rank,
+                "hierarchy_score": round(score, 2),
+                "hierarchy_gap": round(
+                    top_gap if rank == 1 else gap_to_top,
+                    2,
+                ),
+                "club_price_share": round(price_share, 2),
+                "global_price_percentile": round(price_percentile, 2),
+                "external_signing_risk": round(external_signing_risk, 2),
+                "market_goalkeeper_count": market_counts_by_club.get(
+                    club,
+                    len(club_market_players),
+                ),
+                "provider_goalkeeper_count": len(provider_goalkeeper_ids),
+                "unpriced_provider_goalkeeper_count": len(
+                    unpriced_provider_ids
+                ),
+                "incoming_unpriced_goalkeeper_count": incoming_unpriced,
+                "basis": [
+                    "aktuelle Einsatz- und Rollenwerte",
+                    "Abstand zur vereinsinternen Konkurrenz",
+                    "relativer Kicker-Preis im Torwartblock",
+                    "aktuelle Provider-Kader- und Transferlage",
+                    *(
+                        ["aktuell belegte manuelle Vereins-/Trainerlage"]
+                        if manual_club_context
+                        else []
+                    ),
+                ],
+            }
+
+
 def generate_snapshot(
     market_payload: dict[str, Any],
     news_payload: dict[str, Any],
@@ -1300,6 +1613,13 @@ def generate_snapshot(
             generated_at=generated_at,
         )
         annotations[str(market_player["id"])] = annotation
+
+    apply_goalkeeper_hierarchy(
+        annotations,
+        market_payload,
+        news_payload,
+        config,
+    )
 
     for position in ("DEFENDER", "MIDFIELDER", "FORWARD"):
         position_items = [

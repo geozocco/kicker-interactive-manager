@@ -79,18 +79,21 @@ Den Risikowert mit dem Faktor multiplizieren und vom Komponentenscore abziehen.
 - Elf bis 14 hochwertige Kernspieler anstreben. Die übrigen Plätze günstig, aber mit plausibler Einsatzchance besetzen; eine gleichwertige Premiumbank ist nicht erforderlich.
 - Mindestens 70 Prozent des gesamten Kaderwerts müssen unabhängig vom Strategieprofil in der stärksten legalen Startelf liegen.
 - Die stärkste wartungsarme Startelf enthält mindestens zwei Stürmer und höchstens vier Verteidiger. Dadurch bleiben mindestens zwei belastbare offensive Wege erhalten und ein fünfter teurer Abwehrspieler wird nicht als vermeintliche Kerninvestition vor einer besseren Mittelfeld- oder Sturmoption geschützt.
-- Beim Torwartblock muss der aus `minutes`, `role` und `upside` erwartete Stammtorhüter enthalten sein. Drei billigere Vereinskeeper ohne den wahrscheinlich Spielenden sind kein gültiger Block.
+- Beim Torwartblock muss die vereinsintern ermittelte Nummer eins enthalten sein. Die Prognose verbindet `minutes`, `role`, mehrjährige Bestätigung, den Abstand zur Konkurrenz, den relativen Kicker-Preis im Vereinsblock und die aktuelle Kader-/Transferlage. Drei billigere Vereinskeeper ohne den wahrscheinlich Spielenden sind kein gültiger Block.
+- Für `gering` sind mindestens 70 Prozent Saison-Stammplatzwahrscheinlichkeit, höchstens 40 Prozent Risiko eines externen Neuzugangs als Nummer eins und mindestens mittlere Hierarchiesicherheit Pflicht. Ein offener Konkurrenzkampf, ein wahrscheinlicher weiterer Torwarttransfer oder reine Hoffnung auf einen späteren Wechsel sperrt den gesamten Vereinsblock.
 - Verletzte, stark wechselgefährdete und reine Entwicklungsprojekte höchstens als einzelne Wetten einsetzen.
 
 ### Normal
 
 - Profilgewichte unverändert verwenden.
 - Vier bis sechs bewusst riskantere Plätze sind vertretbar.
+- Im Tor sind mindestens 60 Prozent Saison-Stammplatzwahrscheinlichkeit, höchstens 55 Prozent externes Besetzungsrisiko und mindestens mittlere Hierarchiesicherheit erforderlich.
 
 ### Aktiv
 
 - `upside` und `value` leicht erhöhen.
 - Frühere Wetten und offene Konkurrenzkämpfe zulassen.
+- Im Tor dürfen offene Duelle ab 48 Prozent Stammplatzwahrscheinlichkeit und bis 70 Prozent externem Besetzungsrisiko bewusst eingegangen werden.
 - Nur verwenden, wenn der Nutzer während der Saison aktiv nachsteuern will.
 
 ## Variabilität

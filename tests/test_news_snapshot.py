@@ -392,6 +392,7 @@ class ApiSportsRosterDiscoveryTests(unittest.TestCase):
                 "api_sports_team_id": 10,
                 "mapping_confidence": "verified",
                 "age": 18,
+                "position": "",
             },
             discovered["players"]["api_sports:101"],
         )
