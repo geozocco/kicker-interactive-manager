@@ -21,6 +21,41 @@ import refresh_quality_snapshot as quality
 
 
 class QualityProviderRetryTests(unittest.TestCase):
+    def test_matching_previous_quality_history_is_reused_by_season(
+        self,
+    ) -> None:
+        history = {"season": 2025, "appearances": 20}
+        previous = {
+            "competition": "3. Liga",
+            "season": "2026/27",
+            "annotations": {
+                "p1": {
+                    "provider_news_id": "api_sports:123",
+                    "api_sports_history": [history],
+                }
+            },
+        }
+
+        cached = quality.cached_api_histories(
+            previous,
+            competition="3. Liga",
+            season="2026/27",
+            player_id="p1",
+            news_id="api_sports:123",
+        )
+
+        self.assertEqual({2025: history}, cached)
+        self.assertEqual(
+            {},
+            quality.cached_api_histories(
+                previous,
+                competition="3. Liga",
+                season="2026/27",
+                player_id="p1",
+                news_id="api_sports:999",
+            ),
+        )
+
     @patch.object(quality.time, "sleep")
     @patch.object(quality, "api_sports_pages")
     def test_player_history_waits_a_full_window_after_http_429(

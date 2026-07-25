@@ -19,8 +19,18 @@ if str(SCRIPT_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIRECTORY))
 
 from news_snapshot import load_snapshot as load_news_snapshot
-from preseason_snapshot import SCHEMA_VERSION, canonical_sha256, validate_snapshot
-from refresh_news_snapshot import api_sports_pages, chunks, optional_int
+from preseason_snapshot import (
+    SCHEMA_VERSION,
+    canonical_sha256,
+    load_snapshot as load_preseason_snapshot,
+    validate_snapshot,
+)
+from refresh_news_snapshot import (
+    api_sports_pages,
+    chunks,
+    is_api_sports_daily_limit,
+    optional_int,
+)
 
 
 API_BASE = "https://v3.football.api-sports.io"
@@ -633,6 +643,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--news", required=True)
     parser.add_argument("--mapping", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--previous")
     parser.add_argument("--request-delay", type=float, default=0.15)
     parser.add_argument("--ttl-hours", type=int, default=18)
     return parser.parse_args()
@@ -646,13 +657,30 @@ def main() -> int:
         return 2
     config = json.loads(args.mapping.read_text(encoding="utf-8"))
     news_payload = load_news_snapshot(args.news)
-    payload = build_snapshot(
-        news_payload,
-        config,
-        token=token,
-        request_delay=args.request_delay,
-        ttl_hours=args.ttl_hours,
-    )
+    try:
+        payload = build_snapshot(
+            news_payload,
+            config,
+            token=token,
+            request_delay=args.request_delay,
+            ttl_hours=args.ttl_hours,
+        )
+    except RuntimeError as error:
+        if not args.previous or not is_api_sports_daily_limit(error):
+            raise
+        payload = load_preseason_snapshot(args.previous)
+        if (
+            payload["competition"] != config["competition"]
+            or payload["season"] != config["season"]
+        ):
+            raise RuntimeError(
+                "previous preseason snapshot belongs to another competition"
+            ) from error
+        print(
+            "API-Sports daily limit reached; reusing the previous fresh "
+            "preseason snapshot without extending its expiry.",
+            file=sys.stderr,
+        )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.output.with_suffix(f"{args.output.suffix}.tmp")
     temporary.write_text(

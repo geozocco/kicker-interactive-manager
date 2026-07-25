@@ -40,7 +40,13 @@ from preseason_snapshot import (
     canonical_sha256 as preseason_sha256,
     load_snapshot as load_preseason_snapshot,
 )
-from quality_snapshot import SCHEMA_VERSION, canonical_sha256, validate_snapshot
+from quality_snapshot import (
+    SCHEMA_VERSION,
+    QualitySnapshotError,
+    canonical_sha256,
+    load_snapshot as load_quality_snapshot,
+    validate_snapshot,
+)
 from refresh_news_snapshot import (
     api_sports_pages,
     is_api_sports_rate_limit,
@@ -544,6 +550,36 @@ def empty_season_stats(season: int, age: int | None = None) -> dict[str, Any]:
         "penalties_missed": 0,
         "penalties_saved": 0,
         "age": age,
+    }
+
+
+def cached_api_histories(
+    previous_quality_payload: dict[str, Any] | None,
+    *,
+    competition: str,
+    season: str,
+    player_id: str,
+    news_id: str,
+) -> dict[int, dict[str, Any]]:
+    if (
+        not isinstance(previous_quality_payload, dict)
+        or previous_quality_payload.get("competition") != competition
+        or previous_quality_payload.get("season") != season
+    ):
+        return {}
+    annotation = previous_quality_payload.get("annotations", {}).get(
+        player_id,
+        {},
+    )
+    if annotation.get("provider_news_id") != news_id:
+        return {}
+    return {
+        int(item["season"]): item
+        for item in annotation.get("api_sports_history", [])
+        if (
+            isinstance(item, dict)
+            and optional_int(item.get("season")) is not None
+        )
     }
 
 
@@ -1719,6 +1755,7 @@ def generate_snapshot(
     history_payload: dict[str, Any],
     kicker_history_payload: dict[str, Any],
     config: dict[str, Any],
+    previous_quality_payload: dict[str, Any] | None = None,
     *,
     token: str,
     request_delay: float,
@@ -1789,21 +1826,37 @@ def generate_snapshot(
     history_seasons = [int(value) for value in config["history_seasons"]]
     total_requests = len(candidates) * len(history_seasons)
     completed = 0
+    reused = 0
+    fetched = 0
     for market_player, news_id, news_player in candidates:
         provider_id = int(news_player["mapping"]["api_sports_player_id"])
-        histories = []
+        cached_by_season = cached_api_histories(
+            previous_quality_payload,
+            competition=str(market_payload["competition"]),
+            season=str(market_payload["season"]),
+            player_id=str(market_player["id"]),
+            news_id=news_id,
+        )
+        histories: list[dict[str, Any]] = []
         for history_season in history_seasons:
-            histories.append(
-                fetch_player_season(
-                    provider_id,
-                    history_season,
-                    headers=headers,
-                    request_delay=request_delay,
+            cached = cached_by_season.get(history_season)
+            if cached is not None:
+                histories.append(cached)
+                reused += 1
+            else:
+                histories.append(
+                    fetch_player_season(
+                        provider_id,
+                        history_season,
+                        headers=headers,
+                        request_delay=request_delay,
+                    )
                 )
-            )
+                fetched += 1
             completed += 1
             print(
-                f"quality history {completed}/{total_requests}",
+                f"quality history {completed}/{total_requests} "
+                f"(reused={reused}, fetched={fetched})",
                 file=sys.stderr,
                 flush=True,
             )
@@ -1911,6 +1964,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--preseason", required=True)
     parser.add_argument("--history", required=True)
     parser.add_argument("--kicker-history", required=True)
+    parser.add_argument("--previous-quality")
     parser.add_argument("--mapping", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--ttl-hours", type=int, default=18)
@@ -1932,6 +1986,18 @@ def main() -> int:
     kicker_history_payload = load_kicker_history_snapshot(
         args.kicker_history
     )
+    previous_quality_payload = None
+    if args.previous_quality:
+        try:
+            previous_quality_payload = load_quality_snapshot(
+                args.previous_quality,
+                require_fresh=False,
+            )
+        except (OSError, QualitySnapshotError) as error:
+            print(
+                f"Previous quality cache unavailable; refreshing live: {error}",
+                file=sys.stderr,
+            )
     payload = generate_snapshot(
         market_payload,
         news_payload,
@@ -1939,6 +2005,7 @@ def main() -> int:
         history_payload,
         kicker_history_payload,
         config,
+        previous_quality_payload,
         token=token,
         request_delay=args.request_delay,
         ttl_hours=args.ttl_hours,

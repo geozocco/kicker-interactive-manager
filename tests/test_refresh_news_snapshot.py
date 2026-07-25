@@ -37,6 +37,16 @@ class RefreshNewsSnapshotTests(unittest.TestCase):
                 "season: The Season field is required."
             )
         )
+        self.assertTrue(
+            refresh.is_api_sports_daily_limit(
+                "You have reached the request limit for the day"
+            )
+        )
+        self.assertFalse(
+            refresh.is_api_sports_daily_limit(
+                "Too many requests per minute"
+            )
+        )
 
     @patch.object(refresh.time, "sleep")
     @patch.object(refresh, "request_json")

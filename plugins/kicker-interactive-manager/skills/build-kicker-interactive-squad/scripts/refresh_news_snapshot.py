@@ -7,6 +7,7 @@ import argparse
 import copy
 import json
 import os
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -16,7 +17,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from news_snapshot import SCHEMA_VERSION, canonical_sha256, validate_snapshot
+from news_snapshot import (
+    SCHEMA_VERSION,
+    canonical_sha256,
+    load_snapshot as load_news_snapshot,
+    validate_snapshot,
+)
 
 
 USER_AGENT = "kicker-interactive-manager-news-refresh/1"
@@ -29,6 +35,14 @@ def is_api_sports_rate_limit(value: Any) -> bool:
         or "rate limit" in details
         or "too many requests" in details
         or "http error 429" in details
+    )
+
+
+def is_api_sports_daily_limit(value: Any) -> bool:
+    details = str(value).casefold()
+    return (
+        "request limit for the day" in details
+        or "daily request limit" in details
     )
 
 
@@ -971,6 +985,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mapping", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--previous")
     parser.add_argument(
         "--provider",
         action="append",
@@ -1016,14 +1031,31 @@ def main() -> int:
             "mapping players must be a non-empty object unless "
             "api_sports.auto_discover_players is enabled"
         )
-    payload = build_snapshot(
-        config,
-        providers=list(dict.fromkeys(args.providers)),
-        optional_providers=list(
-            dict.fromkeys(args.optional_providers or [])
-        ),
-        ttl_hours=args.ttl_hours,
-    )
+    try:
+        payload = build_snapshot(
+            config,
+            providers=list(dict.fromkeys(args.providers)),
+            optional_providers=list(
+                dict.fromkeys(args.optional_providers or [])
+            ),
+            ttl_hours=args.ttl_hours,
+        )
+    except RuntimeError as error:
+        if not args.previous or not is_api_sports_daily_limit(error):
+            raise
+        payload = load_news_snapshot(args.previous)
+        if (
+            payload["competition"] != config["competition"]
+            or payload["season"] != config["season"]
+        ):
+            raise RuntimeError(
+                "previous news snapshot belongs to another competition"
+            ) from error
+        print(
+            "API-Sports daily limit reached; reusing the previous fresh "
+            "news snapshot without extending its expiry.",
+            file=sys.stderr,
+        )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.output.with_suffix(f"{args.output.suffix}.tmp")
     temporary.write_text(

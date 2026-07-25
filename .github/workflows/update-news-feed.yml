@@ -60,6 +60,7 @@ jobs:
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_news_snapshot.py \
             --mapping config/news/2-bundesliga.json \
             --output public/v1/news/2-bundesliga.json \
+            --previous https://geozocco.github.io/kicker-interactive-manager/v1/news/2-bundesliga.json \
             --provider api_sports \
             --optional-provider sportsmonks
 
@@ -74,6 +75,7 @@ jobs:
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_news_snapshot.py \
             --mapping config/news/3-liga.json \
             --output public/v1/news/3-liga.json \
+            --previous https://geozocco.github.io/kicker-interactive-manager/v1/news/3-liga.json \
             --provider api_sports \
             --optional-provider sportsmonks
 
@@ -87,6 +89,7 @@ jobs:
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_preseason_snapshot.py \
             --news public/v1/news/2-bundesliga.json \
             --mapping config/preseason/2-bundesliga.json \
+            --previous https://geozocco.github.io/kicker-interactive-manager/v1/preseason/2-bundesliga.json \
             --output public/v1/preseason/2-bundesliga.json
 
       - name: Refresh 3. Liga preseason evidence
@@ -96,6 +99,7 @@ jobs:
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_preseason_snapshot.py \
             --news public/v1/news/3-liga.json \
             --mapping config/preseason/3-liga.json \
+            --previous https://geozocco.github.io/kicker-interactive-manager/v1/preseason/3-liga.json \
             --output public/v1/preseason/3-liga.json
 
       - name: Respect API-Sports minute limit before player histories
@@ -133,6 +137,7 @@ jobs:
             --preseason public/v1/preseason/2-bundesliga.json \
             --history public/v1/history/2-bundesliga.json \
             --kicker-history public/v1/kicker-history/2-bundesliga.json \
+            --previous-quality https://geozocco.github.io/kicker-interactive-manager/v1/quality/2-bundesliga.json \
             --mapping config/quality/2-bundesliga.json \
             --output public/v1/quality/2-bundesliga.json
 
@@ -146,6 +151,7 @@ jobs:
             --preseason public/v1/preseason/3-liga.json \
             --history public/v1/history/3-liga.json \
             --kicker-history public/v1/kicker-history/3-liga.json \
+            --previous-quality https://geozocco.github.io/kicker-interactive-manager/v1/quality/3-liga.json \
             --mapping config/quality/3-liga.json \
             --output public/v1/quality/3-liga.json
 

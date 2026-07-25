@@ -150,7 +150,7 @@ Deutsche und ausländische Jugendwettbewerbe fließen ebenfalls ein. Neben diese
 
 Ein Nachwuchsspieler mit starkem unabhängigem Talentpfad und mindestens zwei positiven, ausreichend belegten Vorbereitungseinsätzen kann als **„High-upside pre-breakthrough“** auf die Geheimtipp-Liste gelangen. Das verbessert seine Chance auf einen günstigen Potenzialplatz, macht ihn aber weder zum sicheren Stammspieler noch zum verlässlichen Anker.
 
-API-Sports liefert darüber hinaus positionsabhängige Detailwerte wie Startelfeinsätze, Schüsse aufs Tor, Key Passes, Duelle, Defensivaktionen und Torwart-Saves. Diese wiederholbaren Aktionen wiegen stärker als die allgemeine API-Sports-Spielernote; die Provider-Note wird ausdrücklich nicht mit der Kicker-Note gleichgesetzt.
+API-Sports liefert darüber hinaus positionsabhängige Detailwerte wie Startelfeinsätze, Schüsse aufs Tor, Key Passes, Duelle, Defensivaktionen und Torwart-Saves. Diese wiederholbaren Aktionen wiegen stärker als die allgemeine API-Sports-Spielernote; die Provider-Note wird ausdrücklich nicht mit der Kicker-Note gleichgesetzt. Bereits zentral geprüfte API-Sports-Spielerhistorien werden bei späteren Aktualisierungen wiederverwendet. Dadurch verbrauchen unveränderte Spieler kein neues Tageskontingent; nur neue oder noch unvollständige Datensätze werden nachgeladen.
 
 Die eigentliche Bewertung und Kaderauswahl bleibt lokal. Deshalb können unterschiedliche Profile und persönliche Varianten weiterhin zu unterschiedlichen Mannschaften führen. Der zentrale Marktbestand ist eine gemeinsame Faktengrundlage und kein vorgegebener Ankerkern.
 
