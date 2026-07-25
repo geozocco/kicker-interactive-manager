@@ -22,6 +22,16 @@ from news_snapshot import SCHEMA_VERSION, canonical_sha256, validate_snapshot
 USER_AGENT = "kicker-interactive-manager-news-refresh/1"
 
 
+def is_api_sports_rate_limit(value: Any) -> bool:
+    details = str(value).casefold()
+    return (
+        "ratelimit" in details
+        or "rate limit" in details
+        or "too many requests" in details
+        or "http error 429" in details
+    )
+
+
 def iso_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
@@ -111,13 +121,10 @@ def api_sports_pages(
                 details = "; ".join(str(value) for value in errors)
             else:
                 details = str(errors)
-            normalized_details = details.casefold()
-            is_rate_limit = (
-                "ratelimit" in normalized_details
-                or "rate limit" in normalized_details
-                or "too many requests" in normalized_details
-            )
-            if is_rate_limit and attempt + 1 < rate_limit_attempts:
+            if (
+                is_api_sports_rate_limit(details)
+                and attempt + 1 < rate_limit_attempts
+            ):
                 time.sleep(rate_limit_delay * (attempt + 1))
                 continue
             raise RuntimeError(

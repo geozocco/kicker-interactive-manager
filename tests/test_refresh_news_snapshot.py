@@ -21,6 +21,23 @@ import refresh_news_snapshot as refresh
 
 
 class RefreshNewsSnapshotTests(unittest.TestCase):
+    def test_rate_limit_detection_covers_payload_and_http_forms(self) -> None:
+        self.assertTrue(
+            refresh.is_api_sports_rate_limit(
+                "rateLimit: Too many requests."
+            )
+        )
+        self.assertTrue(
+            refresh.is_api_sports_rate_limit(
+                "provider request failed: HTTP Error 429"
+            )
+        )
+        self.assertFalse(
+            refresh.is_api_sports_rate_limit(
+                "season: The Season field is required."
+            )
+        )
+
     @patch.object(refresh.time, "sleep")
     @patch.object(refresh, "request_json")
     def test_api_sports_rate_limit_payload_is_retried(

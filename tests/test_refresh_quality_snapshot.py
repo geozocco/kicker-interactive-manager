@@ -20,6 +20,32 @@ sys.path.insert(0, str(SCRIPT_DIRECTORY))
 import refresh_quality_snapshot as quality
 
 
+class QualityProviderRetryTests(unittest.TestCase):
+    @patch.object(quality.time, "sleep")
+    @patch.object(quality, "api_sports_pages")
+    def test_player_history_waits_a_full_window_after_http_429(
+        self,
+        api_sports_pages,
+        sleep,
+    ) -> None:
+        api_sports_pages.side_effect = [
+            RuntimeError(
+                "provider request failed: HTTP Error 429: Too Many Requests"
+            ),
+            [],
+        ]
+
+        result = quality.fetch_player_season(
+            123,
+            2025,
+            headers={"x-apisports-key": "test"},
+            request_delay=0.1,
+        )
+
+        self.assertEqual(0, result["appearances"])
+        self.assertEqual(65, sleep.call_args_list[0].args[0])
+
+
 def market_player(*, points: float = 100) -> dict:
     return {
         "id": "p1",

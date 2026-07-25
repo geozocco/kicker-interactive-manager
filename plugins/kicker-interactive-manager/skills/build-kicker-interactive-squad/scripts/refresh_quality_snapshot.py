@@ -41,7 +41,11 @@ from preseason_snapshot import (
     load_snapshot as load_preseason_snapshot,
 )
 from quality_snapshot import SCHEMA_VERSION, canonical_sha256, validate_snapshot
-from refresh_news_snapshot import api_sports_pages, optional_int
+from refresh_news_snapshot import (
+    api_sports_pages,
+    is_api_sports_rate_limit,
+    optional_int,
+)
 
 
 MODEL_VERSION = "multi-season-v6-goalkeeper-hierarchy"
@@ -676,7 +680,11 @@ def fetch_player_season(
             last_error = error
             if attempt == 2:
                 break
-            time.sleep(65 if "limit" in str(error).casefold() else 4 * (attempt + 1))
+            time.sleep(
+                65
+                if is_api_sports_rate_limit(error)
+                else 4 * (attempt + 1)
+            )
     raise RuntimeError(
         f"could not load API-Sports history for player {player_id}, "
         f"season {season}: {last_error}"
