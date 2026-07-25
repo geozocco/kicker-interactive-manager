@@ -1375,6 +1375,22 @@ class ReliableCorePolicyTests(unittest.TestCase):
             )
         )
 
+    def test_legacy_quality_merge_does_not_invent_empty_goalkeeper_outlook(
+        self,
+    ) -> None:
+        merged = optimizer.merge_annotations(
+            {},
+            {
+                "g1": {
+                    "position": "GOALKEEPER",
+                    "components": {"minutes": 80},
+                    "risks": {"rotation": 10},
+                }
+            },
+        )
+
+        self.assertNotIn("goalkeeper_outlook", merged["g1"])
+
     def test_reliable_anchor_classification_respects_mode_and_safety_gate(
         self,
     ) -> None:

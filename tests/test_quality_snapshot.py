@@ -100,11 +100,31 @@ def payload(now: datetime) -> dict:
 
 
 class QualitySnapshotTests(unittest.TestCase):
+    def test_previous_model_remains_readable_during_feed_rollout(self) -> None:
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        value = payload(now)
+        for rank in range(1, 4):
+            value["annotations"][f"legacy-g{rank}"] = annotation(
+                "GOALKEEPER"
+            )
+        value["requirements"]["candidate_count"] = 6
+        value["requirements"]["goalkeeper_block_count"] = 1
+        value["content_sha256"] = quality_snapshot.canonical_sha256(value)
+
+        loaded = quality_snapshot.validate_snapshot(value, now=now)
+        audit = quality_snapshot.snapshot_audit(loaded)
+
+        self.assertFalse(audit["goalkeeper_hierarchy_available"])
+        self.assertEqual(1, audit["goalkeeper_block_count"])
+
     def test_goalkeeper_requirement_counts_only_stable_hierarchy_blocks(
         self,
     ) -> None:
         now = datetime.now(timezone.utc).replace(microsecond=0)
         value = payload(now)
+        value["model_version"] = (
+            quality_snapshot.GOALKEEPER_HIERARCHY_MODEL
+        )
         for rank in range(1, 4):
             goalkeeper = annotation("GOALKEEPER")
             goalkeeper["goalkeeper_outlook"] = {

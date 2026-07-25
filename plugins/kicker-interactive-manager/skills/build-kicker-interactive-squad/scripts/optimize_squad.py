@@ -39,6 +39,7 @@ from market_snapshot import (
     snapshot_audit as market_snapshot_audit,
 )
 from quality_snapshot import (
+    GOALKEEPER_HIERARCHY_MODEL,
     QualitySnapshotError,
     load_snapshot as load_quality_snapshot,
     snapshot_audit as quality_snapshot_audit,
@@ -517,10 +518,7 @@ def annotation_is_complete(
             or proven_seasons < 2
         ):
             return False
-    if (
-        annotation.get("position") == "GOALKEEPER"
-        or "goalkeeper_outlook" in annotation
-    ) and not (
+    if "goalkeeper_outlook" in annotation and not (
         goalkeeper_outlook_is_complete(
             annotation.get("goalkeeper_outlook")
         )
@@ -555,7 +553,12 @@ def merge_annotations(
         for nested_key in ("components", "risks", "goalkeeper_outlook"):
             central_nested = current.get(nested_key, {})
             local_nested = local_value.get(nested_key, {})
-            if isinstance(central_nested, dict) and isinstance(local_nested, dict):
+            if (
+                nested_key in current or nested_key in local_value
+            ) and isinstance(central_nested, dict) and isinstance(
+                local_nested,
+                dict,
+            ):
                 combined[nested_key] = {
                     **central_nested,
                     **local_nested,
@@ -4256,7 +4259,11 @@ def main() -> int:
             raw_scores,
             count=args.slots["GOALKEEPER"],
             maintenance=args.maintenance,
-            require_hierarchy=not args.allow_unannotated,
+            require_hierarchy=(
+                not args.allow_unannotated
+                and quality_audit.get("model_version")
+                == GOALKEEPER_HIERARCHY_MODEL
+            ),
         )
         hard_exclusions.extend(goalkeeper_hierarchy_exclusions)
         annotated_goalkeeper_blocks = hierarchy_safe_goalkeeper_blocks

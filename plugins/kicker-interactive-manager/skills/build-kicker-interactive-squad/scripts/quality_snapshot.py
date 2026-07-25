@@ -15,7 +15,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 3
+GOALKEEPER_HIERARCHY_MODEL = "multi-season-v6-goalkeeper-hierarchy"
 COMPONENTS = {
     "confirmed_performance",
     "minutes",
@@ -228,6 +229,10 @@ def validate_snapshot(
     attacking_anchor_count = 0
     history_resolved_count = 0
     goalkeepers_by_club: dict[str, list[dict[str, Any]]] = {}
+    legacy_goalkeepers_by_club: dict[str, int] = {}
+    hierarchy_model = (
+        payload.get("model_version") == GOALKEEPER_HIERARCHY_MODEL
+    )
     for player_id, annotation in annotations.items():
         if not str(player_id).strip() or not isinstance(annotation, dict):
             raise QualitySnapshotError(
@@ -382,12 +387,16 @@ def validate_snapshot(
         if annotation.get("position") == "GOALKEEPER":
             club = str(annotation.get("club", "")).strip()
             if club:
-                goalkeepers_by_club.setdefault(club, []).append(
-                    _validate_goalkeeper_outlook(
-                        annotation.get("goalkeeper_outlook"),
-                        str(player_id),
-                    )
+                legacy_goalkeepers_by_club[club] = (
+                    legacy_goalkeepers_by_club.get(club, 0) + 1
                 )
+                if hierarchy_model or "goalkeeper_outlook" in annotation:
+                    goalkeepers_by_club.setdefault(club, []).append(
+                        _validate_goalkeeper_outlook(
+                            annotation.get("goalkeeper_outlook"),
+                            str(player_id),
+                        )
+                    )
 
     requirements = payload.get("requirements")
     if not isinstance(requirements, dict):
@@ -412,8 +421,13 @@ def validate_snapshot(
         "candidate_count": len(annotations),
         "anchor_count": anchor_count,
         "attacking_anchor_count": attacking_anchor_count,
-        "goalkeeper_block_count": stable_goalkeeper_block_count(
-            goalkeepers_by_club
+        "goalkeeper_block_count": (
+            stable_goalkeeper_block_count(goalkeepers_by_club)
+            if hierarchy_model
+            else sum(
+                count >= 3
+                for count in legacy_goalkeepers_by_club.values()
+            )
         ),
         "history_resolved_percent": round(
             100.0 * history_resolved_count / max(1, len(annotations))
@@ -549,21 +563,40 @@ def snapshot_audit(payload: dict[str, Any]) -> dict[str, Any]:
             annotation.get("position") in {"MIDFIELDER", "FORWARD"}
             for annotation in anchors
         ),
-        "goalkeeper_block_count": stable_goalkeeper_block_count(
-            {
-                club: [
-                    annotation["goalkeeper_outlook"]
-                    for annotation in annotations.values()
-                    if annotation.get("position") == "GOALKEEPER"
-                    and annotation.get("club") == club
-                ]
-                for club in {
+        "goalkeeper_block_count": (
+            stable_goalkeeper_block_count(
+                {
+                    club: [
+                        annotation["goalkeeper_outlook"]
+                        for annotation in annotations.values()
+                        if annotation.get("position") == "GOALKEEPER"
+                        and annotation.get("club") == club
+                    ]
+                    for club in {
+                        annotation.get("club")
+                        for annotation in annotations.values()
+                        if annotation.get("position") == "GOALKEEPER"
+                    }
+                    if club
+                }
+            )
+            if payload.get("model_version") == GOALKEEPER_HIERARCHY_MODEL
+            else len(
+                {
                     annotation.get("club")
                     for annotation in annotations.values()
                     if annotation.get("position") == "GOALKEEPER"
+                    and sum(
+                        candidate.get("position") == "GOALKEEPER"
+                        and candidate.get("club") == annotation.get("club")
+                        for candidate in annotations.values()
+                    )
+                    >= 3
                 }
-                if club
-            }
+            )
+        ),
+        "goalkeeper_hierarchy_available": (
+            payload.get("model_version") == GOALKEEPER_HIERARCHY_MODEL
         ),
         "history_resolved_count": sum(
             annotation["history_summary"]["mapping_status"]
