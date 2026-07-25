@@ -50,6 +50,16 @@ def annotation(position: str, *, anchor: bool = False) -> dict:
             "youth_adjusted_contributions": 8.0,
             "youth_score": 26.0,
         },
+        "api_sports_role_metrics": {
+            "latest_event_score": 72.0,
+            "multi_season_event_score": 70.0,
+            "provider_rating_score": 68.0,
+            "rating_weight_in_api_confirmation": 0.08,
+        },
+        "kicker_trend": {
+            "observation_count": 2,
+            "trend_score": 55.0,
+        },
         "evidence": [
             {
                 "claim": "Current role",
@@ -70,6 +80,7 @@ def payload(now: datetime) -> dict:
         "market_sha256": "market",
         "news_sha256": "news",
         "history_sha256": "history",
+        "kicker_history_sha256": "kicker-history",
         "model_version": "test-v1",
         "requirements": {
             "candidate_count": 3,

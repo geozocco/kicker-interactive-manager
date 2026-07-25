@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 COMPONENTS = {
     "confirmed_performance",
     "minutes",
@@ -114,6 +114,7 @@ def validate_snapshot(
         "market_sha256",
         "news_sha256",
         "history_sha256",
+        "kicker_history_sha256",
         "model_version",
     ):
         if not str(payload.get(field_name, "")).strip():
@@ -203,6 +204,54 @@ def validate_snapshot(
         if float(history_summary["youth_score"]) > 100:
             raise QualitySnapshotError(
                 f"quality history youth_score is invalid for {player_id}"
+            )
+        role_metrics = annotation.get("api_sports_role_metrics")
+        if not isinstance(role_metrics, dict):
+            raise QualitySnapshotError(
+                f"quality API-Sports role metrics are missing for {player_id}"
+            )
+        for field_name in (
+            "latest_event_score",
+            "multi_season_event_score",
+            "provider_rating_score",
+        ):
+            value = role_metrics.get(field_name)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not 0 <= float(value) <= 100
+            ):
+                raise QualitySnapshotError(
+                    f"quality API-Sports {field_name} is invalid for {player_id}"
+                )
+        rating_weight = role_metrics.get(
+            "rating_weight_in_api_confirmation"
+        )
+        if (
+            isinstance(rating_weight, bool)
+            or not isinstance(rating_weight, (int, float))
+            or not 0 <= float(rating_weight) <= 0.15
+        ):
+            raise QualitySnapshotError(
+                f"quality provider rating weight is invalid for {player_id}"
+            )
+        kicker_trend = annotation.get("kicker_trend")
+        if not isinstance(kicker_trend, dict):
+            raise QualitySnapshotError(
+                f"quality Kicker trend is missing for {player_id}"
+            )
+        observation_count = kicker_trend.get("observation_count")
+        trend_score = kicker_trend.get("trend_score")
+        if (
+            isinstance(observation_count, bool)
+            or not isinstance(observation_count, int)
+            or observation_count < 0
+            or isinstance(trend_score, bool)
+            or not isinstance(trend_score, (int, float))
+            or not 0 <= float(trend_score) <= 100
+        ):
+            raise QualitySnapshotError(
+                f"quality Kicker trend is invalid for {player_id}"
             )
         proven_seasons = annotation.get("proven_seasons")
         if (
@@ -375,6 +424,7 @@ def snapshot_audit(payload: dict[str, Any]) -> dict[str, Any]:
         "market_sha256": payload["market_sha256"],
         "news_sha256": payload["news_sha256"],
         "history_sha256": payload["history_sha256"],
+        "kicker_history_sha256": payload["kicker_history_sha256"],
         "model_version": payload["model_version"],
         "candidate_count": len(annotations),
         "anchor_count": len(anchors),

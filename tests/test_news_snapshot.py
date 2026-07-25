@@ -121,6 +121,23 @@ class SnapshotValidationTests(unittest.TestCase):
 
 
 class ConsensusTests(unittest.TestCase):
+    @patch.dict("os.environ", {}, clear=True)
+    def test_optional_sportsmonks_provider_never_blocks_primary_feed(self) -> None:
+        payload = refresh.build_snapshot(
+            {
+                "competition": "2. Bundesliga",
+                "season": "2026/27",
+                "players": {},
+            },
+            providers=[],
+            optional_providers=["sportsmonks"],
+            ttl_hours=18,
+        )
+        self.assertEqual(
+            "not_configured",
+            payload["providers"]["sportsmonks"]["status"],
+        )
+
     def test_rumour_never_auto_excludes(self) -> None:
         consensus = refresh.consensus_for(
             [

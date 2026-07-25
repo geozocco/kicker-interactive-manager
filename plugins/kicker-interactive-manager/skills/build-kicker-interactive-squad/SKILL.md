@@ -102,6 +102,8 @@ Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüf
 - Jugendhistorien aus deutschen und ausländischen Nachwuchswettbewerben als eigenes, wettbewerbsgewichtetes Potenzialsignal verwenden. Sie dürfen `upside` und die Aufnahme in den Geheimtipp-Pool erhöhen, aber niemals `proven_seasons`, `confirmed_performance` oder den Ankerstatus einer Seniorensaison ersetzen.
 - Vorjahresausreißer mit Regression, gegnerischer Anpassung und möglichem Rollenverlust belasten.
 - Mehrjährige Konstanz, Standards, Kapitänsrolle und trainerbestätigte Schlüsselrollen als wiederholbare Signale aufwerten.
+- API-Sports-Providernoten nur als kleines Hilfssignal verwenden. Positionsabhängige, wiederholbare Ereignisse wie Startelfquote, Schüsse aufs Tor, Key Passes, Duelle, Defensivaktionen, Saves und Scorer tragen stärker. Eine Provider-Note niemals als Kicker-Note ausgeben.
+- Den zentralen Kicker-Zeitverlauf für Preise, kumulierte Punkte und Notenschnitt einbeziehen. Eine einzelne Beobachtung bleibt neutral; erst mindestens zwei zeitlich getrennte Beobachtungen erzeugen ein begrenztes Formsignal. Kurzfristige Form darf eine mehrjährige Leistungsbasis ergänzen, aber nicht ersetzen.
 - Transfers als Rollenreset behandeln. Qualität des Spielers und Passung zum neuen Team getrennt von seiner alten Produktion bewerten.
 - Transfer-, Rotations- und Verletzungsrisiken aktuell recherchieren. Unsicherheit offen markieren, nicht erfinden.
 
@@ -151,7 +153,7 @@ Wettbewerb, Saison und vier Positionsargumente immer mit den zuvor von der sicht
 - Transfergefahr vor Saisonstart gesondert prüfen
 - `news_audit` muss frisch sein, zum Wettbewerb und zur Saison passen und darf bei ausgewählten Spielern weder fehlende Provider-Zuordnungen noch offene Konflikte enthalten
 - `market_audit` muss frisch sein, zum Wettbewerb und zur Saison passen und die vollständige zentrale Spielerliste ausweisen
-- `quality_audit` muss frisch sein, dieselbe Markt-, News- und Historien-Prüfsumme tragen, mindestens 75 Prozent eindeutig oder mit hoher Plausibilität zugeordnete Transfermarkt-Historien ausweisen und die Mindestwerte von 60 Kandidaten, 20 Ankern, 15 offensiven Ankern und sechs Torwartblöcken erreichen
+- `quality_audit` muss frisch sein, dieselbe Markt-, News-, Transfermarkt-Historien- und Kicker-Zeitreihen-Prüfsumme tragen, mindestens 75 Prozent eindeutig oder mit hoher Plausibilität zugeordnete Transfermarkt-Historien ausweisen und die Mindestwerte von 60 Kandidaten, 20 Ankern, 15 offensiven Ankern und sechs Torwartblöcken erreichen
 - Für `verlässlich` plus `gering` standardmäßig 11 bis 14 Kernspieler, wenige günstige direkte Vertreter und anschließend preiswerte einsatzfähige Ergänzungen bilden. Eine gleichmäßig teure Bank ist kein Qualitätsmerkmal und erschwert die Finanzierung von Ausnahmespielern.
 - Für `verlässlich` plus `gering` müssen mindestens 70 Prozent des gesamten Kaderwerts in der stärksten legalen Startelf liegen. Ein niedrigerer Wert ist ein Abbruchgrund: Bank verbilligen, nachgewiesene Scorer und Kreativspieler finanzieren und neu rechnen.
 - Variabilität darf einzelne Kernentscheidungen und günstige Ergänzungen verändern, aber nicht die Kaderarchitektur in 22 gleichwertige Alternativen auflösen.

@@ -15,15 +15,19 @@ https://geozocco.github.io/kicker-interactive-manager/v1/quality/2-bundesliga.js
 https://geozocco.github.io/kicker-interactive-manager/v1/quality/3-liga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/history/2-bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/history/3-liga.json
+https://geozocco.github.io/kicker-interactive-manager/v1/kicker-history/2-bundesliga.json
+https://geozocco.github.io/kicker-interactive-manager/v1/kicker-history/3-liga.json
 ```
 
-Der Workflow `.github/workflows/update-news-feed.yml` aktualisiert Markt-, News- und Qualitäts-Snapshots viermal täglich. Transfermarkt-Kaderzuordnungen werden dabei gegen den aktuellen Markt erneuert; teure Performance-Abrufe werden normalerweise sechs Tage wiederverwendet und anschließend zentral aktualisiert. Blockiert Transfermarkt einen GitHub-Runner, verwendet der Lauf die versionierte, zuvor eindeutig geprüfte Identitätsliste unter `config/history/identities/` sowie den komprimierten Performance-Stand unter `config/history/performance/`. Er markiert neue, noch nicht enthaltene Spieler als nicht zugeordnet und rät keine Identitäten oder Leistungen. Ein Probeabruf erkennt automatisch, wenn ein Live-Refresh wieder möglich ist. Die Qualitätskonfigurationen unter `config/quality/` verlangen je Liga mindestens 60 vollständig bewertete Kandidaten, 20 verlässliche Anker, 15 offensive Anker, sechs vollständige Torwartblöcke und mindestens 75 Prozent aufgelöste Transfermarkt-Historien. Spieler werden algorithmisch aus dem gesamten Markt ausgewählt; namentliche Beispiele oder frühere Nutzerprompts erhalten keinen Bonus.
+Der Workflow `.github/workflows/update-news-feed.yml` aktualisiert Markt-, News-, Kicker-Zeitreihen- und Qualitäts-Snapshots viermal täglich. Transfermarkt-Kaderzuordnungen werden dabei gegen den aktuellen Markt erneuert; teure Performance-Abrufe werden normalerweise sechs Tage wiederverwendet und anschließend zentral aktualisiert. Blockiert Transfermarkt einen GitHub-Runner, verwendet der Lauf die versionierte, zuvor eindeutig geprüfte Identitätsliste unter `config/history/identities/` sowie den komprimierten Performance-Stand unter `config/history/performance/`. Er markiert neue, noch nicht enthaltene Spieler als nicht zugeordnet und rät keine Identitäten oder Leistungen. Ein Probeabruf erkennt automatisch, wenn ein Live-Refresh wieder möglich ist. Die Qualitätskonfigurationen unter `config/quality/` verlangen je Liga mindestens 60 vollständig bewertete Kandidaten, 20 verlässliche Anker, 15 offensive Anker, sechs vollständige Torwartblöcke und mindestens 75 Prozent aufgelöste Transfermarkt-Historien. Spieler werden algorithmisch aus dem gesamten Markt ausgewählt; namentliche Beispiele oder frühere Nutzerprompts erhalten keinen Bonus.
 
 Jeder Kicker-Spieler steht im Historienbestand. Die Zuordnung trägt ausdrücklich `verified`, `probable`, `unmatched` oder `ambiguous`. Nur `verified` und vorsichtiger gewichtete `probable`-Zuordnungen wirken auf den Score. Unklare Identitäten und technisch nicht klassifizierte Wettbewerbe werden nicht negativ interpretiert und erhalten keinen erfundenen Leistungsfaktor.
 
 Die Wettbewerbsfaktoren unter `config/history/competition-strength.json` verwenden die Bundesliga als Referenz `1,00`, die 2. Bundesliga mit `0,80` und die 3. Liga mit `0,64`. Die österreichische Bundesliga und die Schweizer Super League stehen ebenfalls bei `0,64`: Für die 3. Liga sind sie vergleichbar, für die 2. Bundesliga bleiben sie ein wertvolles, aber unterklassiges Seniorensignal. Eine Spielzeit gilt nur dann als bestätigt, wenn genügend Ligaminuten auf vergleichbarem oder höherem Niveau vorliegen.
 
 Jugendwettbewerbe aus Deutschland und dem Ausland werden separat nach Nachwuchsniveau gewichtet. Minuten und Scorer ergeben einen `youth_score`, der nur die Potenzial- und Geheimtippbewertung verbessert. Jugendspiele erzeugen weder bestätigte Seniorenspielzeiten noch einen verlässlichen Anker. Pokal und Freundschaft bleiben ohne historischen Score. Die veröffentlichten Daten enthalten nur verdichtete Fakten und Quellenlinks, keine vollständigen Transfermarkt-Seiten.
+
+Der Kicker-Zeitreihenbestand speichert pro Tag höchstens eine Beobachtung je Spieler. Er baut ab der ersten Veröffentlichung fortlaufend Preis-, Punkte- und Notenverläufe auf; historische Werte vor diesem Startdatum werden nicht erfunden. Mindestens zwei zeitlich getrennte Beobachtungen sind nötig, bevor daraus ein begrenztes Formsignal entsteht. API-Sports ergänzt die Bewertung positionsabhängig um wiederholbare Ereignisse wie Startelfquote, Schüsse aufs Tor, Key Passes, Duelle, Defensivaktionen und Saves. Die API-Sports-Note bleibt ein kleines Hilfssignal und wird nicht als Kicker-Note behandelt.
 
 ## Sicherheitsvertrag
 
@@ -36,7 +40,7 @@ Das Snapshot nur verwenden, wenn:
 - Position und positiver Marktwert gültig sind,
 - die Anzahl unterschiedlicher Vereine exakt zur Konfiguration passt.
 - der Historienbestand jeden Spieler des aktuellen Markts mit einem expliziten Zuordnungsstatus enthält,
-- der Qualitätsbestand exakt zur Prüfsumme des aktuellen Markt-, News- und Historienbestands gehört,
+- der Qualitätsbestand exakt zur Prüfsumme des aktuellen Markt-, News-, Transfermarkt-Historien- und Kicker-Zeitreihenbestands gehört,
 - alle acht Qualitätskomponenten und fünf Risiken vollständig sind,
 - die ligaweiten Mindestzahlen für Kandidaten und Anker erreicht werden.
 
@@ -50,7 +54,7 @@ Für unterstützte Ligen lädt der Optimierer den Marktfeed anhand von Wettbewer
 <python-3-command> scripts/optimize_squad.py --competition "2. Bundesliga" --season "2026/27" --require-market-snapshot --require-quality-snapshot ...
 ```
 
-`market_audit` muss frisch sein. `quality_audit` muss mindestens 60 Kandidaten, 20 Anker, 15 offensive Anker, sechs Torwartblöcke und die geforderte Transfermarkt-Abdeckung ausweisen sowie dieselben Markt-, News- und Historien-Prüfsummen tragen.
+`market_audit` muss frisch sein. `quality_audit` muss mindestens 60 Kandidaten, 20 Anker, 15 offensive Anker, sechs Torwartblöcke und die geforderte Transfermarkt-Abdeckung ausweisen sowie dieselben Markt-, News-, Transfermarkt-Historien- und Kicker-Zeitreihen-Prüfsummen tragen.
 
 Der Qualitätsbestand liefert die zentralen Annotationen. Auf dem jeweiligen Rechner recherchierte Annotationen dürfen sie gezielt überschreiben; Kicker-ID, Verein, Position und Preis stammen weiterhin aus dem validierten Marktbestand.
 

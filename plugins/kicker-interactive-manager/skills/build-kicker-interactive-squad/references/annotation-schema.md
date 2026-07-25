@@ -53,6 +53,8 @@ Teilannotationen dürfen als vorläufige Arbeitsnotiz in einem Recherche- oder S
 
 - Nur Werte zwischen 0 und 100 verwenden.
 - `confirmed_performance` nicht mit Vorjahrespunkten gleichsetzen. Andere Ligen, mehrere Saisons und individuelle Rolle einbeziehen. Historische Transfermarkt-Minuten und Scorer nur mit dem im zentralen Historienbestand ausgewiesenen Wettbewerbsfaktor anrechnen.
+- Im zentralen Qualitätsbestand wiederholbare API-Sports-Ereignisse positionsabhängig bewerten. Die allgemeine Provider-Note bleibt mit höchstens 15 Prozent innerhalb der API-Bestätigung begrenzt und ist keine Kicker-Note.
+- Kicker-Preis-, Punkte- und Notenverläufe erst ab zwei zeitlich getrennten Beobachtungen als begrenztes Formsignal verwenden. Sie dürfen Mehrjahresleistung und Ligakontext ergänzen, aber nicht überschreiben.
 - `proven_seasons` zählt nur Spielzeiten mit belastbarer individueller Leistung auf vergleichbarem oder höherem Niveau. Eine frühere Torjägerkrone, mehrere zweistellige Scorersaisons oder jahrelang wiederholte Standards zählen auch dann, wenn die unmittelbar letzte Saison schwächer war. Produktion unterhalb des Zielniveaus erhöht weiterhin `upside` oder `value`, begründet aber allein keinen verlässlichen Anker.
 - Bei Neuzugängen `minutes`, `role`, `stability` und `unknown_role` neu bewerten.
 - Herausragende Jugendleistungen aus deutschen und ausländischen Nachwuchswettbewerben anhand des zentralen `youth_score` vor allem in `upside` erfassen. Den Sprung in den Profibereich über `minutes` und `unknown_role` begrenzen; Jugendproduktion darf weder eine bestätigte Seniorensaison noch einen Ankerstatus erzeugen.

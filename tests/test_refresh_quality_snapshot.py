@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -69,6 +70,26 @@ def api_history() -> list[dict]:
     ]
 
 
+def richer_api_history() -> list[dict]:
+    histories = api_history()
+    histories[0].update(
+        {
+            "shots_on": 42,
+            "key_passes": 36,
+            "passes_total": 850,
+            "pass_accuracy": 81,
+            "duels": 190,
+            "duels_won": 105,
+            "dribbles_attempted": 70,
+            "dribbles_successful": 39,
+            "tackles": 18,
+            "blocks": 2,
+            "interceptions": 9,
+        }
+    )
+    return histories
+
+
 def transfermarkt_history(
     *,
     proven_seasons: int,
@@ -98,6 +119,82 @@ def transfermarkt_history(
 
 
 class RefreshQualitySnapshotTests(unittest.TestCase):
+    @patch.object(quality.time, "sleep")
+    @patch.object(quality, "api_sports_pages")
+    def test_fetch_player_season_normalizes_rich_provider_statistics(
+        self,
+        api_sports_pages,
+        _sleep,
+    ) -> None:
+        api_sports_pages.return_value = [
+            {
+                "response": [
+                    {
+                        "player": {"age": 27},
+                        "statistics": [
+                            {
+                                "games": {
+                                    "appearences": 20,
+                                    "minutes": 1500,
+                                    "lineups": 17,
+                                    "rating": "7.1",
+                                },
+                                "substitutes": {
+                                    "in": 3,
+                                    "out": 7,
+                                    "bench": 5,
+                                },
+                                "shots": {"total": 40, "on": 19},
+                                "goals": {
+                                    "total": 8,
+                                    "conceded": 0,
+                                    "assists": 6,
+                                    "saves": 0,
+                                },
+                                "passes": {
+                                    "total": 700,
+                                    "key": 31,
+                                    "accuracy": "82%",
+                                },
+                                "tackles": {
+                                    "total": 24,
+                                    "blocks": 3,
+                                    "interceptions": 17,
+                                },
+                                "duels": {"total": 160, "won": 91},
+                                "dribbles": {
+                                    "attempts": 44,
+                                    "success": 26,
+                                },
+                                "fouls": {"drawn": 30, "committed": 18},
+                                "cards": {
+                                    "yellow": 4,
+                                    "yellowred": 1,
+                                    "red": 0,
+                                },
+                                "penalty": {
+                                    "scored": 2,
+                                    "missed": 1,
+                                    "saved": 0,
+                                },
+                            }
+                        ],
+                    }
+                ]
+            }
+        ]
+        result = quality.fetch_player_season(
+            123,
+            2025,
+            headers={"x-apisports-key": "not-a-real-key"},
+            request_delay=0,
+        )
+        self.assertEqual(31, result["key_passes"])
+        self.assertEqual(19, result["shots_on"])
+        self.assertEqual(41, result["tackles"] + result["interceptions"])
+        self.assertEqual(82.0, result["pass_accuracy"])
+        self.assertEqual(5, result["yellow_cards"])
+
     def test_reliable_anchor_requires_transfermarkt_target_level_history(self) -> None:
         annotation = quality.build_annotation(
             market_player(),
@@ -196,6 +293,78 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             },
         )
         self.assertGreater(youth_prospect, unresolved)
+
+    def test_role_events_reward_repeatable_actions_not_only_provider_rating(self) -> None:
+        rich = quality.build_annotation(
+            market_player(),
+            "news-1",
+            news_player(),
+            richer_api_history(),
+            transfermarkt_history(proven_seasons=3),
+            competition="2. Bundesliga",
+            points_pct=75,
+            price_pct=70,
+            generated_at="2026-07-24T12:00:00Z",
+        )
+        plain_history = api_history()
+        plain_history[0]["rating"] = 8.8
+        rating_only = quality.build_annotation(
+            market_player(),
+            "news-1",
+            news_player(),
+            plain_history,
+            transfermarkt_history(proven_seasons=3),
+            competition="2. Bundesliga",
+            points_pct=75,
+            price_pct=70,
+            generated_at="2026-07-24T12:00:00Z",
+        )
+        self.assertGreater(
+            rich["api_sports_role_metrics"]["latest_event_score"],
+            rating_only["api_sports_role_metrics"]["latest_event_score"],
+        )
+        self.assertEqual(
+            0.08,
+            rich["api_sports_role_metrics"][
+                "rating_weight_in_api_confirmation"
+            ],
+        )
+
+    def test_kicker_longitudinal_form_is_bounded_and_modestly_influential(self) -> None:
+        trend = {
+            "observations": [
+                {
+                    "observed_on": "2026-08-01",
+                    "market_value": 800000,
+                    "points": 0,
+                    "average_grade": 0,
+                },
+                {
+                    "observed_on": "2026-08-15",
+                    "market_value": 900000,
+                    "points": 24,
+                    "average_grade": 2.5,
+                },
+            ]
+        }
+        annotation = quality.build_annotation(
+            market_player(),
+            "news-1",
+            news_player(),
+            richer_api_history(),
+            transfermarkt_history(proven_seasons=3),
+            trend,
+            competition="2. Bundesliga",
+            points_pct=75,
+            price_pct=70,
+            generated_at="2026-08-15T12:00:00Z",
+        )
+        self.assertEqual(2, annotation["kicker_trend"]["observation_count"])
+        self.assertGreater(annotation["kicker_trend"]["trend_score"], 50)
+        self.assertLessEqual(
+            annotation["components"]["confirmed_performance"],
+            100,
+        )
 
 
 if __name__ == "__main__":

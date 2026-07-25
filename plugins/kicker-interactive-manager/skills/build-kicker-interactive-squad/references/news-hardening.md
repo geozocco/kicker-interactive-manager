@@ -4,7 +4,7 @@
 
 Die News-Prüfung ist hybrid:
 
-1. Ein zentraler Lauf liest API-Sports viermal täglich mit dem geheimen Provider-Schlüssel aus. SportsMonks kann später als zweiter Provider ergänzt werden.
+1. Ein zentraler Lauf liest API-Sports viermal täglich mit dem geheimen Provider-Schlüssel aus. Sportmonks ist als optionale unabhängige Zweitquelle zugeschaltet, sobald Token sowie verifizierte Team- und Spielerzuordnungen vorliegen.
 2. Er veröffentlicht ausschließlich ein normalisiertes Snapshot ohne Schlüssel und ohne vollständige Rohantworten.
 3. Jeder Optimierungslauf lädt dieses Snapshot, prüft Alter, Wettbewerb, Saison, Prüfsumme, Spielerzuordnung und Provider-Konflikte.
 4. Offizielle Vereins-, Liga- und Transfermeldungen bleiben der gezielte Fallback für fehlende Zuordnungen, Konflikte und besonders folgenreiche Meldungen.
@@ -25,7 +25,7 @@ Provider-Schlüssel niemals in das Plugin, in Annotationen, in das Snapshot, in 
 
 ## Zentraler GitHub-Aktualisierungslauf
 
-Der Workflow `.github/workflows/update-news-feed.yml` läuft um 02:17, 08:17, 14:17 und 20:17 UTC sowie manuell. Der API-Sports-Schlüssel liegt ausschließlich als Repository-Secret `API_SPORTS_KEY` vor. GitHub Pages veröffentlicht danach:
+Der Workflow `.github/workflows/update-news-feed.yml` läuft um 02:17, 08:17, 14:17 und 20:17 UTC sowie manuell. Der API-Sports-Schlüssel liegt ausschließlich als Repository-Secret `API_SPORTS_KEY` vor. `SPORTMONKS_API_TOKEN` ist optional: Fehlt er, veröffentlicht das Provider-Audit `not_configured`; fehlen bei vorhandenem Token noch verifizierte Zuordnungen, erscheint `configuration_required`. Beides blockiert den bewährten API-Sports-Lauf nicht. GitHub Pages veröffentlicht danach:
 
 ```text
 https://geozocco.github.io/kicker-interactive-manager/v1/news/2-bundesliga.json
@@ -75,7 +75,7 @@ Eine optionale Mapping-Datei kann einzelne Kicker-IDs ausdrücklich mit Provider
 Die Liga- und Team-IDs sind providerabhängig und müssen vor dem ersten Lauf gegen den aktuellen Wettbewerb geprüft werden. Bei `auto_discover_players: true` setzt das Skript `competition_team_ids_complete` nur nach erfolgreicher Prüfung der erwarteten Teamzahl. Ohne automatische Erkennung darf das Feld erst dann auf `true` gesetzt werden, wenn wirklich alle aktuellen Vereine enthalten sind. Nur dann darf ein Zielverein außerhalb dieser Menge als bestätigter Abgang aus dem Wettbewerb gewertet werden. Ein Wechsel innerhalb der Ligamenge erhöht dagegen lediglich Rollen- und Transferrisiko. Anschließend zentral ausführen:
 
 ```text
-SPORTMONKS_API_TOKEN=<secret> API_SPORTS_KEY=<secret> <python-3-command> scripts/refresh_news_snapshot.py --mapping <mapping-json> --output <snapshot-directory>/2-bundesliga.json
+SPORTMONKS_API_TOKEN=<secret> API_SPORTS_KEY=<secret> <python-3-command> scripts/refresh_news_snapshot.py --mapping <mapping-json> --output <snapshot-directory>/2-bundesliga.json --provider api_sports --optional-provider sportsmonks
 ```
 
 Der Lauf ist für mehrere Aktualisierungen pro Tag gedacht. Er verwendet begrenzte Wiederholungen mit Backoff, vollständige Pagination, API-Sports-Batches bis 20 Spieler, vereinsweise statt spielerweise Transferabfragen, bei optionalem SportsMonks-Betrieb nur Gerüchte der letzten höchstens 31 Tage, providerseitige Aktualitätsdaten und atomaren Dateiaustausch. Nach einem fehlgeschlagenen Refresh bleibt im selbst gehosteten Modus die vorige Datei erhalten, läuft aber regulär ab und wird danach vom Optimierer abgelehnt; GitHub Pages veröffentlicht bei einem fehlgeschlagenen Workflow gar kein neues Artefakt.

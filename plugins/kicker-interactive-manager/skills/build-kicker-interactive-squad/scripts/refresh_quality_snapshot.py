@@ -24,6 +24,10 @@ from market_snapshot import (
     canonical_sha256 as market_sha256,
     load_snapshot as load_market_snapshot,
 )
+from kicker_history_snapshot import (
+    canonical_sha256 as kicker_history_sha256,
+    load_snapshot as load_kicker_history_snapshot,
+)
 from history_snapshot import (
     canonical_sha256 as history_sha256,
     load_snapshot as load_history_snapshot,
@@ -36,7 +40,7 @@ from quality_snapshot import SCHEMA_VERSION, canonical_sha256, validate_snapshot
 from refresh_news_snapshot import api_sports_pages, optional_int
 
 
-MODEL_VERSION = "multi-season-v3-youth-foreign-context"
+MODEL_VERSION = "multi-season-v4-role-events-kicker-trends"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
 
 
@@ -305,9 +309,46 @@ def select_candidates(
 
 def numeric(value: Any) -> float:
     try:
-        return float(value or 0)
+        return float(str(value or 0).strip().rstrip("%"))
     except (TypeError, ValueError):
         return 0.0
+
+
+def empty_season_stats(season: int, age: int | None = None) -> dict[str, Any]:
+    return {
+        "season": season,
+        "appearances": 0,
+        "minutes": 0,
+        "lineups": 0,
+        "substitutions_in": 0,
+        "substitutions_out": 0,
+        "bench": 0,
+        "rating": 0.0,
+        "goals": 0,
+        "goals_conceded": 0,
+        "assists": 0,
+        "saves": 0,
+        "shots_total": 0,
+        "shots_on": 0,
+        "passes_total": 0,
+        "key_passes": 0,
+        "pass_accuracy": 0.0,
+        "tackles": 0,
+        "blocks": 0,
+        "interceptions": 0,
+        "duels": 0,
+        "duels_won": 0,
+        "dribbles_attempted": 0,
+        "dribbles_successful": 0,
+        "fouls_drawn": 0,
+        "fouls_committed": 0,
+        "yellow_cards": 0,
+        "red_cards": 0,
+        "penalties_scored": 0,
+        "penalties_missed": 0,
+        "penalties_saved": 0,
+        "age": age,
+    }
 
 
 def fetch_player_season(
@@ -335,47 +376,107 @@ def fetch_player_season(
                 if isinstance(item, dict)
             ]
             if not response:
-                return {
-                    "season": season,
-                    "appearances": 0,
-                    "minutes": 0,
-                    "lineups": 0,
-                    "rating": 0.0,
-                    "goals": 0,
-                    "assists": 0,
-                    "age": None,
-                }
+                return empty_season_stats(season)
             player = response[0].get("player", {})
-            totals = {
-                "season": season,
-                "appearances": 0,
-                "minutes": 0,
-                "lineups": 0,
+            totals = empty_season_stats(
+                season,
+                optional_int(player.get("age")),
+            )
+            totals.update({
                 "rating_weighted": 0.0,
                 "rating_minutes": 0,
-                "goals": 0,
-                "assists": 0,
-                "age": optional_int(player.get("age")),
-            }
+                "pass_accuracy_weighted": 0.0,
+                "pass_accuracy_attempts": 0,
+            })
             for item in response:
                 for statistics in item.get("statistics", []):
                     games = statistics.get("games", {})
                     goals = statistics.get("goals", {})
+                    substitutes = statistics.get("substitutes", {})
+                    shots = statistics.get("shots", {})
+                    passes = statistics.get("passes", {})
+                    tackles = statistics.get("tackles", {})
+                    duels = statistics.get("duels", {})
+                    dribbles = statistics.get("dribbles", {})
+                    fouls = statistics.get("fouls", {})
+                    cards = statistics.get("cards", {})
+                    penalty = statistics.get("penalty", {})
                     appearances = int(numeric(games.get("appearences")))
                     minutes = int(numeric(games.get("minutes")))
                     rating = numeric(games.get("rating"))
+                    pass_total = int(numeric(passes.get("total")))
+                    pass_accuracy = numeric(passes.get("accuracy"))
                     totals["appearances"] += appearances
                     totals["minutes"] += minutes
                     totals["lineups"] += int(numeric(games.get("lineups")))
+                    totals["substitutions_in"] += int(
+                        numeric(substitutes.get("in"))
+                    )
+                    totals["substitutions_out"] += int(
+                        numeric(substitutes.get("out"))
+                    )
+                    totals["bench"] += int(numeric(substitutes.get("bench")))
                     totals["goals"] += int(numeric(goals.get("total")))
+                    totals["goals_conceded"] += int(
+                        numeric(goals.get("conceded"))
+                    )
                     totals["assists"] += int(numeric(goals.get("assists")))
+                    totals["saves"] += int(numeric(goals.get("saves")))
+                    totals["shots_total"] += int(
+                        numeric(shots.get("total"))
+                    )
+                    totals["shots_on"] += int(numeric(shots.get("on")))
+                    totals["passes_total"] += pass_total
+                    totals["key_passes"] += int(numeric(passes.get("key")))
+                    totals["tackles"] += int(numeric(tackles.get("total")))
+                    totals["blocks"] += int(numeric(tackles.get("blocks")))
+                    totals["interceptions"] += int(
+                        numeric(tackles.get("interceptions"))
+                    )
+                    totals["duels"] += int(numeric(duels.get("total")))
+                    totals["duels_won"] += int(numeric(duels.get("won")))
+                    totals["dribbles_attempted"] += int(
+                        numeric(dribbles.get("attempts"))
+                    )
+                    totals["dribbles_successful"] += int(
+                        numeric(dribbles.get("success"))
+                    )
+                    totals["fouls_drawn"] += int(
+                        numeric(fouls.get("drawn"))
+                    )
+                    totals["fouls_committed"] += int(
+                        numeric(fouls.get("committed"))
+                    )
+                    totals["yellow_cards"] += int(
+                        numeric(cards.get("yellow"))
+                    ) + int(numeric(cards.get("yellowred")))
+                    totals["red_cards"] += int(numeric(cards.get("red")))
+                    totals["penalties_scored"] += int(
+                        numeric(penalty.get("scored"))
+                    )
+                    totals["penalties_missed"] += int(
+                        numeric(penalty.get("missed"))
+                    )
+                    totals["penalties_saved"] += int(
+                        numeric(penalty.get("saved"))
+                    )
                     if rating > 0:
                         weight = max(1, minutes)
                         totals["rating_weighted"] += rating * weight
                         totals["rating_minutes"] += weight
+                    if pass_accuracy > 0 and pass_total > 0:
+                        totals["pass_accuracy_weighted"] += (
+                            pass_accuracy * pass_total
+                        )
+                        totals["pass_accuracy_attempts"] += pass_total
             totals["rating"] = round(
                 totals.pop("rating_weighted")
                 / max(1, totals.pop("rating_minutes")),
+                2,
+            )
+            totals["pass_accuracy"] = round(
+                totals.pop("pass_accuracy_weighted")
+                / max(1, totals.pop("pass_accuracy_attempts")),
                 2,
             )
             return totals
@@ -406,12 +507,128 @@ def season_is_proven(position: str, stats: dict[str, Any]) -> bool:
     )
 
 
+def per_90(stats: dict[str, Any], field_name: str) -> float:
+    return 90.0 * numeric(stats.get(field_name)) / max(
+        1.0,
+        numeric(stats.get("minutes")),
+    )
+
+
+def event_role_score(position: str, stats: dict[str, Any]) -> float:
+    """Score repeatable on-ball/off-ball actions without treating ratings as truth."""
+
+    duel_win_rate = (
+        100.0
+        * numeric(stats.get("duels_won"))
+        / max(1.0, numeric(stats.get("duels")))
+    )
+    dribble_success_rate = (
+        100.0
+        * numeric(stats.get("dribbles_successful"))
+        / max(1.0, numeric(stats.get("dribbles_attempted")))
+    )
+    contributions_per_90 = per_90(stats, "goals") + per_90(
+        stats,
+        "assists",
+    )
+    defensive_actions_per_90 = sum(
+        per_90(stats, field_name)
+        for field_name in ("tackles", "blocks", "interceptions")
+    )
+    if position == "GOALKEEPER":
+        return clamp(
+            48
+            + 6.0 * per_90(stats, "saves")
+            - 7.0 * per_90(stats, "goals_conceded")
+            + 4.0 * numeric(stats.get("penalties_saved"))
+        )
+    if position == "DEFENDER":
+        return clamp(
+            38
+            + 6.0 * defensive_actions_per_90
+            + 0.18 * duel_win_rate
+            + 5.0 * per_90(stats, "key_passes")
+        )
+    if position == "MIDFIELDER":
+        return clamp(
+            36
+            + 11.0 * per_90(stats, "key_passes")
+            + 18.0 * contributions_per_90
+            + 0.10 * dribble_success_rate
+            + 2.5 * defensive_actions_per_90
+        )
+    return clamp(
+        34
+        + 35.0 * per_90(stats, "goals")
+        + 20.0 * per_90(stats, "assists")
+        + 7.0 * per_90(stats, "shots_on")
+        + 5.0 * per_90(stats, "key_passes")
+    )
+
+
+def kicker_trend_summary(
+    player: dict[str, Any] | None,
+) -> dict[str, Any]:
+    observations = list((player or {}).get("observations", []))
+    summary = {
+        "observation_count": len(observations),
+        "first_observed_on": None,
+        "last_observed_on": None,
+        "points_delta": 0.0,
+        "market_value_delta": 0,
+        "average_grade_delta": 0.0,
+        "trend_score": 50.0,
+    }
+    if not observations:
+        return summary
+    first = observations[0]
+    last = observations[-1]
+    summary.update(
+        {
+            "first_observed_on": first["observed_on"],
+            "last_observed_on": last["observed_on"],
+            "points_delta": round(
+                numeric(last.get("points"))
+                - numeric(first.get("points")),
+                2,
+            ),
+            "market_value_delta": int(last["market_value"])
+            - int(first["market_value"]),
+            "average_grade_delta": round(
+                numeric(last.get("average_grade"))
+                - numeric(first.get("average_grade")),
+                2,
+            ),
+        }
+    )
+    if len(observations) < 2:
+        return summary
+    first_date = datetime.strptime(first["observed_on"], "%Y-%m-%d")
+    last_date = datetime.strptime(last["observed_on"], "%Y-%m-%d")
+    weeks = max(1.0, (last_date - first_date).days / 7)
+    points_per_week = float(summary["points_delta"]) / weeks
+    price_change_percent = (
+        100.0
+        * int(summary["market_value_delta"])
+        / max(1, int(first["market_value"]))
+    )
+    grade_improvement = -float(summary["average_grade_delta"])
+    summary["trend_score"] = clamp(
+        50
+        + 1.8 * points_per_week
+        + 0.12 * price_change_percent
+        + 8.0 * grade_improvement
+    )
+    return summary
+
+
 def build_annotation(
     market_player: dict[str, Any],
     news_id: str,
     news_player: dict[str, Any],
     histories: list[dict[str, Any]],
     history_player: dict[str, Any],
+    kicker_history_player: dict[str, Any] | None = None,
     *,
     competition: str,
     points_pct: float,
@@ -439,11 +656,25 @@ def build_annotation(
         if ratings
         else 45.0
     )
+    latest_event_score = event_role_score(position, latest)
+    career_event_scores = [
+        event_role_score(position, stats)
+        for stats in histories
+        if numeric(stats.get("minutes")) >= 180
+    ]
+    event_score = (
+        sum(career_event_scores) / len(career_event_scores)
+        if career_event_scores
+        else latest_event_score
+    )
+    trend_summary = kicker_trend_summary(kicker_history_player)
+    trend_score = float(trend_summary["trend_score"])
     api_confirmed = clamp(
         30
         + 18 * api_proven_seasons
         + 0.20 * points_pct
-        + 0.16 * rating_score
+        + 0.08 * rating_score
+        + 0.18 * event_score
         + min(12, career_appearances / 5)
     )
     api_minutes = clamp(
@@ -455,6 +686,7 @@ def build_annotation(
         48
         + min(22, numeric(latest.get("lineups")) * 1.4)
         + min(16, contributions * (1.5 if position in {"MIDFIELDER", "FORWARD"} else 0.5))
+        + 0.18 * (event_score - 50)
     )
     history_mapping = history_player.get(
         "mapping",
@@ -506,6 +738,8 @@ def build_annotation(
         minutes = api_minutes
         role = api_role
         proven_seasons = api_proven_seasons
+    confirmed = clamp(confirmed + 0.08 * (trend_score - 50))
+    role = clamp(role + 0.10 * (trend_score - 50))
     transfer_risk = clamp(consensus.get("transfer", 0), 0)
     injury_risk = clamp(consensus.get("injury", 0), 0)
     rotation_risk = clamp(consensus.get("rotation", 0), 0)
@@ -515,6 +749,7 @@ def build_annotation(
         27,
     )
     stability = clamp(82 - 0.55 * transfer_risk - 0.25 * rotation_risk)
+    stability = clamp(stability + 0.08 * (trend_score - 50))
     fitness = clamp(min(fitness_cap, 92 - 0.58 * injury_risk))
     base_upside = clamp(
         78 - max(0, age - 20) * 2.1 + (100 - points_pct) * 0.12
@@ -528,6 +763,7 @@ def build_annotation(
         0.42 * (100 - price_pct)
         + 0.32 * confirmed
         + 0.26 * points_pct
+        + 0.08 * (trend_score - 50)
     )
     risks = {
         "transfer": transfer_risk,
@@ -541,7 +777,7 @@ def build_annotation(
         "minutes": minutes,
         "role": role,
         "stability": stability,
-        "context": 65.0,
+        "context": clamp(65 + 0.18 * (trend_score - 50)),
         "fitness": fitness,
         "upside": upside,
         "value": value,
@@ -655,6 +891,13 @@ def build_annotation(
         "evidence": evidence,
         "provider_news_id": news_id,
         "api_sports_history": histories,
+        "api_sports_role_metrics": {
+            "latest_event_score": round(latest_event_score, 2),
+            "multi_season_event_score": round(event_score, 2),
+            "provider_rating_score": round(rating_score, 2),
+            "rating_weight_in_api_confirmation": 0.08,
+        },
+        "kicker_trend": trend_summary,
         "history_summary": history_summary,
     }
 
@@ -663,6 +906,7 @@ def generate_snapshot(
     market_payload: dict[str, Any],
     news_payload: dict[str, Any],
     history_payload: dict[str, Any],
+    kicker_history_payload: dict[str, Any],
     config: dict[str, Any],
     *,
     token: str,
@@ -677,8 +921,14 @@ def generate_snapshot(
         raise RuntimeError("market and history competition do not match")
     if market_payload["season"] != history_payload["season"]:
         raise RuntimeError("market and history season do not match")
+    if market_payload["competition"] != kicker_history_payload["competition"]:
+        raise RuntimeError("market and kicker history competition do not match")
+    if market_payload["season"] != kicker_history_payload["season"]:
+        raise RuntimeError("market and kicker history season do not match")
     if market_sha256(market_payload) != history_payload["market_sha256"]:
         raise RuntimeError("history snapshot does not belong to the market")
+    if market_sha256(market_payload) != kicker_history_payload["market_sha256"]:
+        raise RuntimeError("kicker history does not belong to the market")
     quotas = {
         position: int(config["candidate_quotas"][position])
         for position in POSITIONS
@@ -753,6 +1003,9 @@ def generate_snapshot(
                     "career": {},
                 },
             ),
+            kicker_history_payload["players"].get(
+                str(market_player["id"])
+            ),
             competition=str(market_payload["competition"]),
             points_pct=percentile(
                 float(market_player.get("points", 0.0)),
@@ -791,6 +1044,9 @@ def generate_snapshot(
         "market_sha256": market_sha256(market_payload),
         "news_sha256": news_sha256(news_payload),
         "history_sha256": history_sha256(history_payload),
+        "kicker_history_sha256": kicker_history_sha256(
+            kicker_history_payload
+        ),
         "model_version": MODEL_VERSION,
         "requirements": {
             "candidate_count": int(config["minimum_candidates"]),
@@ -814,6 +1070,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--market", required=True)
     parser.add_argument("--news", required=True)
     parser.add_argument("--history", required=True)
+    parser.add_argument("--kicker-history", required=True)
     parser.add_argument("--mapping", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--ttl-hours", type=int, default=18)
@@ -831,10 +1088,14 @@ def main() -> int:
     market_payload = load_market_snapshot(args.market)
     news_payload = load_news_snapshot(args.news)
     history_payload = load_history_snapshot(args.history)
+    kicker_history_payload = load_kicker_history_snapshot(
+        args.kicker_history
+    )
     payload = generate_snapshot(
         market_payload,
         news_payload,
         history_payload,
+        kicker_history_payload,
         config,
         token=token,
         request_delay=args.request_delay,

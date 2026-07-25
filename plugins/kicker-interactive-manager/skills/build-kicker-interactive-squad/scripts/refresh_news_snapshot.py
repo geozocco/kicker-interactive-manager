@@ -800,16 +800,28 @@ def build_snapshot(
     config: dict[str, Any],
     *,
     providers: list[str],
+    optional_providers: list[str] | None = None,
     ttl_hours: int,
 ) -> dict[str, Any]:
     observed_at = iso_now()
     runtime_config = copy.deepcopy(config)
     all_signals: dict[str, list[dict[str, Any]]] = defaultdict(list)
     provider_audit: dict[str, Any] = {}
-    for provider in providers:
+    optional_provider_set = set(optional_providers or [])
+    requested_providers = list(
+        dict.fromkeys([*providers, *(optional_providers or [])])
+    )
+    for provider in requested_providers:
         if provider == "api_sports":
             token = os.environ.get("API_SPORTS_KEY", "").strip()
             if not token:
+                if provider in optional_provider_set:
+                    provider_audit[provider] = {
+                        "status": "not_configured",
+                        "records": 0,
+                        "requests": 0,
+                    }
+                    continue
                 raise RuntimeError("API_SPORTS_KEY is required")
             runtime_config, roster_audit = discover_api_sports_roster(
                 runtime_config,
@@ -824,7 +836,34 @@ def build_snapshot(
         elif provider == "sportsmonks":
             token = os.environ.get("SPORTMONKS_API_TOKEN", "").strip()
             if not token:
+                if provider in optional_provider_set:
+                    provider_audit[provider] = {
+                        "status": "not_configured",
+                        "records": 0,
+                        "requests": 0,
+                    }
+                    continue
                 raise RuntimeError("SPORTMONKS_API_TOKEN is required")
+            sportsmonks = runtime_config.get("sportsmonks", {})
+            player_map = provider_id_map(runtime_config, "sportsmonks")
+            team_ids, _ = competition_team_ids(
+                runtime_config,
+                "sportsmonks",
+            )
+            if not sportsmonks or not player_map or not team_ids:
+                if provider in optional_provider_set:
+                    provider_audit[provider] = {
+                        "status": "configuration_required",
+                        "records": 0,
+                        "requests": 0,
+                        "detail": (
+                            "sportsmonks team and player mappings are required"
+                        ),
+                    }
+                    continue
+                raise RuntimeError(
+                    "Sportsmonks requires team and player mappings"
+                )
             signals, audit = sportsmonks_signals(
                 runtime_config,
                 token,
@@ -899,12 +938,18 @@ def parse_args() -> argparse.Namespace:
         choices=("api_sports", "sportsmonks"),
         dest="providers",
     )
+    parser.add_argument(
+        "--optional-provider",
+        action="append",
+        choices=("api_sports", "sportsmonks"),
+        dest="optional_providers",
+    )
     parser.add_argument("--ttl-hours", type=int, default=18)
     args = parser.parse_args()
     if args.ttl_hours < 1 or args.ttl_hours > 72:
         parser.error("--ttl-hours must be between 1 and 72")
     if not args.providers:
-        args.providers = ["api_sports", "sportsmonks"]
+        args.providers = ["api_sports"]
     return args
 
 
@@ -935,6 +980,9 @@ def main() -> int:
     payload = build_snapshot(
         config,
         providers=list(dict.fromkeys(args.providers)),
+        optional_providers=list(
+            dict.fromkeys(args.optional_providers or [])
+        ),
         ttl_hours=args.ttl_hours,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
