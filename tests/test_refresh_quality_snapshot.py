@@ -118,6 +118,71 @@ def transfermarkt_history(
     }
 
 
+def exceptional_goalkeeper_history() -> dict:
+    return {
+        "mapping": {
+            "status": "verified",
+            "confidence": "high",
+            "transfermarkt_player_id": 1009438,
+            "profile_url": (
+                "https://www.transfermarkt.de/florian-hellstern/"
+                "profil/spieler/1009438"
+            ),
+        },
+        "career": {
+            "proven_seasons": 0,
+            "confirmed_score": 28.12,
+            "recent_minutes_score": 69.04,
+            "role_score": 90.0,
+            "comparable_minutes": 0.0,
+            "level_adjusted_minutes": 1872.0,
+            "youth_adjusted_minutes": 8845.0,
+            "youth_adjusted_contributions": 0.0,
+            "youth_score": 55.0,
+        },
+        "seasons": [
+            {
+                "season": 2025,
+                "competitions": [
+                    {
+                        "competition_id": "L3",
+                        "label": "3. Liga",
+                        "kind": "domestic_league",
+                        "strength_factor": 0.64,
+                        "minutes": 2340,
+                    },
+                    {
+                        "competition_id": "U19Q",
+                        "label": "U19-Nationalmannschaft",
+                        "kind": "youth",
+                        "strength_factor": 0.55,
+                        "minutes": 630,
+                    },
+                ],
+            },
+            {
+                "season": 2024,
+                "competitions": [
+                    {
+                        "competition_id": "U18",
+                        "label": "U18-Nationalmannschaft",
+                        "kind": "youth",
+                        "strength_factor": 0.52,
+                        "minutes": 360,
+                    },
+                    {
+                        "competition_id": "19YL",
+                        "label": "UEFA Youth League",
+                        "kind": "youth",
+                        "strength_factor": 0.48,
+                        "minutes": 450,
+                    },
+                ],
+            },
+        ],
+    }
+
+
 class RefreshQualitySnapshotTests(unittest.TestCase):
     @patch.object(quality.time, "sleep")
     @patch.object(quality, "api_sports_pages")
@@ -293,6 +358,86 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             },
         )
         self.assertGreater(youth_prospect, unresolved)
+
+    def test_exceptional_talent_uses_age_adjusted_senior_and_youth_pathway(self) -> None:
+        profile = quality.youth_talent_profile(
+            exceptional_goalkeeper_history(),
+            18,
+        )
+        self.assertEqual("exceptional", profile["talent_tier"])
+        self.assertEqual("exceptional_early", profile["breakthrough_phase"])
+        self.assertGreaterEqual(profile["talent_score"], 80)
+        self.assertGreaterEqual(profile["early_senior_weighted_minutes"], 3000)
+        self.assertEqual([18, 19], profile["national_team_levels"])
+
+    def test_young_goalkeeper_price_is_only_a_confirming_talent_signal(self) -> None:
+        goalkeeper = {
+            **market_player(points=0),
+            "position": "GOALKEEPER",
+            "market_value": 800000,
+        }
+        points = {"GOALKEEPER": [0, 20, 60, 100]}
+        prices = {"GOALKEEPER": [100000, 300000, 500000, 800000]}
+        exceptional = quality.candidate_rank(
+            goalkeeper,
+            points,
+            prices,
+            exceptional_goalkeeper_history(),
+            age=18,
+        )
+        price_only = quality.candidate_rank(
+            goalkeeper,
+            points,
+            prices,
+            {
+                "mapping": {"status": "verified"},
+                "career": {
+                    "confirmed_score": 0,
+                    "youth_score": 0,
+                },
+            },
+            age=18,
+        )
+        self.assertGreater(exceptional, price_only)
+
+    def test_talent_evidence_raises_readiness_but_never_creates_anchor(self) -> None:
+        goalkeeper = {
+            **market_player(points=0),
+            "name": "Florian Hellstern",
+            "position": "GOALKEEPER",
+        }
+        mapped_news = news_player()
+        mapped_news["mapping"]["age"] = 18
+        annotation = quality.build_annotation(
+            goalkeeper,
+            "news-1",
+            mapped_news,
+            [],
+            exceptional_goalkeeper_history(),
+            talent_evidence={
+                "benchmark": True,
+                "note": "Ausnahmetalent mit früher Herrenreife.",
+                "evidence": [
+                    {
+                        "claim": "Offizielle Talent- und Leihbestätigung",
+                        "source_url": "https://example.com/talent",
+                        "checked_at": "2026-07-25",
+                    }
+                ],
+            },
+            competition="2. Bundesliga",
+            points_pct=50,
+            price_pct=95,
+            generated_at="2026-07-25T12:00:00Z",
+        )
+        self.assertGreaterEqual(annotation["components"]["confirmed_performance"], 52)
+        self.assertGreaterEqual(annotation["components"]["minutes"], 82)
+        self.assertGreaterEqual(annotation["components"]["role"], 80)
+        self.assertGreaterEqual(annotation["components"]["upside"], 90)
+        self.assertGreaterEqual(annotation["components"]["value"], 70)
+        self.assertEqual(0, annotation["proven_seasons"])
+        self.assertFalse(annotation["reliable_anchor"])
+        self.assertTrue(annotation["benchmark"])
 
     def test_role_events_reward_repeatable_actions_not_only_provider_rating(self) -> None:
         rich = quality.build_annotation(

@@ -293,6 +293,7 @@ def discover_api_sports_roster(
                     players[f"api_sports:{player_id}"] = {
                         "name": str(player.get("name", "")).strip(),
                         "club": team_name,
+                        "age": optional_int(player.get("age")),
                         "api_sports_player_id": player_id,
                         "api_sports_team_id": team_id,
                         "mapping_confidence": "verified",
@@ -905,6 +906,7 @@ def build_snapshot(
                 "api_sports_team_id": mapping.get("api_sports_team_id"),
                 "sportsmonks_player_id": mapping.get("sportsmonks_player_id"),
                 "sportsmonks_team_id": mapping.get("sportsmonks_team_id"),
+                "age": mapping.get("age"),
                 "confidence": str(mapping.get("mapping_confidence", "unverified")),
             },
             "signals": signals,

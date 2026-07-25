@@ -12,5 +12,28 @@
   "minimum_anchors": 20,
   "minimum_attacking_anchors": 15,
   "minimum_goalkeeper_blocks": 6,
-  "minimum_history_resolved_percent": 75
+  "minimum_history_resolved_percent": 75,
+  "talent_evidence": {
+    "pl-k00151362": {
+      "benchmark": true,
+      "note": "18-jähriger Torhüter mit 26 Drittligaeinsätzen als Stuttgarter U21-Stammkeeper; die Fürth-Leihe ist der ausdrücklich benannte nächste Entwicklungsschritt.",
+      "evidence": [
+        {
+          "claim": "Fürth leiht den 18-jährigen Junioren-Nationaltorhüter nach 26 Drittligaeinsätzen für den nächsten Entwicklungsschritt.",
+          "source_url": "https://www.sgf1903.de/news/profis/kleeblatt-leiht-torhueter-talent-hellstern",
+          "checked_at": "2026-07-25"
+        },
+        {
+          "claim": "Der VfB bezeichnet Hellstern als außergewöhnlich veranlagt und die Fürth-Leihe als ideale Umgebung für die nächsten Schritte.",
+          "source_url": "https://www.vfb.de/de/vfb/aktuell/neues/profis/2627/florian-hellstern-wechselt-auf-leihbasis/",
+          "checked_at": "2026-07-25"
+        },
+        {
+          "claim": "Das DFB-Profil bestätigt den Jahrgang 2007, Einsätze in mehreren Nachwuchsnationalmannschaften und den U17-Europameistertitel.",
+          "source_url": "https://datencenter.dfb.de/personen/florian-hellstern/spieler",
+          "checked_at": "2026-07-25"
+        }
+      ]
+    }
+  }
 }

@@ -40,7 +40,7 @@ from quality_snapshot import SCHEMA_VERSION, canonical_sha256, validate_snapshot
 from refresh_news_snapshot import api_sports_pages, optional_int
 
 
-MODEL_VERSION = "multi-season-v4-role-events-kicker-trends"
+MODEL_VERSION = "multi-season-v5-age-curve-youth-pathway"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
 
 
@@ -143,11 +143,155 @@ def match_news_player(
     return None
 
 
+def youth_talent_profile(
+    history_player: dict[str, Any],
+    age: int | None,
+) -> dict[str, Any]:
+    """Measure exceptional youth pathways without inventing senior proof."""
+
+    career = history_player.get("career", {})
+    seasons = history_player.get("seasons", [])
+    current_age = age if age is not None and 15 <= age <= 30 else 27
+    latest_season = max(
+        (
+            int(season.get("season", 0))
+            for season in seasons
+            if int(season.get("season", 0)) > 0
+        ),
+        default=0,
+    )
+    national_minutes = 0
+    national_levels: set[int] = set()
+    elite_youth_minutes = 0.0
+    early_senior_weighted_minutes = 0.0
+    for season in seasons:
+        season_id = int(season.get("season", 0))
+        season_age = current_age - max(0, latest_season - season_id)
+        for competition in season.get("competitions", []):
+            if not isinstance(competition, dict):
+                continue
+            competition_id = str(
+                competition.get("competition_id", "")
+            ).upper()
+            label = str(competition.get("label", ""))
+            kind = str(competition.get("kind", ""))
+            minutes = int(competition.get("minutes", 0))
+            strength = float(competition.get("strength_factor", 0))
+            national_match = (
+                kind == "youth"
+                and competition_id != "19YL"
+                and (
+                    "NATIONALMANNSCHAFT" in label.upper()
+                    or bool(
+                        re.search(
+                            r"(?:^U?(?:15|16|17|18|19|20|21)"
+                            r"(?:Q|EU|LA|FS)?$)|"
+                            r"(?:INTERNATIONAL U(?:15|16|17|18|19|20|21))",
+                            f"{competition_id} {label.upper()}",
+                        )
+                    )
+                )
+            )
+            if national_match:
+                national_minutes += minutes
+                for match in re.findall(
+                    r"(?:U)?(15|16|17|18|19|20|21)",
+                    f"{competition_id} {label.upper()}",
+                ):
+                    national_levels.add(int(match))
+            if kind == "youth" and strength >= 0.42:
+                elite_youth_minutes += minutes * min(1.4, strength / 0.42)
+            if kind == "domestic_league" and season_age <= 21:
+                age_multiplier = (
+                    1.6
+                    if season_age <= 17
+                    else 1.3
+                    if season_age == 18
+                    else 1.0
+                    if season_age == 19
+                    else 0.8
+                    if season_age == 20
+                    else 0.6
+                )
+                early_senior_weighted_minutes += (
+                    minutes
+                    * max(0.0, strength)
+                    / 0.64
+                    * age_multiplier
+                )
+    age_phase_bonus = (
+        8.0
+        if current_age <= 17
+        else 10.0
+        if current_age == 18
+        else 9.0
+        if current_age == 19
+        else 7.0
+        if current_age == 20
+        else 4.0
+        if current_age == 21
+        else 0.0
+    )
+    youth_score = float(career.get("youth_score", 0))
+    talent_score = clamp(
+        0.30 * youth_score
+        + min(15.0, national_minutes / 90.0)
+        + min(8.0, len(national_levels) * 4.0)
+        + min(12.0, elite_youth_minutes / 600.0)
+        + min(35.0, early_senior_weighted_minutes / 85.0)
+        + age_phase_bonus,
+        0.0,
+    )
+    readiness_score = clamp(
+        0.62 * talent_score
+        + 0.38 * min(100.0, early_senior_weighted_minutes / 24.0),
+        0.0,
+    )
+    return {
+        "age": age if age is not None else None,
+        "talent_score": talent_score,
+        "readiness_score": readiness_score,
+        "national_team_minutes": national_minutes,
+        "national_team_levels": sorted(national_levels),
+        "elite_youth_minutes": round(elite_youth_minutes, 1),
+        "early_senior_weighted_minutes": round(
+            early_senior_weighted_minutes,
+            1,
+        ),
+        "breakthrough_phase": (
+            "exceptional_early"
+            if current_age <= 18 and early_senior_weighted_minutes >= 900
+            else "prime_window"
+            if current_age in {19, 20}
+            else "development_window"
+            if current_age == 21
+            else "pre_breakthrough"
+            if current_age <= 18
+            else "senior"
+        ),
+        "talent_tier": (
+            "exceptional"
+            if talent_score >= 85
+            or (
+                current_age <= 18
+                and early_senior_weighted_minutes >= 900
+                and talent_score >= 80
+            )
+            else "high"
+            if talent_score >= 68
+            else "emerging"
+            if talent_score >= 52
+            else "standard"
+        ),
+    }
+
+
 def candidate_rank(
     player: dict[str, Any],
     points_by_position: dict[str, list[float]],
     prices_by_position: dict[str, list[float]],
     history_player: dict[str, Any],
+    age: int | None = None,
 ) -> float:
     position = str(player["position"])
     points = float(player.get("points", 0.0))
@@ -170,12 +314,36 @@ def candidate_rank(
         if mapping_status == "probable"
         else 0.0
     )
-    historical_score = max(history_score, 0.70 * youth_score)
+    talent_profile = youth_talent_profile(history_player, age)
+    talent_score = float(talent_profile["talent_score"])
+    age_value = talent_profile["age"]
+    age_factor = (
+        1.0
+        if isinstance(age_value, int) and age_value <= 19
+        else 0.65
+        if age_value == 20
+        else 0.35
+        if age_value == 21
+        else 0.0
+    )
+    editorial_talent_signal = (
+        price_pct
+        * age_factor
+        * min(1.0, max(0.0, talent_score - 50.0) / 35.0)
+        if talent_score >= 60
+        else 0.0
+    )
+    historical_score = max(
+        history_score,
+        0.70 * youth_score,
+        0.86 * talent_score,
+    )
     historical_signal = 45.0 + history_weight * (historical_score - 45.0)
+    price_signal = max(100 - price_pct, editorial_talent_signal)
     return (
         0.32 * points_pct
         + 0.17 * grade_score
-        + 0.16 * (100 - price_pct)
+        + 0.16 * price_signal
         + 0.35 * historical_signal
     )
 
@@ -185,6 +353,7 @@ def select_candidates(
     news_payload: dict[str, Any],
     history_payload: dict[str, Any],
     quotas: dict[str, int],
+    forced_candidate_ids: set[str] | None = None,
 ) -> list[tuple[dict[str, Any], str, dict[str, Any]]]:
     market_players = available_market_players(market_payload)
     points_by_position = {
@@ -226,6 +395,9 @@ def select_candidates(
                     points_by_position,
                     prices_by_position,
                     history_player,
+                    optional_int(
+                        news_player.get("mapping", {}).get("age")
+                    ),
                 ),
                 player,
                 news_id,
@@ -304,6 +476,14 @@ def select_candidates(
             (player, news_id, news_player)
             for _, player, news_id, news_player in diversified
         )
+    selected_ids = {str(item[0]["id"]) for item in selected}
+    forced_ids = forced_candidate_ids or set()
+    for position in POSITIONS:
+        for _, player, news_id, news_player in ranked[position]:
+            player_id = str(player["id"])
+            if player_id in forced_ids and player_id not in selected_ids:
+                selected.append((player, news_id, news_player))
+                selected_ids.add(player_id)
     return selected
 
 
@@ -629,6 +809,7 @@ def build_annotation(
     histories: list[dict[str, Any]],
     history_player: dict[str, Any],
     kicker_history_player: dict[str, Any] | None = None,
+    talent_evidence: dict[str, Any] | None = None,
     *,
     competition: str,
     points_pct: float,
@@ -744,9 +925,49 @@ def build_annotation(
     injury_risk = clamp(consensus.get("injury", 0), 0)
     rotation_risk = clamp(consensus.get("rotation", 0), 0)
     fitness_cap = clamp(consensus.get("fitness_cap", 100), 100)
-    age = next(
+    provider_age = optional_int(
+        news_player.get("mapping", {}).get("age")
+    )
+    age = provider_age or next(
         (int(stats["age"]) for stats in histories if stats.get("age") is not None),
         27,
+    )
+    talent_profile = youth_talent_profile(history_player, age)
+    talent_score = float(talent_profile["talent_score"])
+    readiness_score = float(talent_profile["readiness_score"])
+    age_factor = (
+        1.0
+        if age <= 19
+        else 0.65
+        if age == 20
+        else 0.35
+        if age == 21
+        else 0.0
+    )
+    editorial_talent_signal = (
+        price_pct
+        * age_factor
+        * min(1.0, max(0.0, talent_score - 50.0) / 35.0)
+        if talent_score >= 60
+        else 0.0
+    )
+    if age <= 21 and talent_score >= 68:
+        minutes = max(minutes, clamp(44 + 0.43 * readiness_score))
+        role = max(role, clamp(42 + 0.43 * readiness_score))
+    early_senior_confirmation = (
+        min(62.0, 0.58 * readiness_score)
+        if talent_profile["breakthrough_phase"] == "exceptional_early"
+        else 0.0
+    )
+    confirmed = clamp(max(confirmed, early_senior_confirmation))
+    talent_evidence = talent_evidence or {}
+    minutes = max(
+        minutes,
+        clamp(talent_evidence.get("minutes_floor", 0), 0),
+    )
+    role = max(
+        role,
+        clamp(talent_evidence.get("role_floor", 0), 0),
     )
     stability = clamp(82 - 0.55 * transfer_risk - 0.25 * rotation_risk)
     stability = clamp(stability + 0.08 * (trend_score - 50))
@@ -758,19 +979,37 @@ def build_annotation(
     youth_upside = clamp(
         35 + 0.65 * history_youth_score * youth_relevance
     )
-    upside = max(base_upside, youth_upside)
+    editorial_upside = clamp(
+        talent_score + 0.10 * editorial_talent_signal
+    )
+    upside = max(base_upside, youth_upside, editorial_upside)
     value = clamp(
         0.42 * (100 - price_pct)
         + 0.32 * confirmed
         + 0.26 * points_pct
         + 0.08 * (trend_score - 50)
     )
+    if age <= 21 and talent_score >= 68:
+        talent_value = clamp(
+            0.20 * (100 - price_pct)
+            + 0.35 * readiness_score
+            + 0.25 * editorial_talent_signal
+            + 0.20 * role
+        )
+        value = max(value, talent_value)
     risks = {
         "transfer": transfer_risk,
         "injury": injury_risk,
         "rotation": max(rotation_risk, clamp(82 - minutes)),
         "outlier": clamp(42 - 15 * proven_seasons + max(0, points_pct - 88) * 1.2),
-        "unknown_role": clamp(74 - role),
+        "unknown_role": clamp(
+            min(
+                74 - role,
+                max(18.0, 62.0 - 0.42 * readiness_score),
+            )
+            if age <= 21 and talent_score >= 68
+            else 74 - role
+        ),
     }
     components = {
         "confirmed_performance": confirmed,
@@ -837,6 +1076,20 @@ def build_annotation(
                 "checked_at": generated_at,
             },
         )
+    for item in talent_evidence.get("evidence", []):
+        if (
+            isinstance(item, dict)
+            and str(item.get("claim", "")).strip()
+            and str(item.get("source_url", "")).startswith("https://")
+            and str(item.get("checked_at", "")).strip()
+        ):
+            evidence.append(
+                {
+                    "claim": str(item["claim"]),
+                    "source_url": str(item["source_url"]),
+                    "checked_at": str(item["checked_at"]),
+                }
+            )
     history_summary = {
         "mapping_status": history_status,
         "confidence": str(history_mapping.get("confidence", "none")),
@@ -867,6 +1120,13 @@ def build_annotation(
             2,
         ),
         "youth_score": round(history_youth_score, 2),
+        "talent_score": round(talent_score, 2),
+        "early_senior_confirmation": round(
+            early_senior_confirmation,
+            2,
+        ),
+        "editorial_talent_signal": round(editorial_talent_signal, 2),
+        "talent_profile": talent_profile,
     }
     return {
         "position": position,
@@ -881,12 +1141,26 @@ def build_annotation(
             if reliable_anchor
             else ""
         ),
-        "benchmark": False,
-        "note": (
-            f"Mehrjahres-Check: {history_proven_seasons} im Zielniveau "
-            "bestätigte Spielzeiten; "
-            f"{int(history_career.get('comparable_minutes', 0))} Minuten "
-            "auf vergleichbarem oder höherem Ligastand."
+        "benchmark": bool(talent_evidence.get("benchmark", False)),
+        "note": " ".join(
+            part
+            for part in (
+                (
+                    f"Mehrjahres-Check: {history_proven_seasons} im Zielniveau "
+                    "bestätigte Spielzeiten; "
+                    f"{int(history_career.get('comparable_minutes', 0))} Minuten "
+                    "auf vergleichbarem oder höherem Ligastand."
+                ),
+                (
+                    f"Talentpfad: {talent_profile['talent_tier']} "
+                    f"({talent_score:.1f}/100), "
+                    f"Phase {talent_profile['breakthrough_phase']}."
+                    if talent_score >= 52
+                    else ""
+                ),
+                str(talent_evidence.get("note", "")).strip(),
+            )
+            if part
         ),
         "evidence": evidence,
         "provider_news_id": news_id,
@@ -938,6 +1212,10 @@ def generate_snapshot(
         news_payload,
         history_payload,
         quotas,
+        {
+            str(player_id)
+            for player_id in config.get("talent_evidence", {})
+        },
     )
     minimum_candidates = int(config["minimum_candidates"])
     if len(candidates) < minimum_candidates:
@@ -1005,6 +1283,10 @@ def generate_snapshot(
             ),
             kicker_history_payload["players"].get(
                 str(market_player["id"])
+            ),
+            config.get("talent_evidence", {}).get(
+                str(market_player["id"]),
+                {},
             ),
             competition=str(market_payload["competition"]),
             points_pct=percentile(

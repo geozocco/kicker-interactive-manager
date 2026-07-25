@@ -228,8 +228,17 @@ class DistanceOptimizerTests(unittest.TestCase):
             club_players = [
                 item for item in by_position["GOALKEEPER"] if item.club == club
             ]
+            expected_primary = optimizer.expected_primary_goalkeeper(
+                club_players,
+                scores,
+            )
             goalkeeper_groups.extend(
-                itertools.combinations(club_players, slots["GOALKEEPER"])
+                combination
+                for combination in itertools.combinations(
+                    club_players,
+                    slots["GOALKEEPER"],
+                )
+                if expected_primary in combination
             )
         expected: dict[int, float] = {}
         for goalkeepers in goalkeeper_groups:
@@ -299,6 +308,47 @@ class DistanceOptimizerTests(unittest.TestCase):
         self.assertEqual(optimum.ids, reference.ids)
         self.assertEqual(0, distance)
         self.assertTrue(target_met)
+
+    def test_same_club_goalkeeper_block_must_include_expected_starter(self) -> None:
+        keepers = [
+            player("starter", "GK Club", "GOALKEEPER", 800),
+            player("backup-a", "GK Club", "GOALKEEPER", 100),
+            player("backup-b", "GK Club", "GOALKEEPER", 100),
+            player("backup-c", "GK Club", "GOALKEEPER", 100),
+        ]
+        keepers[0] = optimizer.Player(
+            **{
+                **keepers[0].__dict__,
+                "components": {
+                    **keepers[0].components,
+                    "minutes": 90.0,
+                    "role": 90.0,
+                    "upside": 96.0,
+                },
+            }
+        )
+        scores = {
+            "starter": 75.0,
+            "backup-a": 76.0,
+            "backup-b": 74.0,
+            "backup-c": 73.0,
+        }
+
+        options = optimizer.goalkeeper_options(
+            keepers,
+            3,
+            2000,
+            scores,
+            True,
+        )
+
+        self.assertTrue(options)
+        self.assertTrue(
+            all(
+                "starter" in {item.player_id for item in combination}
+                for _, combination in options.values()
+            )
+        )
 
     def test_seeded_variation_is_reproducible_and_constraint_safe(self) -> None:
         players, scores = varied_pool()
@@ -1499,7 +1549,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
                 min_reliable_anchors=3,
             )
 
-    def test_core_weighting_emphasizes_top_scores_only_for_reliable_low(
+    def test_core_weighting_emphasizes_top_scores_for_low_maintenance_profiles(
         self,
     ) -> None:
         players = [
@@ -1539,11 +1589,37 @@ class ReliableCorePolicyTests(unittest.TestCase):
         self.assertAlmostEqual(10.9375, weighted["d-mid"])
         self.assertAlmostEqual(4.0, weighted["d-low"])
 
+        balanced, balanced_multipliers = optimizer.core_weighted_scores(
+            players,
+            scores,
+            "balanced",
+            "low",
+        )
+        self.assertAlmostEqual(1.0, balanced_multipliers["d-high"])
+        self.assertLess(balanced_multipliers["d-mid"], 1.0)
+        self.assertGreater(
+            balanced_multipliers["d-mid"],
+            multipliers["d-mid"],
+        )
+        self.assertLess(balanced["d-low"], scores["d-low"])
+
+        breakout, breakout_multipliers = optimizer.core_weighted_scores(
+            players,
+            scores,
+            "breakout",
+            "low",
+        )
+        self.assertAlmostEqual(1.0, breakout_multipliers["d-high"])
+        self.assertGreater(
+            breakout_multipliers["d-mid"],
+            balanced_multipliers["d-mid"],
+        )
+        self.assertLess(breakout["d-low"], scores["d-low"])
+
         for profile, maintenance in (
-            ("balanced", "low"),
-            ("breakout", "low"),
             ("reliable", "normal"),
             ("reliable", "active"),
+            ("balanced", "normal"),
         ):
             with self.subTest(profile=profile, maintenance=maintenance):
                 unchanged, neutral = optimizer.core_weighted_scores(

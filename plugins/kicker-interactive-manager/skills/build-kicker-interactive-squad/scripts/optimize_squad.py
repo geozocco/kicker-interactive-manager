@@ -1026,14 +1026,20 @@ def core_weighted_scores(
 ) -> tuple[dict[str, float], dict[str, float]]:
     """Emphasize the likely scoring core over equally strong reserve depth.
 
-    Only the conservative, low-maintenance default uses the stronger curve.
-    It remains additive so all budget, position, goalkeeper and club
-    constraints stay exact and the distance solver remains fast.
+    Low-maintenance squads use this curve in every strategy profile because
+    their expensive places should be likely starters rather than equivalent
+    reserves. Reliable remains strongest; balanced and breakout retain more
+    depth and protect exceptional, role-ready prospects.
     """
 
-    if profile != "reliable" or maintenance != "low":
+    if maintenance != "low":
         return dict(scores), {player.player_id: 1.0 for player in players}
 
+    curve_floor, curve_exponent, premium_scale = {
+        "reliable": (0.10, 4.0, 1.0),
+        "balanced": (0.22, 3.0, 0.45),
+        "breakout": (0.32, 2.0, 0.25),
+    }[profile]
     weighted: dict[str, float] = {}
     multipliers: dict[str, float] = {}
     for position in DEFAULT_SLOTS:
@@ -1055,7 +1061,7 @@ def core_weighted_scores(
                     + 0.2
                     * max(0.0, player.components["stability"] - 75.0)
                 )
-                premium_bonus = min(
+                premium_bonus = premium_scale * min(
                     18.0
                     if player.position in {"MIDFIELDER", "FORWARD"}
                     else 8.0,
@@ -1072,7 +1078,10 @@ def core_weighted_scores(
                 rank = (
                     bisect.bisect_right(ordered_values, scores[player.player_id]) - 1
                 ) / (len(ordered_values) - 1)
-            multiplier = 0.10 + 0.90 * rank**4
+            multiplier = (
+                curve_floor
+                + (1.0 - curve_floor) * rank**curve_exponent
+            )
             # A broad anchor flag proves floor-level reliability, but it must
             # not make every established regular as valuable as a genuine
             # multi-season premium player. The floor therefore depends only on
@@ -1084,6 +1093,16 @@ def core_weighted_scores(
                     else 0.85
                 )
                 multiplier = max(multiplier, anchor_floor)
+            exceptional_ready_prospect = (
+                player.components["upside"] >= 90
+                and player.components["minutes"] >= 80
+                and player.components["role"] >= 80
+            )
+            if exceptional_ready_prospect and profile in {"balanced", "breakout"}:
+                multiplier = max(
+                    multiplier,
+                    0.78 if profile == "balanced" else 0.88,
+                )
             raw_score = scores[player.player_id]
             weighted_score = (
                 raw_score * multiplier if raw_score >= 0.0 else raw_score
@@ -1101,6 +1120,8 @@ def best_starting_lineup(
     players: list[Player],
     scores: dict[str, float],
     min_reliable_anchors: int = 0,
+    min_forwards: int = 1,
+    max_defenders: int = 5,
 ) -> tuple[str, frozenset[str]]:
     """Infer the strongest legal eleven while keeping the reliable core."""
 
@@ -1110,17 +1131,15 @@ def best_starting_lineup(
     }
     if not by_position["GOALKEEPER"]:
         return "", frozenset()
-    goalkeeper = max(
+    goalkeeper = expected_primary_goalkeeper(
         by_position["GOALKEEPER"],
-        key=lambda player: (
-            scores[player.player_id],
-            -player.cost,
-            player.name,
-        ),
+        scores,
     )
     best_any: tuple[float, str, frozenset[str]] | None = None
     best_anchor_safe: tuple[float, str, frozenset[str]] | None = None
     for defenders, midfielders, forwards in FORMATIONS:
+        if forwards < min_forwards or defenders > max_defenders:
+            continue
         counts = {
             "DEFENDER": defenders,
             "MIDFIELDER": midfielders,
@@ -1178,6 +1197,8 @@ def reliable_core_audit(
         squad.players,
         scores,
         min_reliable_anchors,
+        2 if min_core_budget_share > 0 else 1,
+        4 if min_core_budget_share > 0 else 5,
     )
     core_players = [
         player for player in squad.players if player.player_id in core_ids
@@ -1486,6 +1507,25 @@ def finalize_reliable_core_architecture(
     )
 
 
+def expected_primary_goalkeeper(
+    club_players: list[Player],
+    scores: Mapping[str, float],
+) -> Player:
+    """Return the keeper whose current evidence most strongly projects starts."""
+
+    return max(
+        club_players,
+        key=lambda player: (
+            0.50 * player.components["minutes"]
+            + 0.35 * player.components["role"]
+            + 0.15 * player.components["upside"],
+            scores[player.player_id],
+            -player.cost,
+            player.name,
+        ),
+    )
+
+
 def goalkeeper_options(
     players: list[Player],
     count: int,
@@ -1504,7 +1544,14 @@ def goalkeeper_options(
         else [[player for club_players in by_club.values() for player in club_players]]
     )
     for club_players in candidate_groups:
+        expected_primary = (
+            expected_primary_goalkeeper(club_players, scores)
+            if same_club
+            else None
+        )
         for combination in itertools.combinations(club_players, count):
+            if expected_primary is not None and expected_primary not in combination:
+                continue
             cost = sum(player.cost for player in combination)
             if cost > budget:
                 continue
@@ -1770,7 +1817,14 @@ def distance_goalkeeper_options(
         else [[player for club_players in by_club.values() for player in club_players]]
     )
     for club_players in candidate_groups:
+        expected_primary = (
+            expected_primary_goalkeeper(club_players, scores)
+            if same_club
+            else None
+        )
         for combination in itertools.combinations(club_players, count):
+            if expected_primary is not None and expected_primary not in combination:
+                continue
             cost = sum(player.cost for player in combination)
             if cost > budget:
                 continue
@@ -2605,7 +2659,7 @@ def varied_portfolio(
                 prepared_context=slot_context,
                 forbidden_ids=slot_forbidden_ids,
             )
-            if profile == "reliable" and min_core_budget_share > 0:
+            if min_core_budget_share > 0:
                 optimum = finalize_reliable_core_architecture(
                     optimum,
                     slot_players,
@@ -2692,6 +2746,8 @@ def varied_portfolio(
                 entry[0].players,
                 base_scores,
                 min_reliable_anchors,
+                2 if min_core_budget_share > 0 else 1,
+                4 if min_core_budget_share > 0 else 5,
             )[1]
         )
         for entry in generated
@@ -2897,6 +2953,8 @@ def output_payload(
         squad.players,
         raw_scores,
         core_anchor_requirement,
+        2 if args.maintenance == "low" else 1,
+        4 if args.maintenance == "low" else 5,
     )
     selected_anchors = [
         player for player in squad.players if player.reliable_anchor
@@ -3157,7 +3215,7 @@ def output_payload(
             ),
             "core_weighting": (
                 "strong_starting_core_affordable_playable_reserve"
-                if args.profile == "reliable" and args.maintenance == "low"
+                if args.maintenance == "low"
                 else "uniform_player_utility"
             ),
         },
@@ -3549,7 +3607,7 @@ def parse_args() -> argparse.Namespace:
         type=float,
         help=(
             "Minimum share of total squad cost assigned to the best legal "
-            "starting eleven; default 0.70 for reliable plus low maintenance"
+            "starting eleven; default 0.70 for every low-maintenance profile"
         ),
     )
     parser.add_argument(
@@ -3648,8 +3706,7 @@ def parse_args() -> argparse.Namespace:
         args.min_core_budget_share = (
             0.70
             if (
-                args.profile == "reliable"
-                and args.maintenance == "low"
+                args.maintenance == "low"
                 and not args.allow_unannotated
             )
             else 0.0
@@ -4094,10 +4151,7 @@ def main() -> int:
                 min_reliable_anchors=args.min_reliable_anchors,
                 technical_smoke=args.allow_unannotated,
             )
-            if (
-                args.profile == "reliable"
-                and args.min_core_budget_share > 0
-            ):
+            if args.min_core_budget_share > 0:
                 optimum = finalize_reliable_core_architecture(
                     optimum,
                     eligible_players,
@@ -4157,7 +4211,7 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
-    if args.profile == "reliable" and args.min_reliable_anchors > 0:
+    if args.min_core_budget_share > 0:
         core_audit = reliable_core_audit(
             squad,
             eligible_raw_scores,
@@ -4165,25 +4219,26 @@ def main() -> int:
             args.min_attacking_anchors,
             args.min_core_budget_share,
         )
-        core_anchor_count = core_audit["reliable_anchors"]
-        if core_anchor_count < args.min_reliable_anchors:
-            print(
-                "Optimization stopped: the squad-level anchor floor cannot be "
-                "placed inside one legal starting formation. Recalibrate the "
-                "anchor pool instead of treating bench anchors as the reliable core.",
-                file=sys.stderr,
-            )
-            return 2
-        core_attacking_anchors = core_audit["attacking_anchors"]
-        if core_attacking_anchors < args.min_attacking_anchors:
-            print(
-                "Optimization stopped: the legal starting core contains only "
-                f"{core_attacking_anchors} reliable midfield/forward anchors; "
-                f"{args.min_attacking_anchors} are required. Strengthen the "
-                "multi-season scorer and creator pool before changing Chrome.",
-                file=sys.stderr,
-            )
-            return 2
+        if args.profile == "reliable" and args.min_reliable_anchors > 0:
+            core_anchor_count = core_audit["reliable_anchors"]
+            if core_anchor_count < args.min_reliable_anchors:
+                print(
+                    "Optimization stopped: the squad-level anchor floor cannot be "
+                    "placed inside one legal starting formation. Recalibrate the "
+                    "anchor pool instead of treating bench anchors as the reliable core.",
+                    file=sys.stderr,
+                )
+                return 2
+            core_attacking_anchors = core_audit["attacking_anchors"]
+            if core_attacking_anchors < args.min_attacking_anchors:
+                print(
+                    "Optimization stopped: the legal starting core contains only "
+                    f"{core_attacking_anchors} reliable midfield/forward anchors; "
+                    f"{args.min_attacking_anchors} are required. Strengthen the "
+                    "multi-season scorer and creator pool before changing Chrome.",
+                    file=sys.stderr,
+                )
+                return 2
         core_budget_share = core_audit["core_budget_share"]
         if core_budget_share < args.min_core_budget_share:
             print(

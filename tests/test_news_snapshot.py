@@ -57,6 +57,7 @@ def snapshot_payload() -> dict:
                     "api_sports_team_id": 2,
                     "sportsmonks_player_id": None,
                     "sportsmonks_team_id": None,
+                    "age": 19,
                     "confidence": "verified",
                 },
                 "signals": [
@@ -343,7 +344,11 @@ class ApiSportsRosterDiscoveryTests(unittest.TestCase):
                             {
                                 "team": {"id": 10, "name": "Club One"},
                                 "players": [
-                                    {"id": 101, "name": "Max Player"}
+                                    {
+                                        "id": 101,
+                                        "name": "Max Player",
+                                        "age": 18,
+                                    }
                                 ],
                             }
                         ]
@@ -386,6 +391,7 @@ class ApiSportsRosterDiscoveryTests(unittest.TestCase):
                 "api_sports_player_id": 101,
                 "api_sports_team_id": 10,
                 "mapping_confidence": "verified",
+                "age": 18,
             },
             discovered["players"]["api_sports:101"],
         )

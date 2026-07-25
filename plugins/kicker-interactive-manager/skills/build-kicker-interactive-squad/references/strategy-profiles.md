@@ -64,7 +64,9 @@ Den Risikowert mit dem Faktor multiplizieren und vom Komponentenscore abziehen.
 - Historische Einsätze, Minuten und Scorer mit dem damaligen Wettbewerbsfaktor normalisieren. Bundesliga-Leistung wiegt höher als 2.-Bundesliga-Leistung, diese wiederum höher als 3.-Liga- oder Regionalliga-Leistung.
 - Die österreichische Bundesliga und die Schweizer Super League als ungefähr deutsches Drittliganiveau (`0,64`) behandeln. Sie können eine Drittligasaison bestätigen, aber allein keine Zweitligasaison.
 - Eine Spielzeit zählt für `proven_seasons` nur, wenn ausreichende Minuten auf einem zur Zielliga vergleichbaren oder höheren Niveau belegt sind. Eine starke 3.-Liga-Saison ist daher ein wertvolles Potenzial- und Value-Signal für die 2. Bundesliga, aber noch keine voll bestätigte Zweitliga-Spielzeit.
-- Nachwuchsligen, Jugendpokale und Jugendnationalmannschaften getrennt gewichten. Umfang und Scorerproduktion dürfen `upside` und die Shortlist-Chance eines jungen Spielers erhöhen, aber nie `confirmed_performance`, `proven_seasons` oder `reliable_anchor`.
+- Nachwuchsligen, Jugendpokale und Jugendnationalmannschaften getrennt gewichten. Einsätze in mehreren U15- bis U21-Nationalmannschaften, Minuten in starken Nachwuchswettbewerben und besonders frühe Ligaminuten im Herrenbereich bilden einen eigenen altersbereinigten `talent_score`. Regelmäßige Herrenminuten mit 18 oder jünger sind ein sehr starkes Signal; 19 und 20 bilden das normale Durchbruchsfenster, 16 oder 17 bleiben seltene Ausnahmefälle. Das gilt positionsneutral und verlangt von Torhütern keine Tore oder Vorlagen.
+- Ein für einen 21-jährigen oder jüngeren Spieler ungewöhnlich hoher Kicker-Preis darf als begrenztes redaktionelles Erwartungssignal wirken, aber nur wenn der unabhängig berechnete Talentpfad bereits stark ist. Der Preis allein erzeugt weder Talentstatus noch einen Scorebonus.
+- Reine Jugend- und Nationalmannschaftssignale dürfen `upside` und die Shortlist-Chance erhöhen, aber nie `confirmed_performance`, `proven_seasons` oder `reliable_anchor`. Tatsächlich absolvierte frühe Herren-Ligaminuten dürfen zusätzlich als stark rabattierte, ligakontextualisierte Teilbestätigung in `confirmed_performance` einfließen und eine vorsichtige Einsatz- und Rollenprognose stützen; sie erzeugen weiterhin weder eine bestätigte Zielniveau-Saison noch Ankerstatus.
 - Pokal- und Freundschaftsspiele nicht als Ersatz für eine bestätigte Senior-Ligasaison verwenden. Nicht klassifizierte Wettbewerbe dokumentieren, aber nicht mit einem erfundenen Faktor bewerten.
 
 ## Betreuungsaufwand
@@ -73,9 +75,11 @@ Den Risikowert mit dem Faktor multiplizieren und vom Komponentenscore abziehen.
 
 - Gewichte für `minutes`, `role` und `stability` erhöhen.
 - `upside` und `value` leicht reduzieren.
-- Beim Profil `verlässlich` die Modellutility innerhalb jeder Position zugunsten der bestbewerteten Kandidaten krümmen: Der Spitzenkandidat behält sein volles Gewicht, während Ergänzungen bis auf 10 Prozent Bankgewicht sinken. Mehrjährig bestätigte Anker behalten dabei mindestens 95 Prozent in Mittelfeld und Sturm beziehungsweise 85 Prozent in der Abwehr. So finanziert der Solver einen starken Aufstellungskern statt 22 annähernd gleichwertiger Spieler.
+- In allen Profilen die Modellutility innerhalb jeder Position zugunsten der bestbewerteten Kandidaten krümmen. `Verlässlich` konzentriert am stärksten, `ausgewogen` und `ausbruch` behalten mehr Tiefe und schützen zugleich außergewöhnliche Talente mit belegter Einsatz- und Rollenreife. So finanziert der Solver einen starken Aufstellungskern statt 22 annähernd gleichwertiger Spieler.
 - Elf bis 14 hochwertige Kernspieler anstreben. Die übrigen Plätze günstig, aber mit plausibler Einsatzchance besetzen; eine gleichwertige Premiumbank ist nicht erforderlich.
-- Mindestens 70 Prozent des gesamten Kaderwerts müssen in der stärksten legalen Startelf liegen.
+- Mindestens 70 Prozent des gesamten Kaderwerts müssen unabhängig vom Strategieprofil in der stärksten legalen Startelf liegen.
+- Die stärkste wartungsarme Startelf enthält mindestens zwei Stürmer und höchstens vier Verteidiger. Dadurch bleiben mindestens zwei belastbare offensive Wege erhalten und ein fünfter teurer Abwehrspieler wird nicht als vermeintliche Kerninvestition vor einer besseren Mittelfeld- oder Sturmoption geschützt.
+- Beim Torwartblock muss der aus `minutes`, `role` und `upside` erwartete Stammtorhüter enthalten sein. Drei billigere Vereinskeeper ohne den wahrscheinlich Spielenden sind kein gültiger Block.
 - Verletzte, stark wechselgefährdete und reine Entwicklungsprojekte höchstens als einzelne Wetten einsetzen.
 
 ### Normal

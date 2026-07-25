@@ -1,6 +1,6 @@
 {
   "name": "kicker-interactive-manager",
-  "version": "0.1.0+codex.20260725122446",
+  "version": "0.1.0+codex.20260725130829",
   "description": "Plant, bewertet und optimiert news-gepr\u00fcfte Kader f\u00fcr Bundesliga, 2. Bundesliga oder 3. Liga im kicker Managerspiel Interactive.",
   "author": {
     "name": "Jan Pies"
@@ -16,7 +16,7 @@
   "interface": {
     "displayName": "kicker Interactive Kaderplaner",
     "shortDescription": "Kader in Chrome aufstellen und pr\u00fcfen",
-    "longDescription": "Stellt kicker-Interactive-Kader auf, bewertet bestehende Mannschaften read-only und optimiert sie auf ausdr\u00fccklichen Wunsch. Liga, Strategie, Variabilit\u00e4t und Betreuungsaufwand sind kombinierbar. Eine private, anonyme Installationsvariante sorgt ohne Kadernummern oder Abstimmung f\u00fcr kontrolliert unterschiedliche Kollegenkader; klar bessere Spieler werden nicht allein der Abwechslung wegen verdr\u00e4ngt. Ein zentraler, breit gestreuter Mehrjahres-Qualit\u00e4tspool verhindert feste Namensanker und namentliche Beispiele erhalten keinen Scorebonus. Historische Transfermarkt-Eins\u00e4tze, Minuten und Scorer werden je Saison nach dem damaligen Liganiveau gewichtet. Positionsabh\u00e4ngige API-Sports-Ereignisdaten und fortlaufende Kicker-Preis-, Punkte- und Notentrends erg\u00e4nzen die Bewertung. Ein geh\u00e4rteter News-Gate ber\u00fccksichtigt aktuelle Verletzungen und Transfers; veraltete oder widerspr\u00fcchliche Daten verhindern eine gr\u00fcne Best\u00e4tigung. Verf\u00fcgbare Modi und Beispielprompts lassen sich direkt \u00fcber den ersten Starter-Prompt anzeigen.",
+    "longDescription": "Stellt kicker-Interactive-Kader auf, bewertet bestehende Mannschaften read-only und optimiert sie auf ausdr\u00fccklichen Wunsch. Liga, Strategie, Variabilit\u00e4t und Betreuungsaufwand sind kombinierbar. Eine private, anonyme Installationsvariante sorgt ohne Kadernummern oder Abstimmung f\u00fcr kontrolliert unterschiedliche Kollegenkader; klar bessere Spieler werden nicht allein der Abwechslung wegen verdr\u00e4ngt. Ein zentraler, breit gestreuter Mehrjahres-Qualit\u00e4tspool verhindert feste Namensanker und namentliche Beispiele erhalten keinen Scorebonus. Historische Transfermarkt-Eins\u00e4tze, Minuten und Scorer werden je Saison nach dem damaligen Liganiveau gewichtet. Ein altersbereinigter Talentpfad erkennt Nachwuchsnationalspieler und besonders fr\u00fche Herrenminuten positionsneutral; der Kicker-Preis wirkt nur als best\u00e4tigendes Erwartungssignal. Positionsabh\u00e4ngige API-Sports-Ereignisdaten und fortlaufende Kicker-Preis-, Punkte- und Notentrends erg\u00e4nzen die Bewertung. Ein geh\u00e4rteter News-Gate ber\u00fccksichtigt aktuelle Verletzungen und Transfers; veraltete oder widerspr\u00fcchliche Daten verhindern eine gr\u00fcne Best\u00e4tigung. Verf\u00fcgbare Modi und Beispielprompts lassen sich direkt \u00fcber den ersten Starter-Prompt anzeigen.",
     "developerName": "Jan Pies",
     "category": "Productivity",
     "capabilities": [
