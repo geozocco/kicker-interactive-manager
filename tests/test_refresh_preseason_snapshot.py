@@ -230,6 +230,28 @@ class RefreshPreseasonSnapshotTests(unittest.TestCase):
         self.assertLessEqual(summary["signal_score"], 100)
         self.assertEqual(2, result["providers"]["api_sports"]["requests"])
 
+    def test_official_evidence_builds_without_provider_after_rate_limit(
+        self,
+    ) -> None:
+        result = refresh.build_snapshot(
+            news_payload(),
+            config(),
+            token="secret",
+            request_delay=0,
+            ttl_hours=18,
+            now=datetime(2026, 7, 25, 12, tzinfo=timezone.utc),
+            provider_enabled=False,
+        )
+        self.assertEqual(
+            "rate_limited_official_evidence_only",
+            result["providers"]["api_sports"]["status"],
+        )
+        self.assertEqual(1, len(result["players"]))
+        self.assertEqual(
+            1,
+            result["players"]["api_sports:1"]["summary"]["appearances"],
+        )
+
     def test_signal_decays_after_competitive_season_starts(self) -> None:
         observation = refresh.manual_observation(
             "p1",

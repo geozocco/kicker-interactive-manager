@@ -543,6 +543,7 @@ def build_snapshot(
     request_delay: float,
     ttl_hours: int,
     now: datetime | None = None,
+    provider_enabled: bool = True,
 ) -> dict[str, Any]:
     generated = (now or utc_now()).astimezone(timezone.utc).replace(
         microsecond=0
@@ -588,7 +589,7 @@ def build_snapshot(
         if team_id is not None:
             team_ids.add(team_id)
     headers = {"x-apisports-key": token}
-    if window_end < window_start:
+    if window_end < window_start or not provider_enabled:
         fixtures, team_fixtures, fixture_calls = {}, {}, 0
     else:
         fixtures, team_fixtures, fixture_calls = fetch_fixtures(
@@ -713,7 +714,9 @@ def build_snapshot(
         "providers": {
             "api_sports": {
                 "status": (
-                    "ok"
+                    "rate_limited_official_evidence_only"
+                    if not provider_enabled
+                    else "ok"
                     if player_stat_fixtures > 0
                     else "lineup_only"
                     if lineup_fixtures > 0
@@ -771,19 +774,39 @@ def main() -> int:
     except RuntimeError as error:
         if not args.previous or not is_api_sports_daily_limit(error):
             raise
-        payload = load_preseason_snapshot(args.previous)
-        if (
-            payload["competition"] != config["competition"]
-            or payload["season"] != config["season"]
-        ):
-            raise RuntimeError(
-                "previous preseason snapshot belongs to another competition"
-            ) from error
-        print(
-            "API-Sports daily limit reached; reusing the previous fresh "
-            "preseason snapshot without extending its expiry.",
-            file=sys.stderr,
+        manual_records = sum(
+            len(item.get("events", []))
+            for item in config.get("players", {}).values()
+            if isinstance(item, dict)
         )
+        if manual_records:
+            payload = build_snapshot(
+                news_payload,
+                config,
+                token=token,
+                request_delay=args.request_delay,
+                ttl_hours=args.ttl_hours,
+                provider_enabled=False,
+            )
+            print(
+                "API-Sports daily limit reached; publishing fresh official "
+                "evidence with an explicit provider-degraded status.",
+                file=sys.stderr,
+            )
+        else:
+            payload = load_preseason_snapshot(args.previous)
+            if (
+                payload["competition"] != config["competition"]
+                or payload["season"] != config["season"]
+            ):
+                raise RuntimeError(
+                    "previous preseason snapshot belongs to another competition"
+                ) from error
+            print(
+                "API-Sports daily limit reached; reusing the previous fresh "
+                "preseason snapshot without extending its expiry.",
+                file=sys.stderr,
+            )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.output.with_suffix(f"{args.output.suffix}.tmp")
     temporary.write_text(
