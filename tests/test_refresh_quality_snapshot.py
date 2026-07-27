@@ -133,6 +133,19 @@ class QualityProviderRetryTests(unittest.TestCase):
         )
 
         self.assertEqual({2025}, set(cached))
+        self.assertEqual(
+            {2025, 2026},
+            set(
+                quality.cached_api_histories(
+                    previous,
+                    competition="3. Liga",
+                    season="2026/27",
+                    player_id="p1",
+                    news_id="api_sports:123",
+                    include_current=True,
+                )
+            ),
+        )
 
     @patch.object(quality.time, "sleep")
     @patch.object(quality, "api_sports_pages")

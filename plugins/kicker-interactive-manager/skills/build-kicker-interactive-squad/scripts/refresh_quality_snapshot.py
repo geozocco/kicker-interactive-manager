@@ -575,6 +575,7 @@ def cached_api_histories(
     season: str,
     player_id: str,
     news_id: str,
+    include_current: bool = False,
 ) -> dict[int, dict[str, Any]]:
     if (
         not isinstance(previous_quality_payload, dict)
@@ -599,6 +600,8 @@ def cached_api_histories(
             isinstance(item, dict)
             and optional_int(item.get("season")) is not None
             and (
+                include_current
+                or
                 migrating_model
                 or
                 current_history_season is None
@@ -2433,6 +2436,11 @@ def generate_snapshot(
     completed = 0
     reused = 0
     fetched = 0
+    provider_rate_limited = str(
+        preseason_payload.get("providers", {})
+        .get("api_sports", {})
+        .get("status", "")
+    ).startswith("rate_limited")
     for market_player, news_id, news_player in candidates:
         provider_id = int(news_player["mapping"]["api_sports_player_id"])
         cached_by_season = cached_api_histories(
@@ -2442,22 +2450,50 @@ def generate_snapshot(
             player_id=str(market_player["id"]),
             news_id=news_id,
         )
+        fallback_by_season = cached_api_histories(
+            previous_quality_payload,
+            competition=str(market_payload["competition"]),
+            season=str(market_payload["season"]),
+            player_id=str(market_player["id"]),
+            news_id=news_id,
+            include_current=True,
+        )
         histories: list[dict[str, Any]] = []
         for history_season in history_seasons:
             cached = cached_by_season.get(history_season)
             if cached is not None:
                 histories.append(cached)
                 reused += 1
+            elif provider_rate_limited and history_season in fallback_by_season:
+                histories.append(fallback_by_season[history_season])
+                reused += 1
             else:
-                histories.append(
-                    fetch_player_season(
-                        provider_id,
-                        history_season,
-                        headers=headers,
-                        request_delay=request_delay,
+                try:
+                    histories.append(
+                        fetch_player_season(
+                            provider_id,
+                            history_season,
+                            headers=headers,
+                            request_delay=request_delay,
+                        )
                     )
-                )
-                fetched += 1
+                    fetched += 1
+                except RuntimeError as error:
+                    fallback = fallback_by_season.get(history_season)
+                    if (
+                        fallback is None
+                        or not is_api_sports_rate_limit(error)
+                    ):
+                        raise
+                    provider_rate_limited = True
+                    histories.append(fallback)
+                    reused += 1
+                    print(
+                        "API-Sports rate limit reached; reusing validated "
+                        "current-season raw histories for the remainder of "
+                        "this quality run.",
+                        file=sys.stderr,
+                    )
             completed += 1
             print(
                 f"quality history {completed}/{total_requests} "
