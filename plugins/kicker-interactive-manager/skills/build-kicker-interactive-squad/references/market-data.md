@@ -6,6 +6,16 @@ Für 2. Bundesliga und 3. Liga 2026/27 einen gemeinsamen, nur lesbaren Marktbest
 
 Der gemeinsame Marktbestand beschleunigt und vereinheitlicht die Recherche. Er garantiert keine kollisionsfreien Kader bei unabhängig gestarteten Kollegen. Überschneidungsfreie Ankerkerne nur über ein gemeinsam erzeugtes Gruppenportfolio koordinieren.
 
+## Feste Wettbewerbsbudgets
+
+Die Kicker-Gesamtbudgets sind Teil des Wettbewerbsvertrags:
+
+- Bundesliga: `42.500.000`
+- 2. Bundesliga: `10.000.000`
+- 3. Liga: `6.000.000`
+
+Das Budget nicht aus dem Marktwertniveau ableiten und niemals zwischen Ligen übernehmen. Optimierer und Kaderbewertung müssen bei einem abweichenden expliziten Budget abbrechen. Für technische Fixtures ist nur der ausdrücklich markierte Test-Override zulässig.
+
 ## Öffentliche Endpunkte
 
 ```text

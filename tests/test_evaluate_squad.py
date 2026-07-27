@@ -422,6 +422,7 @@ class SquadEvaluationCliTests(unittest.TestCase):
                     "2026/27",
                     "--budget",
                     "400",
+                    "--allow-nonstandard-budget",
                     "--goalkeepers",
                     "1",
                     "--defenders",

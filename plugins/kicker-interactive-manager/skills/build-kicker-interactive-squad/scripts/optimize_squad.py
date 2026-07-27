@@ -120,6 +120,11 @@ VARIATION_STATE_SCHEMA_VERSION = 1
 OPTIMIZER_CACHE_ENV = "KICKER_OPTIMIZER_CACHE"
 OPTIMIZER_CACHE_SCHEMA_VERSION = 1
 OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v3"
+COMPETITION_BUDGETS = {
+    "Bundesliga": 42_500_000,
+    "2. Bundesliga": 10_000_000,
+    "3. Liga": 6_000_000,
+}
 
 PROFILE_ALIASES = {
     "reliable": "reliable",
@@ -4930,6 +4935,16 @@ def output_payload(
         "variation": args.variation,
         "seed": seed,
         "budget": args.budget,
+        "budget_contract": {
+            "competition": getattr(args, "competition", None),
+            "fixed_budget": COMPETITION_BUDGETS.get(
+                getattr(args, "competition", None)
+            ),
+            "matches": (
+                COMPETITION_BUDGETS.get(getattr(args, "competition", None))
+                in {None, args.budget}
+            ),
+        },
         "cost": squad.cost,
         "remaining_budget": args.budget - squad.cost,
         "score": round(raw_squad_score, 3),
@@ -5387,7 +5402,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Technical override after conflicts were manually resolved; never use silently",
     )
-    parser.add_argument("--budget", type=int, required=True, help="Budget in whole euros")
+    parser.add_argument(
+        "--budget",
+        type=int,
+        help=(
+            "Budget in whole euros; defaults to the fixed Kicker competition "
+            "budget (Bundesliga 42.5m, 2. Bundesliga 10m, 3. Liga 6m)"
+        ),
+    )
     parser.add_argument(
         "--min-spend-ratio",
         type=float,
@@ -5563,6 +5585,22 @@ def parse_args() -> argparse.Namespace:
     args.profile = PROFILE_ALIASES[args.profile]
     args.maintenance = MAINTENANCE_ALIASES[args.maintenance]
     args.variation = VARIATION_ALIASES[args.variation]
+    expected_budget = COMPETITION_BUDGETS.get(args.competition)
+    if args.budget is None:
+        if expected_budget is None:
+            parser.error(
+                "--budget is required when no competition is supplied"
+            )
+        args.budget = expected_budget
+    elif (
+        expected_budget is not None
+        and args.budget != expected_budget
+        and not args.allow_unannotated
+    ):
+        parser.error(
+            f"--budget must be {expected_budget} for {args.competition}; "
+            "competition budgets are fixed Kicker rules"
+        )
     if args.players and args.market_snapshot:
         parser.error("--players and --market-snapshot cannot be combined")
     if not args.players and not args.market_snapshot:

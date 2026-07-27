@@ -261,6 +261,7 @@ def evaluate(
     require_news_coverage: bool,
     max_evidence_age_days: int,
     today: date,
+    competition: str | None = None,
 ) -> dict[str, Any]:
     alerts: list[dict[str, Any]] = []
     strengths: list[str] = []
@@ -819,6 +820,16 @@ def evaluate(
         ),
         "profile": profile,
         "maintenance": maintenance,
+        "budget_contract": {
+            "competition": competition,
+            "fixed_budget": optimizer.COMPETITION_BUDGETS.get(
+                competition
+            ),
+            "matches": (
+                optimizer.COMPETITION_BUDGETS.get(competition)
+                in {None, budget}
+            ),
+        },
         "roster": {
             "valid": roster_valid,
             "players": len(selected),
@@ -978,7 +989,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--require-news-snapshot", action="store_true")
     parser.add_argument("--require-news-coverage", action="store_true")
-    parser.add_argument("--budget", type=int, required=True)
+    parser.add_argument(
+        "--budget",
+        type=int,
+        help=(
+            "Total competition budget in whole euros; defaults to the fixed "
+            "Kicker budget for the selected competition"
+        ),
+    )
+    parser.add_argument(
+        "--allow-nonstandard-budget",
+        action="store_true",
+        help="Technical fixture override; never use for a real Kicker squad",
+    )
     parser.add_argument("--goalkeepers", type=int, default=3)
     parser.add_argument("--defenders", type=int, default=7)
     parser.add_argument("--midfielders", type=int, default=7)
@@ -1000,6 +1023,17 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     args.profile = optimizer.PROFILE_ALIASES[args.profile]
     args.maintenance = optimizer.MAINTENANCE_ALIASES[args.maintenance]
+    expected_budget = optimizer.COMPETITION_BUDGETS[args.competition]
+    if args.budget is None:
+        args.budget = expected_budget
+    elif (
+        args.budget != expected_budget
+        and not args.allow_nonstandard_budget
+    ):
+        parser.error(
+            f"--budget must be {expected_budget} for {args.competition}; "
+            "competition budgets are fixed Kicker rules"
+        )
     if args.max_outfield_per_club is None:
         args.max_outfield_per_club = optimizer.DEFAULT_CLUB_CAP[args.profile]
     if args.budget <= 0:
@@ -1262,6 +1296,7 @@ def main() -> int:
         require_news_coverage=args.require_news_coverage,
         max_evidence_age_days=args.max_evidence_age_days,
         today=datetime.now(timezone.utc).date(),
+        competition=args.competition,
     )
     payload["market_audit"] = market_audit
     payload["quality_audit"] = quality_audit

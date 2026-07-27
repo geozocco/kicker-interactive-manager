@@ -95,6 +95,49 @@ def varied_pool() -> tuple[list[optimizer.Player], dict[str, float]]:
 
 
 class DistanceOptimizerTests(unittest.TestCase):
+    def test_competition_budgets_default_to_fixed_kicker_limits(self) -> None:
+        for competition, expected_budget in (
+            ("Bundesliga", 42_500_000),
+            ("2. Bundesliga", 10_000_000),
+            ("3. Liga", 6_000_000),
+        ):
+            with self.subTest(competition=competition), mock.patch.object(
+                sys,
+                "argv",
+                [
+                    str(SCRIPT_PATH),
+                    "--competition",
+                    competition,
+                    "--season",
+                    "2026/27",
+                    "--players",
+                    "players.csv",
+                ],
+            ):
+                args = optimizer.parse_args()
+                self.assertEqual(expected_budget, args.budget)
+
+    def test_final_recommendation_rejects_wrong_competition_budget(
+        self,
+    ) -> None:
+        with mock.patch.object(
+            sys,
+            "argv",
+            [
+                str(SCRIPT_PATH),
+                "--competition",
+                "3. Liga",
+                "--season",
+                "2026/27",
+                "--players",
+                "players.csv",
+                "--budget",
+                "10000000",
+            ],
+        ):
+            with self.assertRaises(SystemExit):
+                optimizer.parse_args()
+
     def test_reliable_low_maintenance_defaults_fund_the_starting_core(self) -> None:
         with mock.patch.object(
             sys,

@@ -29,6 +29,8 @@ Den Wettbewerb sowie die drei Strategieparameter aus der Anfrage übernehmen.
 
 0. Wettbewerb:
    - ausschließlich `Bundesliga`, `2. Bundesliga` oder `3. Liga`
+   - feste Kicker-Gesamtbudgets verwenden: Bundesliga `42.500.000`, 2. Bundesliga `10.000.000`, 3. Liga `6.000.000`
+   - das Budget niemals aus einer anderen Spielklasse übernehmen oder frei schätzen; weicht die sichtbare Seite vom festen Ligabudget ab, Wettbewerb und Saison erneut prüfen und vor jeder Änderung stoppen
    - die WM und andere Turniere sind ausdrücklich ausgeschlossen
    - fehlt die Spielklasse bei einer Zusammenstellung oder Änderung, vor Recherche oder Browseränderungen nachfragen; nicht aus einem zufällig geöffneten Tab raten
    - bei einer ausdrücklich read-only angeforderten Bewertung darf die Liga aus genau einem geöffneten, eindeutig erkennbaren kicker-Interactive-Kadertab übernommen werden; bei mehreren passenden Tabs oder uneindeutiger Seite nachfragen
@@ -145,7 +147,7 @@ Beispiel für eine ausdrücklich gewünschte neue persönliche Variante:
 <python-3-command> scripts/optimize_squad.py ... --variation medium --new-variant --format json
 ```
 
-Wettbewerb, Saison und vier Positionsargumente immer mit den zuvor von der sichtbaren Kicker-Seite erfassten Werten belegen; die gezeigten Werte sind nur ein Beispiel. Für das Profil `verlässlich` mindestens vier `reliable_anchor` verlangen, davon mindestens drei in Mittelfeld oder Sturm. Ist das mit aktuell auswählbaren Spielern nicht möglich, den Pool um mehrjährig bestätigte Scorer, Kreativspieler und Standard- oder Schlüsselspieler erweitern oder die Einschränkung offen erklären; die Mindestzahl nicht still absenken.
+Wettbewerb, Saison und vier Positionsargumente immer mit den zuvor von der sichtbaren Kicker-Seite erfassten Werten belegen; die gezeigten Werte sind nur ein Beispiel. `--budget` weglassen und den festen Wettbewerbshaushalt automatisch verwenden oder exakt den oben genannten Wert übergeben. Für das Profil `verlässlich` mindestens vier `reliable_anchor` verlangen, davon mindestens drei in Mittelfeld oder Sturm. Ist das mit aktuell auswählbaren Spielern nicht möglich, den Pool um mehrjährig bestätigte Scorer, Kreativspieler und Standard- oder Schlüsselspieler erweitern oder die Einschränkung offen erklären; die Mindestzahl nicht still absenken.
 
 ### 4. Portfolio prüfen
 
