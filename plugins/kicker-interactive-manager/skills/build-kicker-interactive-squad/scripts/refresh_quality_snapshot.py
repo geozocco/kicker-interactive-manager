@@ -2185,6 +2185,32 @@ def apply_goalkeeper_hierarchy(
             }
 
 
+def mark_benchmark_references(
+    annotations: dict[str, dict[str, Any]],
+    per_position: int = 4,
+) -> None:
+    """Mark redundant, score-neutral comparison references per field position."""
+
+    for position in ("DEFENDER", "MIDFIELDER", "FORWARD"):
+        position_items = [
+            (player_id, annotation)
+            for player_id, annotation in annotations.items()
+            if annotation["position"] == position
+        ]
+        position_items.sort(
+            key=lambda item: (
+                -float(item[1]["components"]["confirmed_performance"]),
+                -int(item[1]["proven_seasons"]),
+                item[0],
+            )
+        )
+        # Later injuries, transfers or provider-identity conflicts may remove
+        # individual references. The optimizer still requires two eligible
+        # benchmarks. These flags never affect player scoring.
+        for player_id, _ in position_items[:per_position]:
+            annotations[player_id]["benchmark"] = True
+
+
 def generate_snapshot(
     market_payload: dict[str, Any],
     news_payload: dict[str, Any],
@@ -2346,21 +2372,7 @@ def generate_snapshot(
         config,
     )
 
-    for position in ("DEFENDER", "MIDFIELDER", "FORWARD"):
-        position_items = [
-            (player_id, annotation)
-            for player_id, annotation in annotations.items()
-            if annotation["position"] == position
-        ]
-        position_items.sort(
-            key=lambda item: (
-                -float(item[1]["components"]["confirmed_performance"]),
-                -int(item[1]["proven_seasons"]),
-                item[0],
-            )
-        )
-        for player_id, _ in position_items[:2]:
-            annotations[player_id]["benchmark"] = True
+    mark_benchmark_references(annotations)
 
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,

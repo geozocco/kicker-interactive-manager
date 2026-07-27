@@ -136,6 +136,34 @@ class QualityProviderRetryTests(unittest.TestCase):
         self.assertEqual(65, sleep.call_args_list[0].args[0])
 
 
+class BenchmarkResilienceTests(unittest.TestCase):
+    def test_quality_builder_keeps_four_benchmark_references_per_position(
+        self,
+    ) -> None:
+        annotations = {}
+        for position in ("DEFENDER", "MIDFIELDER", "FORWARD"):
+            for index in range(6):
+                annotations[f"{position}-{index}"] = {
+                    "position": position,
+                    "components": {
+                        "confirmed_performance": float(100 - index)
+                    },
+                    "proven_seasons": 6 - index,
+                    "benchmark": False,
+                }
+
+        quality.mark_benchmark_references(annotations)
+
+        for position in ("DEFENDER", "MIDFIELDER", "FORWARD"):
+            selected = [
+                player_id
+                for player_id, annotation in annotations.items()
+                if annotation["position"] == position
+                and annotation["benchmark"]
+            ]
+            self.assertEqual(4, len(selected))
+
+
 def market_player(*, points: float = 100) -> dict:
     return {
         "id": "p1",
