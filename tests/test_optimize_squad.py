@@ -1874,12 +1874,145 @@ class ReliableCorePolicyTests(unittest.TestCase):
             after["bench_usage_weights"]["FORWARD"],
         )
         self.assertEqual(
-            "joint-xi-bench-v1",
+            "joint-xi-bench-v2",
             optimized.architecture_diagnostics["model_version"],
         )
         self.assertGreater(
             optimized.architecture_diagnostics["evaluated_rosters"],
             1,
+        )
+
+    def test_forward_budget_prefers_top_three_over_equal_five(self) -> None:
+        flat_players: list[optimizer.Player] = []
+        scores: dict[str, float] = {}
+        for position, prefix, count, base_score in (
+            ("GOALKEEPER", "g", 3, 70.0),
+            ("DEFENDER", "d", 7, 80.0),
+            ("MIDFIELDER", "m", 7, 90.0),
+        ):
+            for index in range(count):
+                item = player(
+                    f"{prefix}{index}",
+                    (
+                        "Goalkeeper Club"
+                        if position == "GOALKEEPER"
+                        else f"Club {prefix}{index}"
+                    ),
+                    position,
+                    100,
+                )
+                flat_players.append(item)
+                scores[item.player_id] = base_score - index
+        for index, score in enumerate((100.0, 99.0, 98.0, 90.0, 89.0)):
+            item = player(
+                f"f{index}",
+                f"Club f{index}",
+                "FORWARD",
+                300,
+            )
+            flat_players.append(item)
+            scores[item.player_id] = score
+
+        flat_squad = optimizer.Squad(flat_players, 0.0)
+        concentrated_squad = optimizer.Squad(
+            [
+                (
+                    optimizer.replace(item, cost=550)
+                    if item.player_id == "f0"
+                    else (
+                        optimizer.replace(item, cost=50)
+                        if item.player_id == "f4"
+                        else item
+                    )
+                )
+                for item in flat_players
+            ],
+            0.0,
+        )
+        flat = optimizer.squad_architecture_metrics(
+            flat_squad,
+            scores,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.50,
+            target_core_budget_share=0.65,
+        )
+        concentrated = optimizer.squad_architecture_metrics(
+            concentrated_squad,
+            scores,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.50,
+            target_core_budget_share=0.65,
+        )
+
+        self.assertAlmostEqual(0.60, flat["forward_core_budget_share"])
+        self.assertFalse(flat["forward_core_budget_target_met"])
+        self.assertGreaterEqual(
+            concentrated["forward_core_budget_share"],
+            0.75,
+        )
+        self.assertTrue(concentrated["forward_core_budget_target_met"])
+        self.assertEqual(
+            0.18,
+            flat["player_usage_weights"]["f3"],
+        )
+        self.assertEqual(
+            0.05,
+            flat["player_usage_weights"]["f4"],
+        )
+        self.assertGreater(
+            concentrated["architecture_objective"],
+            flat["architecture_objective"],
+        )
+
+    def test_forward_package_search_escapes_two_swap_price_grid(self) -> None:
+        candidates: list[optimizer.Player] = []
+        scores: dict[str, float] = {}
+        for index, (cost, score) in enumerate(
+            (
+                (350, 100.0),
+                (350, 99.0),
+                (350, 98.0),
+                (350, 90.0),
+                (250, 89.0),
+                (450, 108.0),
+                (450, 107.0),
+                (250, 60.0),
+                (150, 40.0),
+                (50, 20.0),
+            )
+        ):
+            item = player(
+                f"package-f{index}",
+                f"Package Club {index}",
+                "FORWARD",
+                cost,
+            )
+            candidates.append(item)
+            scores[item.player_id] = score
+
+        packages = optimizer.forward_roster_packages(
+            candidates,
+            scores,
+            count=5,
+            total_cost=1650,
+            maintenance="low",
+            limit=20,
+        )
+
+        self.assertTrue(packages)
+        best = packages[0]
+        likely_starters = sorted(
+            best,
+            key=lambda item: -scores[item.player_id],
+        )[:3]
+        self.assertGreaterEqual(
+            sum(item.cost for item in likely_starters)
+            / sum(item.cost for item in best),
+            0.75,
         )
 
     def test_joint_architecture_values_goalkeeper_primary_over_backups(
