@@ -57,7 +57,7 @@ class QualityProviderRetryTests(unittest.TestCase):
             ),
         )
 
-    def test_previous_model_history_is_not_reused_for_new_form_model(
+    def test_previous_model_raw_history_is_reused_during_model_migration(
         self,
     ) -> None:
         previous = {
@@ -75,7 +75,7 @@ class QualityProviderRetryTests(unittest.TestCase):
         }
 
         self.assertEqual(
-            {},
+            {2025: {"season": 2025, "appearances": 20}},
             quality.cached_api_histories(
                 previous,
                 competition="3. Liga",
@@ -84,6 +84,29 @@ class QualityProviderRetryTests(unittest.TestCase):
                 news_id="api_sports:123",
             ),
         )
+
+    def test_current_season_is_reused_only_during_model_migration(self) -> None:
+        previous = {
+            "competition": "3. Liga",
+            "season": "2026/27",
+            "model_version": "multi-season-v7-recency-form",
+            "annotations": {
+                "p1": {
+                    "provider_news_id": "api_sports:123",
+                    "api_sports_history": [
+                        {"season": 2026, "appearances": 1}
+                    ],
+                }
+            },
+        }
+        cached = quality.cached_api_histories(
+            previous,
+            competition="3. Liga",
+            season="2026/27",
+            player_id="p1",
+            news_id="api_sports:123",
+        )
+        self.assertIn(2026, cached)
 
     def test_current_season_history_is_refreshed(self) -> None:
         previous = {

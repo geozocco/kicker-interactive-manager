@@ -580,7 +580,6 @@ def cached_api_histories(
         not isinstance(previous_quality_payload, dict)
         or previous_quality_payload.get("competition") != competition
         or previous_quality_payload.get("season") != season
-        or previous_quality_payload.get("model_version") != MODEL_VERSION
     ):
         return {}
     annotation = previous_quality_payload.get("annotations", {}).get(
@@ -590,6 +589,9 @@ def cached_api_histories(
     if annotation.get("provider_news_id") != news_id:
         return {}
     current_history_season = optional_int(str(season).split("/", 1)[0])
+    migrating_model = (
+        previous_quality_payload.get("model_version") != MODEL_VERSION
+    )
     return {
         int(item["season"]): item
         for item in annotation.get("api_sports_history", [])
@@ -597,6 +599,8 @@ def cached_api_histories(
             isinstance(item, dict)
             and optional_int(item.get("season")) is not None
             and (
+                migrating_model
+                or
                 current_history_season is None
                 or int(item["season"]) < current_history_season
             )
