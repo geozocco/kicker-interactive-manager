@@ -113,7 +113,8 @@ class DistanceOptimizerTests(unittest.TestCase):
         ):
             args = optimizer.parse_args()
 
-        self.assertEqual(0.80, args.min_core_budget_share)
+        self.assertEqual(0.55, args.min_core_budget_share)
+        self.assertEqual(1.0, args.min_spend_ratio)
         self.assertEqual(1, args.min_offensive_premium_anchors)
 
     def test_starting_lineup_can_require_an_evidence_derived_premium_anchor(
@@ -1471,6 +1472,21 @@ class ReliableCorePolicyTests(unittest.TestCase):
         )
         self.assertTrue(audit["passes"])
         self.assertLess(repaired.cost, squad.cost)
+
+        protected = optimizer.repair_core_budget_share(
+            squad,
+            candidates,
+            scores,
+            scores,
+            club_cap=3,
+            min_reliable_anchors=4,
+            min_attacking_anchors=3,
+            min_core_budget_share=0.70,
+            quality_floor=float("-inf"),
+            minimum_spend=squad.cost,
+        )
+
+        self.assertIsNone(protected)
 
     def test_core_audit_rejects_equal_value_bench_and_accepts_star_heavy_core(
         self,

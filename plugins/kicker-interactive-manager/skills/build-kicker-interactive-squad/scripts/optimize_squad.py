@@ -1454,6 +1454,7 @@ def repair_core_budget_share(
     min_attacking_anchors: int,
     min_core_budget_share: float,
     quality_floor: float,
+    minimum_spend: int = 0,
     min_offensive_premium_anchors: int = 0,
 ) -> Squad | None:
     """Replace expensive reserves with the best safe cheaper alternatives."""
@@ -1528,6 +1529,8 @@ def repair_core_budget_share(
                         for player in replacement_players
                     ),
                 )
+                if replacement.cost < minimum_spend:
+                    continue
                 replacement_score = sum(
                     quality_scores[player.player_id]
                     for player in replacement_players
@@ -1695,6 +1698,7 @@ def finalize_reliable_core_architecture(
     min_reliable_anchors: int,
     min_attacking_anchors: int,
     min_core_budget_share: float,
+    minimum_spend: int = 0,
     min_offensive_premium_anchors: int = 0,
 ) -> Squad:
     """Apply the same core-first architecture to a squad and its reference."""
@@ -1719,6 +1723,7 @@ def finalize_reliable_core_architecture(
             min_attacking_anchors=min_attacking_anchors,
             min_core_budget_share=min_core_budget_share,
             quality_floor=float("-inf"),
+            minimum_spend=minimum_spend,
             min_offensive_premium_anchors=0,
         )
         if repaired is not None:
@@ -3439,6 +3444,7 @@ def varied_portfolio(
                     min_reliable_anchors=min_reliable_anchors,
                     min_attacking_anchors=min_attacking_anchors,
                     min_core_budget_share=min_core_budget_share,
+                    minimum_spend=minimum_spend,
                     min_offensive_premium_anchors=(
                         min_offensive_premium_anchors
                     ),
@@ -3453,6 +3459,7 @@ def varied_portfolio(
                     min_reliable_anchors=min_reliable_anchors,
                     min_attacking_anchors=min_attacking_anchors,
                     min_core_budget_share=min_core_budget_share,
+                    minimum_spend=minimum_spend,
                     min_offensive_premium_anchors=(
                         min_offensive_premium_anchors
                     ),
@@ -3712,11 +3719,10 @@ def output_payload(
             "annotated candidate pool or increase variation before assigning it "
             "to multiple people."
         )
-    if args.budget - squad.cost > args.budget * 0.10:
+    if args.budget - squad.cost > 0:
         warnings.append(
-            "More than 10% of the budget remains unused. Expand the researched "
-            "candidate pool or set an explicit minimum spend after confirming "
-            "that a complete squad can satisfy it."
+            "Budget remains unused. Final recommendations must spend the full "
+            "available budget."
         )
 
     ordered = sorted(
@@ -4439,8 +4445,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--min-spend-ratio",
         type=float,
-        default=0.0,
-        help="Optional minimum fraction of budget to spend; default 0",
+        default=None,
+        help=(
+            "Minimum fraction of budget to spend; defaults to 1.0 for final "
+            "recommendations and 0 for technical smoke tests"
+        ),
     )
     parser.add_argument("--goalkeepers", type=int, default=3)
     parser.add_argument(
@@ -4518,7 +4527,7 @@ def parse_args() -> argparse.Namespace:
         type=float,
         help=(
             "Minimum share of total squad cost assigned to the best legal "
-            "starting eleven; default 0.80 for every low-maintenance profile"
+            "starting eleven; default 0.55 for every low-maintenance profile"
         ),
     )
     parser.add_argument(
@@ -4648,12 +4657,18 @@ def parse_args() -> argparse.Namespace:
         )
     if args.min_core_budget_share is None:
         args.min_core_budget_share = (
-            0.80
+            0.55
             if (
                 args.maintenance == "low"
                 and not args.allow_unannotated
             )
             else 0.0
+        )
+    if args.min_spend_ratio is None:
+        args.min_spend_ratio = (
+            0.0
+            if args.allow_unannotated or args.shortlist_only
+            else 1.0
         )
     if args.min_offensive_premium_anchors is None:
         args.min_offensive_premium_anchors = (
@@ -5176,6 +5191,7 @@ def main() -> int:
                     min_reliable_anchors=args.min_reliable_anchors,
                     min_attacking_anchors=args.min_attacking_anchors,
                     min_core_budget_share=args.min_core_budget_share,
+                    minimum_spend=minimum_spend,
                     min_offensive_premium_anchors=(
                         args.min_offensive_premium_anchors
                     ),
@@ -5190,6 +5206,7 @@ def main() -> int:
                     min_reliable_anchors=args.min_reliable_anchors,
                     min_attacking_anchors=args.min_attacking_anchors,
                     min_core_budget_share=args.min_core_budget_share,
+                    minimum_spend=minimum_spend,
                     min_offensive_premium_anchors=(
                         args.min_offensive_premium_anchors
                     ),
@@ -5203,6 +5220,14 @@ def main() -> int:
                 )
     except ValueError as error:
         print(f"Optimization stopped: {error}", file=sys.stderr)
+        return 2
+    if squad.cost < minimum_spend:
+        print(
+            "Optimization stopped: the post-processing step left budget "
+            f"unused (spent={squad.cost}, required={minimum_spend}). "
+            "Budget use has priority over low-maintenance bench shaping.",
+            file=sys.stderr,
+        )
         return 2
     selected_ids = squad.ids
     news_conflicts = {

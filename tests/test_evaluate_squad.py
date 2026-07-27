@@ -97,6 +97,7 @@ def evaluate(
     news_exclusions: list[dict] | None = None,
     require_news_coverage: bool = False,
     mapped_ids: list[str] | None = None,
+    budget: int = 400,
 ) -> dict:
     pool = candidates or selected
     score_map = scores or {
@@ -109,7 +110,7 @@ def evaluate(
         candidate_pool=pool,
         scores=score_map,
         slots=SLOTS,
-        budget=400,
+        budget=budget,
         profile="balanced",
         maintenance="normal",
         club_cap=4,
@@ -199,6 +200,16 @@ class SquadEvaluationTests(unittest.TestCase):
         self.assertTrue(payload["roster"]["valid"])
         self.assertEqual(4, len(payload["players"]))
         self.assertEqual([], payload["alerts"])
+
+    def test_any_unused_budget_prevents_error_free_confirmation(self) -> None:
+        payload = evaluate(selected_players(), budget=500)
+
+        self.assertEqual("attention", payload["status"])
+        self.assertFalse(payload["avoidable_error_free"])
+        self.assertIn(
+            "unused_budget",
+            {alert["category"] for alert in payload["alerts"]},
+        )
 
     def test_stale_research_blocks_numeric_confirmation(self) -> None:
         selected = selected_players()

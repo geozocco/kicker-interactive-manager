@@ -527,9 +527,7 @@ def evaluate(
     min_offensive_premium_anchors = (
         1 if profile == "reliable" and maintenance == "low" else 0
     )
-    min_core_share = (
-        0.80 if maintenance == "low" else 0.0
-    )
+    min_core_share = 0.55 if maintenance == "low" else 0.0
     core_audit = optimizer.reliable_core_audit(
         squad,
         scores,
@@ -592,12 +590,13 @@ def evaluate(
             f"{core_budget_share:.1%} des Kaderwerts finanzieren die "
             "stärkste Startelf."
         )
-    if budget > 0 and remaining_budget > budget * 0.10:
+    if budget > 0 and remaining_budget > 0:
         add_alert(
             alerts,
-            "medium",
+            "high",
             "unused_budget",
-            f"{remaining_budget / budget:.1%} des Budgets bleiben ungenutzt.",
+            f"{remaining_budget / budget:.1%} des Budgets bleiben ungenutzt; "
+            "ein finaler Kader soll das vollständige Budget verwenden.",
         )
 
     available_ids = {
