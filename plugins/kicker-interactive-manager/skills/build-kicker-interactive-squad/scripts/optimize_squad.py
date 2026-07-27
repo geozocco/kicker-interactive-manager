@@ -1212,6 +1212,15 @@ def core_weighted_scores(
         "balanced": (0.22, 3.0, 0.45),
         "breakout": (0.32, 2.0, 0.25),
     }[profile]
+    price_premium_ids = premium_starter_candidate_ids(
+        players,
+        scores,
+    )
+    price_premium_bonus = {
+        "reliable": 60.0,
+        "balanced": 40.0,
+        "breakout": 25.0,
+    }[profile]
     weighted: dict[str, float] = {}
     multipliers: dict[str, float] = {}
     for position in DEFAULT_SLOTS:
@@ -1285,6 +1294,10 @@ def core_weighted_scores(
             # bounded, evidence-derived premium prevents several tiny reserve
             # upgrades from collectively displacing a proven top scorer.
             weighted_score += premium_bonus
+            if player.player_id in price_premium_ids:
+                # Price alone never earns a bonus. The candidate must also
+                # clear the upper performance quartile at its position.
+                weighted_score += price_premium_bonus
             weighted[player.player_id] = weighted_score
             multipliers[player.player_id] = multiplier
     return weighted, multipliers
@@ -1527,10 +1540,31 @@ BENCH_USAGE_WEIGHTS = {
     }
     for maintenance, position_weights in BENCH_SLOT_USAGE_WEIGHTS.items()
 }
-FORWARD_CORE_BUDGET_TARGETS = {
-    "low": 0.75,
-    "normal": 0.65,
-    "active": 0.55,
+POSITION_CORE_BUDGET_TARGETS = {
+    "low": {
+        "DEFENDER": 0.65,
+        "MIDFIELDER": 0.65,
+        "FORWARD": 0.75,
+    },
+    "normal": {
+        "DEFENDER": 0.55,
+        "MIDFIELDER": 0.58,
+        "FORWARD": 0.65,
+    },
+    "active": {
+        "DEFENDER": 0.45,
+        "MIDFIELDER": 0.50,
+        "FORWARD": 0.55,
+    },
+}
+POSITION_CONCENTRATION_WEIGHTS = {
+    "DEFENDER": 160.0,
+    "MIDFIELDER": 600.0,
+    "FORWARD": 600.0,
+}
+PACKAGE_STARTER_LIMITS = {
+    "MIDFIELDER": 4,
+    "FORWARD": 3,
 }
 
 
@@ -1574,6 +1608,42 @@ def bench_player_usage_weights(
     return weights
 
 
+def premium_starter_candidate_ids(
+    candidates: list[Player],
+    raw_scores: Mapping[str, float],
+) -> frozenset[str]:
+    """Find price-premium attackers whose performance also clears the top quartile."""
+
+    eligible: set[str] = set()
+    for position in ("MIDFIELDER", "FORWARD"):
+        position_players = [
+            player
+            for player in candidates
+            if player.position == position
+        ]
+        if not position_players:
+            continue
+        highest_price = max(player.cost for player in position_players)
+        ordered_scores = sorted(
+            raw_scores[player.player_id]
+            for player in position_players
+        )
+        upper_quartile_index = max(
+            0,
+            math.ceil(0.75 * len(ordered_scores)) - 1,
+        )
+        score_floor = ordered_scores[upper_quartile_index]
+        eligible.update(
+            player.player_id
+            for player in position_players
+            if (
+                player.cost == highest_price
+                and raw_scores[player.player_id] >= score_floor
+            )
+        )
+    return frozenset(eligible)
+
+
 def squad_architecture_metrics(
     squad: Squad,
     raw_scores: Mapping[str, float],
@@ -1584,6 +1654,7 @@ def squad_architecture_metrics(
     min_core_budget_share: float,
     target_core_budget_share: float,
     min_offensive_premium_anchors: int = 0,
+    premium_starter_ids: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """Value starters at full use and reserves at expected positional use."""
 
@@ -1617,52 +1688,77 @@ def squad_architecture_metrics(
     # concentration material, but never strong enough to replace several
     # genuinely better starters merely because they are cheaper.
     concentration_adjustment = -120.0 * target_gap
-    forward_players = [
-        player
-        for player in squad.players
-        if player.position == "FORWARD"
-    ]
-    forward_spend = sum(player.cost for player in forward_players)
-    forward_core_spend = sum(
-        player.cost
-        for player in forward_players
-        if player.player_id in core_ids
-    )
-    forward_core_budget_share = (
-        forward_core_spend / forward_spend
-        if forward_spend
-        else 0.0
-    )
-    forward_core_budget_target = FORWARD_CORE_BUDGET_TARGETS.get(
+    position_targets = POSITION_CORE_BUDGET_TARGETS.get(
         maintenance,
-        FORWARD_CORE_BUDGET_TARGETS["normal"],
+        POSITION_CORE_BUDGET_TARGETS["normal"],
     )
-    # A ten-point shortfall costs 32 model points: enough to prefer a real
-    # starter upgrade over a second similarly priced reserve, while the first
-    # usable backup still retains its role-weighted contribution.
-    forward_concentration_adjustment = -320.0 * max(
-        0.0,
-        forward_core_budget_target - forward_core_budget_share,
+    position_core_budget: dict[str, dict[str, Any]] = {}
+    position_concentration_adjustment = 0.0
+    for position in ("DEFENDER", "MIDFIELDER", "FORWARD"):
+        position_players = [
+            player
+            for player in squad.players
+            if player.position == position
+        ]
+        total_spend = sum(player.cost for player in position_players)
+        core_spend = sum(
+            player.cost
+            for player in position_players
+            if player.player_id in core_ids
+        )
+        core_share = core_spend / total_spend if total_spend else 0.0
+        target = position_targets[position]
+        adjustment = -POSITION_CONCENTRATION_WEIGHTS[position] * max(
+            0.0,
+            target - core_share,
+        )
+        position_concentration_adjustment += adjustment
+        position_core_budget[position] = {
+            "core_spend": core_spend,
+            "reserve_spend": total_spend - core_spend,
+            "core_budget_share": core_share,
+            "target": target,
+            "target_met": core_share + 1e-9 >= target,
+            "adjustment": adjustment,
+        }
+    premium_starters = sorted(core_ids.intersection(premium_starter_ids))
+    premium_starter_target = int(bool(premium_starter_ids))
+    premium_starter_adjustment = -45.0 * max(
+        0,
+        premium_starter_target - len(premium_starters),
     )
+    forward_budget = position_core_budget["FORWARD"]
+    midfield_budget = position_core_budget["MIDFIELDER"]
     return {
         **audit,
         "expected_contribution": expected_contribution,
         "concentration_adjustment": concentration_adjustment,
-        "forward_concentration_adjustment": (
-            forward_concentration_adjustment
+        "position_concentration_adjustment": (
+            position_concentration_adjustment
         ),
-        "forward_core_spend": forward_core_spend,
-        "forward_reserve_spend": forward_spend - forward_core_spend,
-        "forward_core_budget_share": forward_core_budget_share,
-        "forward_core_budget_target": forward_core_budget_target,
-        "forward_core_budget_target_met": (
-            forward_core_budget_share + 1e-9
-            >= forward_core_budget_target
+        "position_core_budget": position_core_budget,
+        "forward_core_spend": forward_budget["core_spend"],
+        "forward_reserve_spend": forward_budget["reserve_spend"],
+        "forward_core_budget_share": forward_budget["core_budget_share"],
+        "forward_core_budget_target": forward_budget["target"],
+        "forward_core_budget_target_met": forward_budget["target_met"],
+        "midfield_core_spend": midfield_budget["core_spend"],
+        "midfield_reserve_spend": midfield_budget["reserve_spend"],
+        "midfield_core_budget_share": midfield_budget["core_budget_share"],
+        "midfield_core_budget_target": midfield_budget["target"],
+        "midfield_core_budget_target_met": midfield_budget["target_met"],
+        "premium_starter_candidate_ids": sorted(premium_starter_ids),
+        "premium_starter_ids": premium_starters,
+        "premium_starter_target": premium_starter_target,
+        "premium_starter_target_met": (
+            len(premium_starters) >= premium_starter_target
         ),
+        "premium_starter_adjustment": premium_starter_adjustment,
         "architecture_objective": (
             expected_contribution
             + concentration_adjustment
-            + forward_concentration_adjustment
+            + position_concentration_adjustment
+            + premium_starter_adjustment
         ),
         "player_contributions": player_contributions,
         "player_usage_weights": player_usage_weights,
@@ -1712,43 +1808,51 @@ def _architecture_candidate_is_legal(
     )
 
 
-def forward_roster_packages(
+def position_roster_packages(
     candidates: list[Player],
     raw_scores: Mapping[str, float],
     *,
+    position: str,
     count: int,
     total_cost: int,
     maintenance: str,
     limit: int = 300,
 ) -> list[tuple[Player, ...]]:
-    """Find strong full-forward packages without brute-forcing the market."""
+    """Find strong full-position packages without brute-forcing the market."""
 
-    if count <= 0 or total_cost <= 0 or limit <= 0:
+    if (
+        position not in PACKAGE_STARTER_LIMITS
+        or count <= 0
+        or total_cost <= 0
+        or limit <= 0
+    ):
         return []
     by_cost: dict[int, list[Player]] = {}
     for player in candidates:
-        if player.position == "FORWARD":
+        if player.position == position:
             by_cost.setdefault(player.cost, []).append(player)
     for cost, players_at_cost in by_cost.items():
+        tier_candidate_limit = 6 if count >= 7 else 8
         by_cost[cost] = sorted(
             players_at_cost,
             key=lambda player: (
                 -raw_scores[player.player_id],
                 player.player_id,
             ),
-        )[:8]
+        )[:tier_candidate_limit]
     costs = sorted(by_cost)
     if not costs:
         return []
 
-    target = FORWARD_CORE_BUDGET_TARGETS.get(
+    target = POSITION_CORE_BUDGET_TARGETS.get(
         maintenance,
-        FORWARD_CORE_BUDGET_TARGETS["normal"],
-    )
+        POSITION_CORE_BUDGET_TARGETS["normal"],
+    )[position]
+    concentration_weight = POSITION_CONCENTRATION_WEIGHTS[position]
     reserve_weights = BENCH_SLOT_USAGE_WEIGHTS.get(
         maintenance,
         BENCH_SLOT_USAGE_WEIGHTS["normal"],
-    )["FORWARD"]
+    )[position]
     heap: list[
         tuple[float, tuple[str, ...], tuple[Player, ...]]
     ] = []
@@ -1786,12 +1890,26 @@ def forward_roster_packages(
             tuple(itertools.combinations(by_cost[cost], tier_count))
             for cost, tier_count in sorted(tier_counts.items())
         ]
-        for option_parts in itertools.product(*tier_options):
-            package = tuple(
-                player
-                for option in option_parts
-                for player in option
-            )
+        partial_packages: list[tuple[Player, ...]] = [()]
+        beam_limit = max(160, 2 * limit)
+        for options in tier_options:
+            partial_packages = sorted(
+                (
+                    (*partial, *option)
+                    for partial in partial_packages
+                    for option in options
+                ),
+                key=lambda package: (
+                    -sum(
+                        raw_scores[player.player_id]
+                        for player in package
+                    ),
+                    tuple(
+                        sorted(player.player_id for player in package)
+                    ),
+                ),
+            )[:beam_limit]
+        for package in partial_packages:
             ordered = sorted(
                 package,
                 key=lambda player: (
@@ -1799,7 +1917,10 @@ def forward_roster_packages(
                     player.player_id,
                 ),
             )
-            starter_count = min(3, len(ordered))
+            starter_count = min(
+                PACKAGE_STARTER_LIMITS[position],
+                len(ordered),
+            )
             starters = ordered[:starter_count]
             reserves = ordered[starter_count:]
             core_spend = sum(player.cost for player in starters)
@@ -1814,7 +1935,7 @@ def forward_roster_packages(
                 ]
                 for index, player in enumerate(reserves)
             )
-            proxy = expected_contribution - 320.0 * max(
+            proxy = expected_contribution - concentration_weight * max(
                 0.0,
                 target - core_share,
             )
@@ -1836,6 +1957,28 @@ def forward_roster_packages(
     ]
 
 
+def forward_roster_packages(
+    candidates: list[Player],
+    raw_scores: Mapping[str, float],
+    *,
+    count: int,
+    total_cost: int,
+    maintenance: str,
+    limit: int = 300,
+) -> list[tuple[Player, ...]]:
+    """Backward-compatible wrapper for the full-forward package search."""
+
+    return position_roster_packages(
+        candidates,
+        raw_scores,
+        position="FORWARD",
+        count=count,
+        total_cost=total_cost,
+        maintenance=maintenance,
+        limit=limit,
+    )
+
+
 def optimize_joint_squad_architecture(
     squad: Squad,
     candidates: list[Player],
@@ -1851,7 +1994,7 @@ def optimize_joint_squad_architecture(
     target_core_budget_share: float,
     min_offensive_premium_anchors: int = 0,
     quality_loss_limit: float = 0.05,
-    max_iterations: int = 5,
+    max_iterations: int = 10,
     same_club_goalkeepers: bool = True,
 ) -> Squad:
     """Jointly improve the legal XI and its reserves at exact total spend."""
@@ -1877,6 +2020,10 @@ def optimize_joint_squad_architecture(
         ]
         for position in positions
     }
+    premium_starter_ids = premium_starter_candidate_ids(
+        candidates,
+        raw_scores,
+    )
     single_packages: dict[tuple[str, int], list[Player]] = {}
     for position in positions:
         for player in candidate_by_position[position]:
@@ -1966,12 +2113,13 @@ def optimize_joint_squad_architecture(
         min_core_budget_share=min_core_budget_share,
         target_core_budget_share=target_core_budget_share,
         min_offensive_premium_anchors=min_offensive_premium_anchors,
+        premium_starter_ids=premium_starter_ids,
     )
     maximum_reachable_core_share = current_metrics["core_budget_share"]
     evaluated_rosters = 1
     completed_iterations = 0
-    forward_packages_by_cost: dict[
-        tuple[int, int], list[tuple[Player, ...]]
+    position_packages_by_cost: dict[
+        tuple[str, int, int], list[tuple[Player, ...]]
     ] = {}
     for iteration in range(max_iterations):
         selected_ids = current.ids
@@ -2016,6 +2164,7 @@ def optimize_joint_squad_architecture(
                 min_offensive_premium_anchors=(
                     min_offensive_premium_anchors
                 ),
+                premium_starter_ids=premium_starter_ids,
             )
             evaluated_rosters += 1
             if not metrics["passes"]:
@@ -2173,39 +2322,52 @@ def optimize_joint_squad_architecture(
                     ]
                 )
 
-        current_forwards = [
-            player
-            for player in current.players
-            if player.position == "FORWARD"
-        ]
-        forward_package_key = (
-            len(current_forwards),
-            sum(player.cost for player in current_forwards),
-        )
-        if forward_package_key not in forward_packages_by_cost:
-            forward_packages_by_cost[forward_package_key] = (
-                forward_roster_packages(
-                    candidate_by_position["FORWARD"],
-                    raw_scores,
-                    count=forward_package_key[0],
-                    total_cost=forward_package_key[1],
-                    maintenance=maintenance,
-                )
+        for position in PACKAGE_STARTER_LIMITS:
+            current_position_players = [
+                player
+                for player in current.players
+                if player.position == position
+            ]
+            position_package_key = (
+                position,
+                len(current_position_players),
+                sum(
+                    player.cost
+                    for player in current_position_players
+                ),
             )
-        current_forward_ids = {
-            player.player_id for player in current_forwards
-        }
-        non_forwards = [
-            player
-            for player in current.players
-            if player.position != "FORWARD"
-        ]
-        for package in forward_packages_by_cost[forward_package_key]:
-            if {
-                player.player_id for player in package
-            } == current_forward_ids:
-                continue
-            consider([*non_forwards, *package])
+            if position_package_key not in position_packages_by_cost:
+                position_packages_by_cost[position_package_key] = (
+                    position_roster_packages(
+                        candidate_by_position[position],
+                        raw_scores,
+                        position=position,
+                        count=position_package_key[1],
+                        total_cost=position_package_key[2],
+                        maintenance=maintenance,
+                        limit=(
+                            80
+                            if position == "MIDFIELDER"
+                            else 200
+                        ),
+                    )
+                )
+            current_position_ids = {
+                player.player_id for player in current_position_players
+            }
+            other_positions = [
+                player
+                for player in current.players
+                if player.position != position
+            ]
+            for package in position_packages_by_cost[
+                position_package_key
+            ]:
+                if {
+                    player.player_id for player in package
+                } == current_position_ids:
+                    continue
+                consider([*other_positions, *package])
 
         if not alternatives:
             break
@@ -2224,7 +2386,7 @@ def optimize_joint_squad_architecture(
         maximum_reachable_core_share,
     )
     current.architecture_diagnostics = {
-        "model_version": "joint-xi-bench-v2",
+        "model_version": "joint-xi-bench-v3",
         "expected_contribution": round(
             current_metrics["expected_contribution"],
             6,
@@ -2252,6 +2414,9 @@ def optimize_joint_squad_architecture(
         "bench_slot_usage_weights": current_metrics[
             "bench_slot_usage_weights"
         ],
+        "position_core_budget": current_metrics[
+            "position_core_budget"
+        ],
         "forward_core_spend": current_metrics["forward_core_spend"],
         "forward_reserve_spend": current_metrics[
             "forward_reserve_spend"
@@ -2264,6 +2429,29 @@ def optimize_joint_squad_architecture(
         ],
         "forward_core_budget_target_met": current_metrics[
             "forward_core_budget_target_met"
+        ],
+        "midfield_core_spend": current_metrics["midfield_core_spend"],
+        "midfield_reserve_spend": current_metrics[
+            "midfield_reserve_spend"
+        ],
+        "midfield_core_budget_share": current_metrics[
+            "midfield_core_budget_share"
+        ],
+        "midfield_core_budget_target": current_metrics[
+            "midfield_core_budget_target"
+        ],
+        "midfield_core_budget_target_met": current_metrics[
+            "midfield_core_budget_target_met"
+        ],
+        "premium_starter_candidate_ids": current_metrics[
+            "premium_starter_candidate_ids"
+        ],
+        "premium_starter_ids": current_metrics["premium_starter_ids"],
+        "premium_starter_target": current_metrics[
+            "premium_starter_target"
+        ],
+        "premium_starter_target_met": current_metrics[
+            "premium_starter_target_met"
         ],
         "player_contributions": current_metrics[
             "player_contributions"
@@ -5166,6 +5354,26 @@ def output_payload(
             ),
             3,
         )
+        architecture_audit["midfield_core_budget_share_percent"] = round(
+            100.0
+            * float(
+                architecture_audit.get(
+                    "midfield_core_budget_share",
+                    0.0,
+                )
+            ),
+            3,
+        )
+        architecture_audit["midfield_core_budget_target_percent"] = round(
+            100.0
+            * float(
+                architecture_audit.get(
+                    "midfield_core_budget_target",
+                    0.0,
+                )
+            ),
+            3,
+        )
         if not architecture_audit.get(
             "forward_core_budget_target_met",
             True,
@@ -5174,6 +5382,23 @@ def output_payload(
                 "The forward budget is still spread too evenly across all "
                 "five slots; prefer one or two stronger starting attackers "
                 "and cheaper fourth/fifth forwards."
+            )
+        if not architecture_audit.get(
+            "midfield_core_budget_target_met",
+            True,
+        ):
+            warnings.append(
+                "The midfield budget is still spread too evenly across all "
+                "seven slots; prefer stronger starters and cheaper sixth/"
+                "seventh midfielders."
+            )
+        if not architecture_audit.get(
+            "premium_starter_target_met",
+            True,
+        ):
+            warnings.append(
+                "No quality-qualified player from the highest offensive "
+                "price tier reached the starting eleven."
             )
     architecture_contributions = squad.architecture_diagnostics.get(
         "player_contributions",

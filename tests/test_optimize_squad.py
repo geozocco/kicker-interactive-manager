@@ -1874,7 +1874,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             after["bench_usage_weights"]["FORWARD"],
         )
         self.assertEqual(
-            "joint-xi-bench-v2",
+            "joint-xi-bench-v3",
             optimized.architecture_diagnostics["model_version"],
         )
         self.assertGreater(
@@ -2013,6 +2013,144 @@ class ReliableCorePolicyTests(unittest.TestCase):
             sum(item.cost for item in likely_starters)
             / sum(item.cost for item in best),
             0.75,
+        )
+
+    def test_midfield_budget_prefers_core_over_equal_seven(self) -> None:
+        flat_players: list[optimizer.Player] = []
+        scores: dict[str, float] = {}
+        for position, prefix, count, base_score in (
+            ("GOALKEEPER", "mg", 3, 70.0),
+            ("DEFENDER", "md", 7, 80.0),
+            ("FORWARD", "mf", 5, 100.0),
+        ):
+            for index in range(count):
+                item = player(
+                    f"{prefix}{index}",
+                    (
+                        "Midfield Goalkeeper Club"
+                        if position == "GOALKEEPER"
+                        else f"Midfield Club {prefix}{index}"
+                    ),
+                    position,
+                    100,
+                )
+                flat_players.append(item)
+                scores[item.player_id] = base_score - index
+        for index, score in enumerate(
+            (110.0, 109.0, 108.0, 107.0, 90.0, 89.0, 88.0)
+        ):
+            item = player(
+                f"mm{index}",
+                f"Midfield Club {index}",
+                "MIDFIELDER",
+                300,
+            )
+            flat_players.append(item)
+            scores[item.player_id] = score
+
+        flat_squad = optimizer.Squad(flat_players, 0.0)
+        concentrated_costs = {
+            "mm0": 500,
+            "mm1": 500,
+            "mm2": 400,
+            "mm3": 400,
+            "mm4": 100,
+            "mm5": 100,
+            "mm6": 100,
+        }
+        concentrated_squad = optimizer.Squad(
+            [
+                optimizer.replace(
+                    item,
+                    cost=concentrated_costs[item.player_id],
+                )
+                if item.position == "MIDFIELDER"
+                else item
+                for item in flat_players
+            ],
+            0.0,
+        )
+        flat = optimizer.squad_architecture_metrics(
+            flat_squad,
+            scores,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.50,
+            target_core_budget_share=0.65,
+        )
+        concentrated = optimizer.squad_architecture_metrics(
+            concentrated_squad,
+            scores,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.50,
+            target_core_budget_share=0.65,
+        )
+
+        self.assertLess(flat["midfield_core_budget_share"], 0.65)
+        self.assertFalse(flat["midfield_core_budget_target_met"])
+        self.assertGreaterEqual(
+            concentrated["midfield_core_budget_share"],
+            0.65,
+        )
+        self.assertTrue(concentrated["midfield_core_budget_target_met"])
+        self.assertEqual(0.22, flat["player_usage_weights"]["mm4"])
+        self.assertEqual(0.12, flat["player_usage_weights"]["mm5"])
+        self.assertEqual(0.06, flat["player_usage_weights"]["mm6"])
+        self.assertGreater(
+            concentrated["architecture_objective"],
+            flat["architecture_objective"],
+        )
+
+    def test_premium_starter_requires_price_and_performance(self) -> None:
+        candidates: list[optimizer.Player] = []
+        scores: dict[str, float] = {}
+        for index, (cost, score) in enumerate(
+            (
+                (600, 95.0),
+                (600, 30.0),
+                (450, 100.0),
+                (350, 90.0),
+                (250, 80.0),
+                (150, 70.0),
+                (50, 60.0),
+                (50, 50.0),
+            )
+        ):
+            item = player(
+                f"premium-m{index}",
+                f"Premium Club {index}",
+                "MIDFIELDER",
+                cost,
+            )
+            candidates.append(item)
+            scores[item.player_id] = score
+
+        premium_ids = optimizer.premium_starter_candidate_ids(
+            candidates,
+            scores,
+        )
+
+        self.assertIn("premium-m0", premium_ids)
+        self.assertNotIn("premium-m1", premium_ids)
+        self.assertNotIn("premium-m2", premium_ids)
+        weighted, multipliers = optimizer.core_weighted_scores(
+            candidates,
+            scores,
+            "reliable",
+            "low",
+        )
+        self.assertAlmostEqual(
+            60.0,
+            weighted["premium-m0"]
+            - scores["premium-m0"] * multipliers["premium-m0"],
+        )
+        self.assertAlmostEqual(
+            0.0,
+            weighted["premium-m1"]
+            - scores["premium-m1"] * multipliers["premium-m1"],
         )
 
     def test_joint_architecture_values_goalkeeper_primary_over_backups(
