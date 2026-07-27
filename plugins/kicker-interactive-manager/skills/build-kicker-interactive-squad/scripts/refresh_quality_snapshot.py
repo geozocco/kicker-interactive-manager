@@ -2464,9 +2464,20 @@ def generate_snapshot(
             if cached is not None:
                 histories.append(cached)
                 reused += 1
-            elif provider_rate_limited and history_season in fallback_by_season:
-                histories.append(fallback_by_season[history_season])
-                reused += 1
+            elif provider_rate_limited:
+                fallback = fallback_by_season.get(history_season)
+                if fallback is not None:
+                    histories.append(fallback)
+                    reused += 1
+                else:
+                    histories.append(
+                        empty_season_stats(
+                            history_season,
+                            optional_int(
+                                news_player.get("mapping", {}).get("age")
+                            ),
+                        )
+                    )
             else:
                 try:
                     histories.append(
@@ -2480,18 +2491,25 @@ def generate_snapshot(
                     fetched += 1
                 except RuntimeError as error:
                     fallback = fallback_by_season.get(history_season)
-                    if (
-                        fallback is None
-                        or not is_api_sports_rate_limit(error)
-                    ):
+                    if not is_api_sports_rate_limit(error):
                         raise
                     provider_rate_limited = True
-                    histories.append(fallback)
-                    reused += 1
+                    if fallback is not None:
+                        histories.append(fallback)
+                        reused += 1
+                    else:
+                        histories.append(
+                            empty_season_stats(
+                                history_season,
+                                optional_int(
+                                    news_player.get("mapping", {}).get("age")
+                                ),
+                            )
+                        )
                     print(
                         "API-Sports rate limit reached; reusing validated "
-                        "current-season raw histories for the remainder of "
-                        "this quality run.",
+                        "raw histories where available and leaving provider "
+                        "history empty for newly selected players.",
                         file=sys.stderr,
                     )
             completed += 1
