@@ -154,10 +154,12 @@ class RefreshPreseasonSnapshotTests(unittest.TestCase):
         base.pop("players")
         base.pop("lineups")
         with patch.object(refresh, "api_sports_pages", side_effect=pages):
-            details, request_count, covered = refresh.fetch_fixture_details(
+            details, request_count, covered, lineup_covered = (
+                refresh.fetch_fixture_details(
                 {99: base},
                 headers={"x-apisports-key": "secret"},
                 request_delay=0,
+                )
             )
 
         observations = refresh.provider_observations(
@@ -172,6 +174,7 @@ class RefreshPreseasonSnapshotTests(unittest.TestCase):
         self.assertEqual({"fixture": 99}, calls[0][1])
         self.assertEqual(1, request_count)
         self.assertEqual(1, covered)
+        self.assertEqual(0, lineup_covered)
         self.assertTrue(observations["api_sports:1"]["started"])
 
     def test_fixture_request_includes_provider_season(self) -> None:
@@ -204,7 +207,7 @@ class RefreshPreseasonSnapshotTests(unittest.TestCase):
             patch.object(
                 refresh,
                 "fetch_fixture_details",
-                return_value=({99: fixture()}, 1, 1),
+                return_value=({99: fixture()}, 1, 1, 0),
             ),
         ):
             result = refresh.build_snapshot(

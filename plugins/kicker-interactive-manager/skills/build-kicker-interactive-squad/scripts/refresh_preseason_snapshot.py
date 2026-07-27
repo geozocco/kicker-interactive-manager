@@ -141,7 +141,7 @@ def fetch_fixture_details(
     *,
     headers: dict[str, str],
     request_delay: float,
-) -> tuple[dict[int, dict[str, Any]], int, int]:
+) -> tuple[dict[int, dict[str, Any]], int, int, int]:
     """Attach the player-stat endpoint to fixture metadata.
 
     API-Sports' general ``/fixtures`` response does not contain the ``players``
@@ -152,7 +152,8 @@ def fetch_fixture_details(
 
     details: dict[int, dict[str, Any]] = {}
     calls = 0
-    covered_fixtures = 0
+    player_stat_fixtures = 0
+    lineup_fixtures = 0
     for fixture_id in sorted(fixtures):
         player_blocks: list[dict[str, Any]] = []
         for page in api_sports_pages(
@@ -167,11 +168,28 @@ def fetch_fixture_details(
                     player_blocks.append(item)
         detail = dict(fixtures[fixture_id])
         detail["players"] = player_blocks
+        lineups = list(detail.get("lineups", []))
+        if not player_blocks and not lineups:
+            for page in api_sports_pages(
+                f"{API_BASE}/fixtures/lineups",
+                query={"fixture": fixture_id},
+                headers=headers,
+                paginate=False,
+            ):
+                calls += 1
+                lineups.extend(
+                    item
+                    for item in page.get("response", [])
+                    if isinstance(item, dict)
+                )
+            detail["lineups"] = lineups
         details[fixture_id] = detail
         if player_blocks:
-            covered_fixtures += 1
+            player_stat_fixtures += 1
+        elif lineups:
+            lineup_fixtures += 1
         time.sleep(request_delay)
-    return details, calls, covered_fixtures
+    return details, calls, player_stat_fixtures, lineup_fixtures
 
 
 def starter_ids(item: dict[str, Any], team_id: int) -> set[int]:
@@ -242,6 +260,35 @@ def provider_observations(
                     f"?fixture={fixture_id}"
                 ),
             }
+    for provider_id in starters:
+        player_key = player_map.get(provider_id)
+        if not player_key or player_key in output:
+            continue
+        output[player_key] = {
+            "event_key": f"api-lineup:{fixture_id}:{provider_id}",
+            "fixture_id": fixture_id,
+            "date": fixture_date,
+            "opponent": opponent,
+            "competition": str(league.get("name", "Club Friendly")),
+            "home_away": side,
+            "appeared": True,
+            "started": True,
+            "minutes": 0,
+            "position": "",
+            "goals": 0,
+            "assists": 0,
+            "lineup_role": "unknown",
+            "training_status": "unknown",
+            "coach_signal": 50.0,
+            "opponent_score": 50.0,
+            "confidence": "medium",
+            "claim": "API-Sports Testspiel-Startaufstellung",
+            "source_provider": "api_sports",
+            "source_url": (
+                "https://www.api-football.com/documentation"
+                f"?fixture={fixture_id}"
+            ),
+        }
     return output
 
 
@@ -553,15 +600,28 @@ def build_snapshot(
             headers=headers,
             request_delay=request_delay,
         )
-    details, detail_calls, player_stat_fixtures = fetch_fixture_details(
+    details, detail_calls, player_stat_fixtures, lineup_fixtures = (
+        fetch_fixture_details(
         fixtures,
         headers=headers,
         request_delay=request_delay,
+        )
     )
-    if len(fixtures) >= 5 and player_stat_fixtures == 0:
+    manual_config = config.get("players", {})
+    manual_record_count = sum(
+        len(item.get("events", []))
+        for item in manual_config.values()
+        if isinstance(item, dict)
+    )
+    if (
+        len(fixtures) >= 5
+        and player_stat_fixtures == 0
+        and lineup_fixtures == 0
+        and manual_record_count == 0
+    ):
         raise RuntimeError(
-            "API-Sports returned preseason fixtures but no fixture player "
-            "statistics; refusing to publish an empty green snapshot"
+            "API-Sports returned preseason fixtures but neither player "
+            "statistics nor lineups, and no official evidence is configured"
         )
     by_player: dict[str, list[dict[str, Any]]] = defaultdict(list)
     team_match_count_by_player: dict[str, int] = {}
@@ -587,7 +647,6 @@ def build_snapshot(
             )
             for player_key, observation in observations.items():
                 by_player[player_key].append(observation)
-    manual_config = config.get("players", {})
     all_player_keys = set(by_player) | {
         str(player_id) for player_id in manual_config
     }
@@ -653,10 +712,17 @@ def build_snapshot(
         },
         "providers": {
             "api_sports": {
-                "status": "ok",
+                "status": (
+                    "ok"
+                    if player_stat_fixtures > 0
+                    else "lineup_only"
+                    if lineup_fixtures > 0
+                    else "degraded_official_evidence_only"
+                ),
                 "requests": fixture_calls + detail_calls,
                 "fixtures": len(fixtures),
                 "player_stat_fixtures": player_stat_fixtures,
+                "lineup_fixtures": lineup_fixtures,
                 "player_observations": sum(len(items) for items in by_player.values()),
             },
             "official_evidence": {
