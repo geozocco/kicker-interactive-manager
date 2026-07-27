@@ -200,6 +200,22 @@ class SquadEvaluationTests(unittest.TestCase):
         self.assertTrue(payload["roster"]["valid"])
         self.assertEqual(4, len(payload["players"]))
         self.assertEqual([], payload["alerts"])
+        self.assertEqual(
+            "joint-xi-bench-v1",
+            payload["squad_architecture"]["model_version"],
+        )
+        self.assertEqual(
+            set(optimizer.DEFAULT_SLOTS),
+            set(payload["budget_allocation"]["by_position"]),
+        )
+        self.assertEqual(
+            4,
+            len(
+                payload["budget_allocation"][
+                    "lowest_marginal_value_slots"
+                ]
+            ),
+        )
 
     def test_any_unused_budget_prevents_error_free_confirmation(self) -> None:
         payload = evaluate(selected_players(), budget=500)

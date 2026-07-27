@@ -528,14 +528,23 @@ def evaluate(
         1 if profile == "reliable" and maintenance == "low" else 0
     )
     min_core_share = 0.55 if maintenance == "low" else 0.0
-    core_audit = optimizer.reliable_core_audit(
+    requested_core_target = 0.80 if maintenance == "low" else 0.0
+    price_ceiling_core_target = optimizer.market_core_budget_share_target(
+        candidate_pool,
+        budget,
+        requested_core_target,
+    )
+    architecture_metrics = optimizer.squad_architecture_metrics(
         squad,
         scores,
-        min_anchors,
-        min_attacking_anchors,
-        min_core_share,
-        min_offensive_premium_anchors,
+        maintenance=maintenance,
+        min_reliable_anchors=min_anchors,
+        min_attacking_anchors=min_attacking_anchors,
+        min_core_budget_share=min_core_share,
+        target_core_budget_share=price_ceiling_core_target,
+        min_offensive_premium_anchors=min_offensive_premium_anchors,
     )
+    core_audit = architecture_metrics
     core_ids = frozenset(core_audit["player_ids"])
     core_budget_share = float(core_audit["core_budget_share"])
     if min_anchors and core_audit["reliable_anchors"] < min_anchors:
@@ -750,6 +759,53 @@ def evaluate(
     bench_players = [
         player for player in selected if player.player_id not in core_ids
     ]
+    role_contributions = architecture_metrics["player_contributions"]
+    budget_allocation_by_position: dict[str, dict[str, Any]] = {}
+    for position in optimizer.DEFAULT_SLOTS:
+        position_players = [
+            player for player in selected if player.position == position
+        ]
+        core_players = [
+            player
+            for player in position_players
+            if player.player_id in core_ids
+        ]
+        reserve_players = [
+            player
+            for player in position_players
+            if player.player_id not in core_ids
+        ]
+        core_spend = sum(player.cost for player in core_players)
+        reserve_spend = sum(player.cost for player in reserve_players)
+        core_contribution = sum(
+            role_contributions[player.player_id]
+            for player in core_players
+        )
+        reserve_contribution = sum(
+            role_contributions[player.player_id]
+            for player in reserve_players
+        )
+        budget_allocation_by_position[position] = {
+            "core_spend": core_spend,
+            "reserve_spend": reserve_spend,
+            "core_expected_contribution": round(
+                core_contribution,
+                3,
+            ),
+            "reserve_expected_contribution": round(
+                reserve_contribution,
+                3,
+            ),
+            "core_contribution_per_100k": round(
+                core_contribution / max(core_spend / 100_000, 1e-9),
+                3,
+            ),
+            "reserve_contribution_per_100k": round(
+                reserve_contribution
+                / max(reserve_spend / 100_000, 1e-9),
+                3,
+            ),
+        }
     return {
         "mode": "evaluate_current_squad",
         "status": status,
@@ -785,6 +841,65 @@ def evaluate(
             "attacking_anchors": core_audit["attacking_anchors"],
             "offensive_premium_anchors": core_audit[
                 "offensive_premium_anchors"
+            ],
+        },
+        "squad_architecture": {
+            "model_version": "joint-xi-bench-v1",
+            "expected_contribution": round(
+                architecture_metrics["expected_contribution"],
+                3,
+            ),
+            "architecture_objective": round(
+                architecture_metrics["architecture_objective"],
+                3,
+            ),
+            "requested_core_budget_share_target_percent": round(
+                100.0 * requested_core_target,
+                1,
+            ),
+            "price_ceiling_core_budget_share_target_percent": round(
+                100.0 * price_ceiling_core_target,
+                1,
+            ),
+            "selected_core_budget_share_percent": round(
+                100.0 * core_budget_share,
+                1,
+            ),
+            "bench_usage_weights": architecture_metrics[
+                "bench_usage_weights"
+            ],
+        },
+        "budget_allocation": {
+            "by_position": budget_allocation_by_position,
+            "lowest_marginal_value_slots": [
+                {
+                    "id": player.player_id,
+                    "name": player.name,
+                    "position": player.position,
+                    "selection_role": (
+                        "core"
+                        if player.player_id in core_ids
+                        else "bench"
+                    ),
+                    "cost": player.cost,
+                    "expected_contribution": round(
+                        role_contributions[player.player_id],
+                        3,
+                    ),
+                    "contribution_per_100k": round(
+                        role_contributions[player.player_id]
+                        / max(player.cost / 100_000, 1e-9),
+                        3,
+                    ),
+                }
+                for player in sorted(
+                    selected,
+                    key=lambda player: (
+                        role_contributions[player.player_id]
+                        / max(player.cost / 100_000, 1e-9),
+                        player.player_id,
+                    ),
+                )[:5]
             ],
         },
         "bench": {

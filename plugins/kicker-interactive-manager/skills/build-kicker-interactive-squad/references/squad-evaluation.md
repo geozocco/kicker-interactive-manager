@@ -60,6 +60,8 @@ Die Bewertung umfasst:
 
 - Kadergröße, Positionen, Budget und Torwartblock
 - stärkste legale Startelf und Wertanteil des Kerns
+- gemeinsame Startelf-/Bank-Bewertung mit vollständigem Startergewicht und positionsabhängiger erwarteter Reservenutzung
+- `budget_allocation` nach Position einschließlich Beitrag je 0,1 Mio. und der fünf Plätze mit dem niedrigsten Grenznutzen
 - mehrjährig bestätigte Anker in der Startelf
 - teure Bank und ungenutztes Budget
 - Vereinskonzentration
@@ -76,7 +78,7 @@ Mit dem Urteil beginnen und danach knapp liefern:
 1. Gesamtnote oder klaren Grund, warum sie noch nicht belastbar ist
 2. grüne Stärken
 3. kritische und hohe Warnungen zuerst, jeweils mit Spieler und aktueller Quelle
-4. strukturelle Hinweise zu Startelf, Bank und Budget
+4. strukturelle Hinweise zu Startelf, Bank und Budget; theoretische Preisobergrenze, tatsächliche Kernquote und positionsbezogenen Grenznutzen klar trennen
 5. bezahlbare Alternativen samt Kosten- und Bewertungsdifferenz
 6. Snapshot-Zeitpunkt, Abdeckung und verbleibende Unsicherheit
 

@@ -417,6 +417,10 @@ class Player:
 class Squad:
     players: list[Player]
     objective_score: float
+    architecture_diagnostics: dict[str, Any] = field(
+        default_factory=dict,
+        compare=False,
+    )
 
     @property
     def cost(self) -> int:
@@ -1490,6 +1494,494 @@ def market_core_budget_share_target(
     return min(requested_target, maximum_core_cost / budget)
 
 
+BENCH_USAGE_WEIGHTS = {
+    "low": {
+        "GOALKEEPER": 0.04,
+        "DEFENDER": 0.30,
+        "MIDFIELDER": 0.22,
+        "FORWARD": 0.20,
+    },
+    "normal": {
+        "GOALKEEPER": 0.10,
+        "DEFENDER": 0.38,
+        "MIDFIELDER": 0.32,
+        "FORWARD": 0.30,
+    },
+    "active": {
+        "GOALKEEPER": 0.15,
+        "DEFENDER": 0.45,
+        "MIDFIELDER": 0.40,
+        "FORWARD": 0.38,
+    },
+}
+
+
+def squad_architecture_metrics(
+    squad: Squad,
+    raw_scores: Mapping[str, float],
+    *,
+    maintenance: str,
+    min_reliable_anchors: int,
+    min_attacking_anchors: int,
+    min_core_budget_share: float,
+    target_core_budget_share: float,
+    min_offensive_premium_anchors: int = 0,
+) -> dict[str, Any]:
+    """Value starters at full use and reserves at expected positional use."""
+
+    audit = reliable_core_audit(
+        squad,
+        dict(raw_scores),
+        min_reliable_anchors,
+        min_attacking_anchors,
+        min_core_budget_share,
+        min_offensive_premium_anchors,
+    )
+    core_ids = set(audit["player_ids"])
+    usage_weights = BENCH_USAGE_WEIGHTS[maintenance]
+    player_contributions: dict[str, float] = {}
+    for player in squad.players:
+        role_weight = (
+            1.0
+            if player.player_id in core_ids
+            else usage_weights[player.position]
+        )
+        player_contributions[player.player_id] = (
+            raw_scores[player.player_id] * role_weight
+        )
+    expected_contribution = sum(player_contributions.values())
+    target_gap = max(
+        0.0,
+        target_core_budget_share - audit["core_budget_share"],
+    )
+    # A ten-point core-share gap is worth twelve model points. This makes
+    # concentration material, but never strong enough to replace several
+    # genuinely better starters merely because they are cheaper.
+    concentration_adjustment = -120.0 * target_gap
+    return {
+        **audit,
+        "expected_contribution": expected_contribution,
+        "concentration_adjustment": concentration_adjustment,
+        "architecture_objective": (
+            expected_contribution + concentration_adjustment
+        ),
+        "player_contributions": player_contributions,
+        "bench_usage_weights": dict(usage_weights),
+    }
+
+
+def _architecture_candidate_is_legal(
+    players: list[Player],
+    *,
+    budget: int,
+    club_cap: int,
+    min_reliable_anchors: int,
+) -> bool:
+    if len(players) != len({player.player_id for player in players}):
+        return False
+    if sum(player.cost for player in players) != budget:
+        return False
+    if any(
+        count > club_cap
+        for count in Counter(
+            player.club
+            for player in players
+            if player.position != "GOALKEEPER"
+        ).values()
+    ):
+        return False
+    return (
+        sum(
+            player.reliable_anchor
+            for player in players
+            if player.position != "GOALKEEPER"
+        )
+        >= min_reliable_anchors
+    )
+
+
+def optimize_joint_squad_architecture(
+    squad: Squad,
+    candidates: list[Player],
+    quality_scores: Mapping[str, float],
+    raw_scores: Mapping[str, float],
+    *,
+    budget: int,
+    club_cap: int,
+    maintenance: str,
+    min_reliable_anchors: int,
+    min_attacking_anchors: int,
+    min_core_budget_share: float,
+    target_core_budget_share: float,
+    min_offensive_premium_anchors: int = 0,
+    quality_loss_limit: float = 0.015,
+    max_iterations: int = 5,
+    same_club_goalkeepers: bool = True,
+) -> Squad:
+    """Jointly improve the legal XI and its reserves at exact total spend."""
+
+    if squad.cost != budget:
+        return squad
+    current = squad
+    baseline_quality = sum(
+        quality_scores[player.player_id] for player in squad.players
+    )
+    quality_floor = (
+        baseline_quality - quality_loss_limit * abs(baseline_quality)
+    )
+    positions = ("DEFENDER", "MIDFIELDER", "FORWARD")
+    candidate_by_position: dict[str, list[Player]] = {
+        position: [
+            player
+            for player in candidates
+            if player.position == position
+        ]
+        for position in positions
+    }
+    single_packages: dict[tuple[str, int], list[Player]] = {}
+    for position in positions:
+        for player in candidate_by_position[position]:
+            single_packages.setdefault(
+                (position, player.cost),
+                [],
+            ).append(player)
+    for key, values in single_packages.items():
+        single_packages[key] = sorted(
+            values,
+            key=lambda player: (
+                -raw_scores[player.player_id],
+                player.player_id,
+            ),
+        )[:40]
+
+    pair_packages: dict[
+        tuple[str, str, int], list[tuple[Player, Player]]
+    ] = {}
+    for first_index, first_position in enumerate(positions):
+        for second_position in positions[first_index:]:
+            first_players = candidate_by_position[first_position]
+            second_players = candidate_by_position[second_position]
+            combinations: Iterable[tuple[Player, Player]]
+            if first_position == second_position:
+                combinations = itertools.combinations(first_players, 2)
+            else:
+                combinations = itertools.product(
+                    first_players,
+                    second_players,
+                )
+            for first, second in combinations:
+                pair_packages.setdefault(
+                    (
+                        first_position,
+                        second_position,
+                        first.cost + second.cost,
+                    ),
+                    [],
+                ).append((first, second))
+    for key, values in pair_packages.items():
+        pair_packages[key] = sorted(
+            values,
+            key=lambda pair: (
+                -(
+                    raw_scores[pair[0].player_id]
+                    + raw_scores[pair[1].player_id]
+                ),
+                pair[0].player_id,
+                pair[1].player_id,
+            ),
+        )[:300]
+
+    goalkeeper_blocks: list[tuple[Player, ...]] = []
+    if same_club_goalkeepers:
+        goalkeeper_count = sum(
+            player.position == "GOALKEEPER"
+            for player in squad.players
+        )
+        goalkeepers_by_club: dict[str, list[Player]] = {}
+        for player in candidates:
+            if player.position == "GOALKEEPER":
+                goalkeepers_by_club.setdefault(
+                    player.club,
+                    [],
+                ).append(player)
+        for club_players in goalkeepers_by_club.values():
+            if len(club_players) < goalkeeper_count:
+                continue
+            expected_primary = expected_primary_goalkeeper(
+                club_players,
+                raw_scores,
+            )
+            for block in itertools.combinations(
+                club_players,
+                goalkeeper_count,
+            ):
+                if expected_primary in block:
+                    goalkeeper_blocks.append(block)
+
+    current_metrics = squad_architecture_metrics(
+        current,
+        raw_scores,
+        maintenance=maintenance,
+        min_reliable_anchors=min_reliable_anchors,
+        min_attacking_anchors=min_attacking_anchors,
+        min_core_budget_share=min_core_budget_share,
+        target_core_budget_share=target_core_budget_share,
+        min_offensive_premium_anchors=min_offensive_premium_anchors,
+    )
+    maximum_reachable_core_share = current_metrics["core_budget_share"]
+    evaluated_rosters = 1
+    completed_iterations = 0
+    for iteration in range(max_iterations):
+        selected_ids = current.ids
+        alternatives: list[
+            tuple[float, float, float, Squad, dict[str, Any]]
+        ] = []
+        seen_rosters: set[frozenset[str]] = set()
+
+        def consider(replacement_players: list[Player]) -> None:
+            nonlocal maximum_reachable_core_share, evaluated_rosters
+            replacement_ids = frozenset(
+                player.player_id for player in replacement_players
+            )
+            if replacement_ids in seen_rosters:
+                return
+            seen_rosters.add(replacement_ids)
+            if not _architecture_candidate_is_legal(
+                replacement_players,
+                budget=budget,
+                club_cap=club_cap,
+                min_reliable_anchors=min_reliable_anchors,
+            ):
+                return
+            replacement_quality = sum(
+                quality_scores[player.player_id]
+                for player in replacement_players
+            )
+            if replacement_quality < quality_floor:
+                return
+            replacement = Squad(
+                replacement_players,
+                replacement_quality,
+            )
+            metrics = squad_architecture_metrics(
+                replacement,
+                raw_scores,
+                maintenance=maintenance,
+                min_reliable_anchors=min_reliable_anchors,
+                min_attacking_anchors=min_attacking_anchors,
+                min_core_budget_share=min_core_budget_share,
+                target_core_budget_share=target_core_budget_share,
+                min_offensive_premium_anchors=(
+                    min_offensive_premium_anchors
+                ),
+            )
+            evaluated_rosters += 1
+            if not metrics["passes"]:
+                return
+            maximum_reachable_core_share = max(
+                maximum_reachable_core_share,
+                metrics["core_budget_share"],
+            )
+            alternatives.append(
+                (
+                    metrics["architecture_objective"],
+                    metrics["expected_contribution"],
+                    metrics["core_budget_share"],
+                    replacement,
+                    metrics,
+                )
+            )
+
+        field_players = [
+            player
+            for player in current.players
+            if player.position != "GOALKEEPER"
+        ]
+        for incumbent in field_players:
+            for replacement in single_packages.get(
+                (incumbent.position, incumbent.cost),
+                [],
+            )[:12]:
+                if replacement.player_id in selected_ids:
+                    continue
+                consider(
+                    [
+                        (
+                            replacement
+                            if player.player_id == incumbent.player_id
+                            else player
+                        )
+                        for player in current.players
+                    ]
+                )
+
+        current_goalkeepers = [
+            player
+            for player in current.players
+            if player.position == "GOALKEEPER"
+        ]
+        current_goalkeeper_ids = {
+            player.player_id for player in current_goalkeepers
+        }
+        current_goalkeeper_cost = sum(
+            player.cost for player in current_goalkeepers
+        )
+        for block in goalkeeper_blocks:
+            block_ids = {player.player_id for player in block}
+            if block_ids == current_goalkeeper_ids:
+                continue
+            block_cost = sum(player.cost for player in block)
+            if block_cost == current_goalkeeper_cost:
+                consider(
+                    [
+                        player
+                        for player in current.players
+                        if player.position != "GOALKEEPER"
+                    ]
+                    + list(block)
+                )
+            cost_delta = block_cost - current_goalkeeper_cost
+            for incumbent in field_players:
+                replacement_cost = incumbent.cost - cost_delta
+                if replacement_cost <= 0:
+                    continue
+                for replacement in single_packages.get(
+                    (incumbent.position, replacement_cost),
+                    [],
+                )[:12]:
+                    if (
+                        replacement.player_id in selected_ids
+                        or replacement.player_id in block_ids
+                    ):
+                        continue
+                    consider(
+                        [
+                            (
+                                replacement
+                                if (
+                                    player.player_id
+                                    == incumbent.player_id
+                                )
+                                else player
+                            )
+                            for player in current.players
+                            if player.position != "GOALKEEPER"
+                        ]
+                        + list(block)
+                    )
+
+        for first, second in itertools.combinations(field_players, 2):
+            ordered_positions = tuple(
+                sorted(
+                    (first.position, second.position),
+                    key=positions.index,
+                )
+            )
+            package_key = (
+                ordered_positions[0],
+                ordered_positions[1],
+                first.cost + second.cost,
+            )
+            for first_replacement, second_replacement in pair_packages.get(
+                package_key,
+                [],
+            )[:16]:
+                if (
+                    first_replacement.player_id in selected_ids
+                    or second_replacement.player_id in selected_ids
+                ):
+                    continue
+                replacements_by_position: dict[str, list[Player]] = {
+                    position: [] for position in positions
+                }
+                replacements_by_position[
+                    first_replacement.position
+                ].append(first_replacement)
+                replacements_by_position[
+                    second_replacement.position
+                ].append(second_replacement)
+                outgoing_by_position: dict[str, list[Player]] = {
+                    position: [] for position in positions
+                }
+                outgoing_by_position[first.position].append(first)
+                outgoing_by_position[second.position].append(second)
+                if any(
+                    len(replacements_by_position[position])
+                    != len(outgoing_by_position[position])
+                    for position in positions
+                ):
+                    continue
+                replacement_map: dict[str, Player] = {}
+                for position in positions:
+                    for outgoing, incoming in zip(
+                        sorted(
+                            outgoing_by_position[position],
+                            key=lambda player: player.player_id,
+                        ),
+                        sorted(
+                            replacements_by_position[position],
+                            key=lambda player: player.player_id,
+                        ),
+                    ):
+                        replacement_map[outgoing.player_id] = incoming
+                consider(
+                    [
+                        replacement_map.get(player.player_id, player)
+                        for player in current.players
+                    ]
+                )
+
+        if not alternatives:
+            break
+        best = max(
+            alternatives,
+            key=lambda item: (item[0], item[1], item[2]),
+        )
+        if best[0] <= current_metrics["architecture_objective"] + 1e-9:
+            break
+        current = best[3]
+        current_metrics = best[4]
+        completed_iterations = iteration + 1
+
+    optimizer_reachable_target = min(
+        target_core_budget_share,
+        maximum_reachable_core_share,
+    )
+    current.architecture_diagnostics = {
+        "model_version": "joint-xi-bench-v1",
+        "expected_contribution": round(
+            current_metrics["expected_contribution"],
+            6,
+        ),
+        "architecture_objective": round(
+            current_metrics["architecture_objective"],
+            6,
+        ),
+        "requested_core_budget_share_target": (
+            target_core_budget_share
+        ),
+        "optimizer_reachable_core_budget_share_target": (
+            optimizer_reachable_target
+        ),
+        "selected_core_budget_share": current_metrics[
+            "core_budget_share"
+        ],
+        "quality_floor": quality_floor,
+        "quality_score": sum(
+            quality_scores[player.player_id]
+            for player in current.players
+        ),
+        "quality_loss_limit": quality_loss_limit,
+        "bench_usage_weights": current_metrics["bench_usage_weights"],
+        "player_contributions": current_metrics[
+            "player_contributions"
+        ],
+        "evaluated_rosters": evaluated_rosters,
+        "improvement_iterations": completed_iterations,
+    }
+    return current
+
+
 def rebalance_full_budget_core(
     squad: Squad,
     candidates: list[Player],
@@ -1908,6 +2400,8 @@ def finalize_reliable_core_architecture(
     target_core_budget_share: float = 0.0,
     minimum_spend: int = 0,
     min_offensive_premium_anchors: int = 0,
+    maintenance: str = "low",
+    same_club_goalkeepers: bool = True,
 ) -> Squad:
     """Apply the same core-first architecture to a squad and its reference."""
 
@@ -1948,22 +2442,20 @@ def finalize_reliable_core_architecture(
         min_core_budget_share=min_core_budget_share,
         min_offensive_premium_anchors=min_offensive_premium_anchors,
     )
-    quality_floor = (
-        current.objective_score - 0.015 * abs(current.objective_score)
-    )
-    return rebalance_full_budget_core(
+    return optimize_joint_squad_architecture(
         current,
         candidates,
         quality_scores,
         core_scores,
         budget=budget,
         club_cap=club_cap,
+        maintenance=maintenance,
         min_reliable_anchors=min_reliable_anchors,
         min_attacking_anchors=min_attacking_anchors,
         min_core_budget_share=min_core_budget_share,
         target_core_budget_share=target_core_budget_share,
-        quality_floor=quality_floor,
         min_offensive_premium_anchors=min_offensive_premium_anchors,
+        same_club_goalkeepers=same_club_goalkeepers,
     )
 
 
@@ -3387,6 +3879,7 @@ def varied_portfolio(
     avoid_exposure: Mapping[str, int],
     portfolio_size: int,
     portfolio_index: int,
+    maintenance: str = "low",
     same_club_goalkeepers: bool = True,
     min_reliable_anchors: int = 0,
     min_attacking_anchors: int = 0,
@@ -3675,6 +4168,8 @@ def varied_portfolio(
                     min_offensive_premium_anchors=(
                         min_offensive_premium_anchors
                     ),
+                    maintenance=maintenance,
+                    same_club_goalkeepers=same_club_goalkeepers,
                 )
                 squad = finalize_reliable_core_architecture(
                     squad,
@@ -3691,6 +4186,8 @@ def varied_portfolio(
                     min_offensive_premium_anchors=(
                         min_offensive_premium_anchors
                     ),
+                    maintenance=maintenance,
+                    same_club_goalkeepers=same_club_goalkeepers,
                 )
                 distance = len(
                     optimum.ids.symmetric_difference(squad.ids)
@@ -4034,6 +4531,29 @@ def output_payload(
             payload["form_summary"] = dict(player.form_summary)
         if selection_role is not None:
             payload["selection_role"] = selection_role
+        architecture_contributions = squad.architecture_diagnostics.get(
+            "player_contributions",
+            {},
+        )
+        if player.player_id in architecture_contributions:
+            contribution = float(
+                architecture_contributions[player.player_id]
+            )
+            raw_score = raw_scores[player.player_id]
+            payload["expected_role_contribution"] = round(
+                contribution,
+                3,
+            )
+            payload["expected_usage_weight"] = round(
+                contribution / raw_score
+                if abs(raw_score) > 1e-9
+                else 0.0,
+                3,
+            )
+            payload["contribution_per_100k"] = round(
+                contribution / max(player.cost / 100_000, 1e-9),
+                3,
+            )
         if comparison_to is not None:
             payload["position_cutoff_player"] = {
                 "id": comparison_to.player_id,
@@ -4302,11 +4822,108 @@ def output_payload(
         and core_budget_share + 1e-9 < effective_core_target
     ):
         warnings.append(
-            "The market-adjusted starting-core target could not be fully "
+            "The optimizer-reachable starting-core target could not be fully "
             "reached inside the quality, role and exact-budget constraints; "
             f"selected={core_budget_share:.1%}, "
             f"target={effective_core_target:.1%}."
         )
+    architecture_audit = dict(squad.architecture_diagnostics)
+    architecture_audit.pop("player_contributions", None)
+    if architecture_audit:
+        architecture_audit[
+            "optimizer_reachable_core_budget_share_target_percent"
+        ] = round(
+            100.0
+            * float(
+                architecture_audit.get(
+                    "optimizer_reachable_core_budget_share_target",
+                    0.0,
+                )
+            ),
+            3,
+        )
+        architecture_audit["selected_core_budget_share_percent"] = round(
+            100.0
+            * float(
+                architecture_audit.get(
+                    "selected_core_budget_share",
+                    0.0,
+                )
+            ),
+            3,
+        )
+    architecture_contributions = squad.architecture_diagnostics.get(
+        "player_contributions",
+        {},
+    )
+    if not architecture_contributions:
+        fallback_weights = BENCH_USAGE_WEIGHTS.get(
+            args.maintenance,
+            BENCH_USAGE_WEIGHTS["normal"],
+        )
+        architecture_contributions = {
+            player.player_id: (
+                raw_scores[player.player_id]
+                * (
+                    1.0
+                    if player.player_id in core_ids
+                    else fallback_weights[player.position]
+                )
+            )
+            for player in squad.players
+        }
+    budget_allocation_by_position: dict[str, dict[str, Any]] = {}
+    for position in DEFAULT_SLOTS:
+        position_players = [
+            player
+            for player in squad.players
+            if player.position == position
+        ]
+        core_position_players = [
+            player
+            for player in position_players
+            if player.player_id in core_ids
+        ]
+        reserve_position_players = [
+            player
+            for player in position_players
+            if player.player_id not in core_ids
+        ]
+        core_spend = sum(
+            player.cost for player in core_position_players
+        )
+        reserve_spend = sum(
+            player.cost for player in reserve_position_players
+        )
+        core_contribution = sum(
+            float(architecture_contributions.get(player.player_id, 0.0))
+            for player in core_position_players
+        )
+        reserve_contribution = sum(
+            float(architecture_contributions.get(player.player_id, 0.0))
+            for player in reserve_position_players
+        )
+        budget_allocation_by_position[position] = {
+            "core_spend": core_spend,
+            "reserve_spend": reserve_spend,
+            "core_expected_contribution": round(
+                core_contribution,
+                3,
+            ),
+            "reserve_expected_contribution": round(
+                reserve_contribution,
+                3,
+            ),
+            "core_contribution_per_100k": round(
+                core_contribution / max(core_spend / 100_000, 1e-9),
+                3,
+            ),
+            "reserve_contribution_per_100k": round(
+                reserve_contribution
+                / max(reserve_spend / 100_000, 1e-9),
+                3,
+            ),
+        }
     return {
         "profile": args.profile,
         "maintenance": args.maintenance,
@@ -4386,6 +5003,58 @@ def output_payload(
                 getattr(args, "min_offensive_premium_anchors", 0)
             ),
         },
+        "squad_architecture": architecture_audit,
+        "budget_allocation": {
+            "policy": (
+                "exact_budget_joint_starting_xi_and_position_weighted_reserves"
+            ),
+            "by_position": budget_allocation_by_position,
+            "lowest_marginal_value_slots": [
+                {
+                    "id": player.player_id,
+                    "name": player.name,
+                    "position": player.position,
+                    "selection_role": (
+                        "core"
+                        if player.player_id in core_ids
+                        else "bench"
+                    ),
+                    "cost": player.cost,
+                    "expected_contribution": round(
+                        float(
+                            architecture_contributions.get(
+                                player.player_id,
+                                0.0,
+                            )
+                        ),
+                        3,
+                    ),
+                    "contribution_per_100k": round(
+                        float(
+                            architecture_contributions.get(
+                                player.player_id,
+                                0.0,
+                            )
+                        )
+                        / max(player.cost / 100_000, 1e-9),
+                        3,
+                    ),
+                }
+                for player in sorted(
+                    squad.players,
+                    key=lambda player: (
+                        float(
+                            architecture_contributions.get(
+                                player.player_id,
+                                0.0,
+                            )
+                        )
+                        / max(player.cost / 100_000, 1e-9),
+                        player.player_id,
+                    ),
+                )[:5]
+            ],
+        },
         "reliable_anchor_policy": {
             "required": args.min_reliable_anchors,
             "eligible": sum(
@@ -4436,6 +5105,26 @@ def output_payload(
             "requested_core_budget_share_target_percent": round(
                 100.0 * float(
                     getattr(args, "target_core_budget_share", 0.0)
+                ),
+                3,
+            ),
+            "price_ceiling_core_budget_share_target_percent": round(
+                100.0 * float(
+                    getattr(
+                        args,
+                        "price_ceiling_core_budget_share_target",
+                        0.0,
+                    )
+                ),
+                3,
+            ),
+            "optimizer_reachable_core_budget_share_target_percent": round(
+                100.0 * float(
+                    getattr(
+                        args,
+                        "effective_core_budget_share_target",
+                        0.0,
+                    )
                 ),
                 3,
             ),
@@ -5419,12 +6108,15 @@ def main() -> int:
         args.profile,
         args.maintenance,
     )
-    args.effective_core_budget_share_target = (
+    args.price_ceiling_core_budget_share_target = (
         market_core_budget_share_target(
             eligible_players,
             args.budget,
             args.target_core_budget_share,
         )
+    )
+    args.effective_core_budget_share_target = (
+        args.price_ceiling_core_budget_share_target
     )
     avoid_exposure = load_avoid_exposure(args.avoid_roster)
     minimum_spend = math.ceil(args.budget * args.min_spend_ratio)
@@ -5450,6 +6142,7 @@ def main() -> int:
                 avoid_exposure=avoid_exposure,
                 portfolio_size=args.portfolio_size,
                 portfolio_index=portfolio_index,
+                maintenance=args.maintenance,
                 same_club_goalkeepers=not args.mixed_goalkeepers,
                 min_reliable_anchors=args.min_reliable_anchors,
                 min_attacking_anchors=args.min_attacking_anchors,
@@ -5500,6 +6193,8 @@ def main() -> int:
                     min_offensive_premium_anchors=(
                         args.min_offensive_premium_anchors
                     ),
+                    maintenance=args.maintenance,
+                    same_club_goalkeepers=not args.mixed_goalkeepers,
                 )
                 squad = finalize_reliable_core_architecture(
                     squad,
@@ -5518,6 +6213,8 @@ def main() -> int:
                     min_offensive_premium_anchors=(
                         args.min_offensive_premium_anchors
                     ),
+                    maintenance=args.maintenance,
+                    same_club_goalkeepers=not args.mixed_goalkeepers,
                 )
                 distance = len(
                     optimum.ids.symmetric_difference(squad.ids)
@@ -5529,6 +6226,13 @@ def main() -> int:
     except ValueError as error:
         print(f"Optimization stopped: {error}", file=sys.stderr)
         return 2
+    if squad.architecture_diagnostics:
+        args.effective_core_budget_share_target = float(
+            squad.architecture_diagnostics.get(
+                "optimizer_reachable_core_budget_share_target",
+                args.effective_core_budget_share_target,
+            )
+        )
     if squad.cost < minimum_spend:
         print(
             "Optimization stopped: the post-processing step left budget "

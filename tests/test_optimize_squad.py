@@ -1735,6 +1735,202 @@ class ReliableCorePolicyTests(unittest.TestCase):
             before["core_budget_share"],
         )
 
+    def test_joint_architecture_values_positions_and_moves_budget_to_core(
+        self,
+    ) -> None:
+        squad_players: list[optimizer.Player] = [
+            player(f"g{index}", "Goalkeeper Club", "GOALKEEPER", 100)
+            for index in range(3)
+        ]
+        scores = {
+            item.player_id: 200.0 - index
+            for index, item in enumerate(squad_players)
+        }
+        for position, prefix, count, starters in (
+            ("DEFENDER", "d", 7, 4),
+            ("MIDFIELDER", "m", 7, 4),
+            ("FORWARD", "f", 5, 2),
+        ):
+            for index in range(count):
+                item = player(
+                    f"{prefix}{index}",
+                    f"Club {prefix}{index}",
+                    position,
+                    400 if index < starters else 300,
+                )
+                squad_players.append(item)
+                scores[item.player_id] = (
+                    150.0 - index
+                    if index < starters
+                    else 20.0 - index
+                )
+        squad = optimizer.Squad(
+            squad_players,
+            sum(scores[item.player_id] for item in squad_players),
+        )
+        cheap_reserve = player(
+            "cheap-d-joint",
+            "Cheap Joint Club",
+            "DEFENDER",
+            100,
+        )
+        premium_forward = player(
+            "premium-f-joint",
+            "Premium Joint Club",
+            "FORWARD",
+            600,
+        )
+        scores[cheap_reserve.player_id] = 1.0
+        scores[premium_forward.player_id] = scores["f0"] + 20.0
+        before = optimizer.squad_architecture_metrics(
+            squad,
+            scores,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.50,
+            target_core_budget_share=0.65,
+        )
+
+        optimized = optimizer.optimize_joint_squad_architecture(
+            squad,
+            [*squad_players, cheap_reserve, premium_forward],
+            scores,
+            scores,
+            budget=squad.cost,
+            club_cap=4,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.50,
+            target_core_budget_share=0.65,
+        )
+        after = optimizer.squad_architecture_metrics(
+            optimized,
+            scores,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.50,
+            target_core_budget_share=0.65,
+        )
+
+        self.assertEqual(squad.cost, optimized.cost)
+        self.assertIn(cheap_reserve.player_id, optimized.ids)
+        self.assertIn(premium_forward.player_id, optimized.ids)
+        self.assertGreater(
+            after["architecture_objective"],
+            before["architecture_objective"],
+        )
+        self.assertGreater(
+            after["core_budget_share"],
+            before["core_budget_share"],
+        )
+        self.assertGreater(
+            after["bench_usage_weights"]["DEFENDER"],
+            after["bench_usage_weights"]["FORWARD"],
+        )
+        self.assertEqual(
+            "joint-xi-bench-v1",
+            optimized.architecture_diagnostics["model_version"],
+        )
+        self.assertGreater(
+            optimized.architecture_diagnostics["evaluated_rosters"],
+            1,
+        )
+
+    def test_joint_architecture_values_goalkeeper_primary_over_backups(
+        self,
+    ) -> None:
+        def goalkeeper(
+            player_id: str,
+            club: str,
+            cost: int,
+            rank: int,
+        ) -> optimizer.Player:
+            return optimizer.replace(
+                player(player_id, club, "GOALKEEPER", cost),
+                goalkeeper_outlook={
+                    "club_rank": rank,
+                    "starter_probability": 90 if rank == 1 else 5,
+                    "hierarchy_score": 90 if rank == 1 else 20,
+                },
+            )
+
+        current_goalkeepers = [
+            goalkeeper("ga1", "Goalkeeper A", 100, 1),
+            goalkeeper("ga2", "Goalkeeper A", 100, 2),
+            goalkeeper("ga3", "Goalkeeper A", 100, 3),
+        ]
+        alternative_goalkeepers = [
+            goalkeeper("gb1", "Goalkeeper B", 100, 1),
+            goalkeeper("gb2", "Goalkeeper B", 100, 2),
+            goalkeeper("gb3", "Goalkeeper B", 100, 3),
+        ]
+        squad_players = list(current_goalkeepers)
+        scores = {
+            "ga1": 80.0,
+            "ga2": 90.0,
+            "ga3": 90.0,
+            "gb1": 100.0,
+            "gb2": 70.0,
+            "gb3": 70.0,
+        }
+        for position, prefix, count, starters in (
+            ("DEFENDER", "gd", 7, 4),
+            ("MIDFIELDER", "gm", 7, 4),
+            ("FORWARD", "gf", 5, 2),
+        ):
+            for index in range(count):
+                item = player(
+                    f"{prefix}{index}",
+                    f"Club {prefix}{index}",
+                    position,
+                    300,
+                )
+                squad_players.append(item)
+                scores[item.player_id] = (
+                    100.0 - index
+                    if index < starters
+                    else 30.0 - index
+                )
+        squad = optimizer.Squad(
+            squad_players,
+            sum(scores[item.player_id] for item in squad_players),
+        )
+
+        optimized = optimizer.optimize_joint_squad_architecture(
+            squad,
+            [*squad_players, *alternative_goalkeepers],
+            scores,
+            scores,
+            budget=squad.cost,
+            club_cap=4,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.50,
+            target_core_budget_share=0.65,
+        )
+
+        self.assertTrue(
+            {item.player_id for item in alternative_goalkeepers}
+            <= optimized.ids
+        )
+        self.assertFalse(
+            {item.player_id for item in current_goalkeepers}
+            & optimized.ids
+        )
+        lineup = optimizer.reliable_core_audit(
+            optimized,
+            scores,
+            0,
+            0,
+            0.50,
+        )
+        self.assertIn("gb1", lineup["player_ids"])
+        self.assertNotIn("gb2", lineup["player_ids"])
+
     def test_final_annotation_requires_anchor_benchmark_and_evidence_fields(
         self,
     ) -> None:
