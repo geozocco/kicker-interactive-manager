@@ -114,8 +114,58 @@ class DistanceOptimizerTests(unittest.TestCase):
             args = optimizer.parse_args()
 
         self.assertEqual(0.55, args.min_core_budget_share)
+        self.assertEqual(0.80, args.target_core_budget_share)
         self.assertEqual(1.0, args.min_spend_ratio)
         self.assertEqual(1, args.min_offensive_premium_anchors)
+
+    def test_final_recommendation_rejects_partial_budget_override(self) -> None:
+        with mock.patch.object(
+            sys,
+            "argv",
+            [
+                str(SCRIPT_PATH),
+                "--players",
+                "players.csv",
+                "--profile",
+                "reliable",
+                "--maintenance",
+                "low",
+                "--budget",
+                "10000000",
+                "--min-spend-ratio",
+                "0.70",
+            ],
+        ):
+            with self.assertRaises(SystemExit):
+                optimizer.parse_args()
+
+    def test_market_adjusts_core_target_to_positional_price_ceiling(self) -> None:
+        players = [
+            player(f"g{index}", "Goalkeeper Club", "GOALKEEPER", 600)
+            for index in range(3)
+        ]
+        for position, prefix, count in (
+            ("DEFENDER", "d", 7),
+            ("MIDFIELDER", "m", 7),
+            ("FORWARD", "f", 5),
+        ):
+            players.extend(
+                player(
+                    f"{prefix}{index}",
+                    f"Club {prefix}{index}",
+                    position,
+                    600,
+                )
+                for index in range(count)
+            )
+
+        target = optimizer.market_core_budget_share_target(
+            players,
+            10_000,
+            0.80,
+        )
+
+        self.assertAlmostEqual(0.66, target)
 
     def test_starting_lineup_can_require_an_evidence_derived_premium_anchor(
         self,
@@ -1600,6 +1650,90 @@ class ReliableCorePolicyTests(unittest.TestCase):
         self.assertEqual(len(squad.players), len(upgraded.players))
         self.assertEqual(1, len(squad.ids - upgraded.ids))
         self.assertEqual(squad.cost + 300, upgraded.cost)
+
+    def test_full_budget_rebalance_pairs_bench_saving_with_core_upgrade(
+        self,
+    ) -> None:
+        squad_players: list[optimizer.Player] = [
+            player(f"g{index}", "Goalkeeper Club", "GOALKEEPER", 100)
+            for index in range(3)
+        ]
+        scores = {
+            item.player_id: 200.0 - index
+            for index, item in enumerate(squad_players)
+        }
+        for position, prefix, count, starters in (
+            ("DEFENDER", "d", 7, 4),
+            ("MIDFIELDER", "m", 7, 4),
+            ("FORWARD", "f", 5, 2),
+        ):
+            for index in range(count):
+                item = player(
+                    f"{prefix}{index}",
+                    f"Club {prefix}{index}",
+                    position,
+                    400 if index < starters else 300,
+                )
+                squad_players.append(item)
+                scores[item.player_id] = (
+                    150.0 - index
+                    if index < starters
+                    else 20.0 - index
+                )
+        squad = optimizer.Squad(
+            squad_players,
+            sum(scores[item.player_id] for item in squad_players),
+        )
+        cheap_reserve = player(
+            "cheap-d",
+            "Cheap Club",
+            "DEFENDER",
+            100,
+        )
+        premium_forward = player(
+            "premium-f",
+            "Premium Club",
+            "FORWARD",
+            600,
+        )
+        scores[cheap_reserve.player_id] = 1.0
+        scores[premium_forward.player_id] = scores["f0"] + 20.0
+        before = optimizer.reliable_core_audit(
+            squad,
+            scores,
+            0,
+            0,
+            0.50,
+        )
+
+        rebalanced = optimizer.rebalance_full_budget_core(
+            squad,
+            [*squad_players, cheap_reserve, premium_forward],
+            scores,
+            scores,
+            budget=squad.cost,
+            club_cap=4,
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.50,
+            target_core_budget_share=0.65,
+            quality_floor=float("-inf"),
+        )
+        after = optimizer.reliable_core_audit(
+            rebalanced,
+            scores,
+            0,
+            0,
+            0.50,
+        )
+
+        self.assertEqual(squad.cost, rebalanced.cost)
+        self.assertIn(cheap_reserve.player_id, rebalanced.ids)
+        self.assertIn(premium_forward.player_id, rebalanced.ids)
+        self.assertGreater(
+            after["core_budget_share"],
+            before["core_budget_share"],
+        )
 
     def test_final_annotation_requires_anchor_benchmark_and_evidence_fields(
         self,

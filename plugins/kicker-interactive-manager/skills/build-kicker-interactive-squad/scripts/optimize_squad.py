@@ -1443,6 +1443,213 @@ def reliable_core_audit(
     }
 
 
+def market_core_budget_share_target(
+    candidates: list[Player],
+    budget: int,
+    requested_target: float,
+) -> float:
+    """Cap the desired core share at the market's positional price ceiling."""
+
+    if requested_target <= 0 or budget <= 0:
+        return 0.0
+    by_position = {
+        position: sorted(
+            (
+                player.cost
+                for player in candidates
+                if player.position == position
+            ),
+            reverse=True,
+        )
+        for position in DEFAULT_SLOTS
+    }
+    goalkeeper_costs = by_position["GOALKEEPER"]
+    if not goalkeeper_costs:
+        return 0.0
+    maximum_core_cost = 0
+    for defenders, midfielders, forwards in FORMATIONS:
+        # Low-maintenance recommendations use a real scoring attack and avoid
+        # five-defender formations. This mirrors best_starting_lineup().
+        if forwards < 2 or defenders > 4:
+            continue
+        counts = {
+            "DEFENDER": defenders,
+            "MIDFIELDER": midfielders,
+            "FORWARD": forwards,
+        }
+        if any(
+            len(by_position[position]) < count
+            for position, count in counts.items()
+        ):
+            continue
+        formation_cost = goalkeeper_costs[0] + sum(
+            sum(by_position[position][:count])
+            for position, count in counts.items()
+        )
+        maximum_core_cost = max(maximum_core_cost, formation_cost)
+    return min(requested_target, maximum_core_cost / budget)
+
+
+def rebalance_full_budget_core(
+    squad: Squad,
+    candidates: list[Player],
+    quality_scores: Mapping[str, float],
+    core_scores: dict[str, float],
+    *,
+    budget: int,
+    club_cap: int,
+    min_reliable_anchors: int,
+    min_attacking_anchors: int,
+    min_core_budget_share: float,
+    target_core_budget_share: float,
+    quality_floor: float,
+    min_offensive_premium_anchors: int = 0,
+) -> Squad:
+    """Move money from a reserve to a starter without changing total spend."""
+
+    if squad.cost != budget or target_core_budget_share <= 0:
+        return squad
+    current = squad
+    by_position: dict[str, list[Player]] = {
+        position: [
+            player
+            for player in candidates
+            if player.position == position
+        ]
+        for position in DEFAULT_SLOTS
+    }
+    for _ in range(len(current.players)):
+        audit = reliable_core_audit(
+            current,
+            core_scores,
+            min_reliable_anchors,
+            min_attacking_anchors,
+            min_core_budget_share,
+            min_offensive_premium_anchors,
+        )
+        if audit["core_budget_share"] >= target_core_budget_share:
+            break
+        selected_ids = current.ids
+        core_ids = set(audit["player_ids"])
+        upgrade_options: dict[
+            tuple[str, int], list[tuple[Player, Player]]
+        ] = {}
+        for incumbent in current.players:
+            if (
+                incumbent.player_id not in core_ids
+                or incumbent.position == "GOALKEEPER"
+            ):
+                continue
+            for candidate in by_position[incumbent.position]:
+                extra_cost = candidate.cost - incumbent.cost
+                if (
+                    extra_cost <= 0
+                    or candidate.player_id in selected_ids
+                    or core_scores[candidate.player_id]
+                    <= core_scores[incumbent.player_id]
+                ):
+                    continue
+                upgrade_options.setdefault(
+                    (incumbent.position, extra_cost),
+                    [],
+                ).append((incumbent, candidate))
+
+        alternatives: list[tuple[float, float, Squad]] = []
+        for reserve in current.players:
+            if (
+                reserve.player_id in core_ids
+                or reserve.position == "GOALKEEPER"
+            ):
+                continue
+            for cheaper in by_position[reserve.position]:
+                saving = reserve.cost - cheaper.cost
+                if (
+                    saving <= 0
+                    or cheaper.player_id in selected_ids
+                    or core_scores[cheaper.player_id]
+                    > core_scores[reserve.player_id]
+                ):
+                    continue
+                for position in ("DEFENDER", "MIDFIELDER", "FORWARD"):
+                    for incumbent, premium in upgrade_options.get(
+                        (position, saving),
+                        [],
+                    ):
+                        if premium.player_id == cheaper.player_id:
+                            continue
+                        replacement_players = [
+                            (
+                                cheaper
+                                if player.player_id == reserve.player_id
+                                else premium
+                                if player.player_id == incumbent.player_id
+                                else player
+                            )
+                            for player in current.players
+                        ]
+                        if len(
+                            {
+                                player.player_id
+                                for player in replacement_players
+                            }
+                        ) != len(replacement_players):
+                            continue
+                        club_counts = Counter(
+                            player.club
+                            for player in replacement_players
+                            if player.position != "GOALKEEPER"
+                        )
+                        if any(
+                            count > club_cap
+                            for count in club_counts.values()
+                        ):
+                            continue
+                        replacement_score = sum(
+                            quality_scores[player.player_id]
+                            for player in replacement_players
+                        )
+                        if replacement_score < quality_floor:
+                            continue
+                        replacement = Squad(
+                            replacement_players,
+                            replacement_score,
+                        )
+                        if replacement.cost != budget:
+                            continue
+                        replacement_audit = reliable_core_audit(
+                            replacement,
+                            core_scores,
+                            min_reliable_anchors,
+                            min_attacking_anchors,
+                            min_core_budget_share,
+                            min_offensive_premium_anchors,
+                        )
+                        if (
+                            not replacement_audit["passes"]
+                            or premium.player_id
+                            not in replacement_audit["player_ids"]
+                            or cheaper.player_id
+                            in replacement_audit["player_ids"]
+                            or replacement_audit["core_budget_share"]
+                            <= audit["core_budget_share"]
+                        ):
+                            continue
+                        alternatives.append(
+                            (
+                                replacement_audit["core_budget_share"],
+                                replacement_score,
+                                replacement,
+                            )
+                        )
+        if not alternatives:
+            break
+        _, _, current = max(
+            alternatives,
+            key=lambda item: (item[0], item[1]),
+        )
+    return current
+
+
 def repair_core_budget_share(
     squad: Squad,
     candidates: list[Player],
@@ -1698,6 +1905,7 @@ def finalize_reliable_core_architecture(
     min_reliable_anchors: int,
     min_attacking_anchors: int,
     min_core_budget_share: float,
+    target_core_budget_share: float = 0.0,
     minimum_spend: int = 0,
     min_offensive_premium_anchors: int = 0,
 ) -> Squad:
@@ -1728,7 +1936,7 @@ def finalize_reliable_core_architecture(
         )
         if repaired is not None:
             current = repaired
-    return upgrade_core_with_remaining_budget(
+    current = upgrade_core_with_remaining_budget(
         current,
         candidates,
         quality_scores,
@@ -1738,6 +1946,23 @@ def finalize_reliable_core_architecture(
         min_reliable_anchors=min_reliable_anchors,
         min_attacking_anchors=min_attacking_anchors,
         min_core_budget_share=min_core_budget_share,
+        min_offensive_premium_anchors=min_offensive_premium_anchors,
+    )
+    quality_floor = (
+        current.objective_score - 0.015 * abs(current.objective_score)
+    )
+    return rebalance_full_budget_core(
+        current,
+        candidates,
+        quality_scores,
+        core_scores,
+        budget=budget,
+        club_cap=club_cap,
+        min_reliable_anchors=min_reliable_anchors,
+        min_attacking_anchors=min_attacking_anchors,
+        min_core_budget_share=min_core_budget_share,
+        target_core_budget_share=target_core_budget_share,
+        quality_floor=quality_floor,
         min_offensive_premium_anchors=min_offensive_premium_anchors,
     )
 
@@ -3166,6 +3391,7 @@ def varied_portfolio(
     min_reliable_anchors: int = 0,
     min_attacking_anchors: int = 0,
     min_core_budget_share: float = 0.0,
+    target_core_budget_share: float = 0.0,
     min_offensive_premium_anchors: int = 0,
     core_scores: Mapping[str, float] | None = None,
     technical_smoke: bool = False,
@@ -3444,6 +3670,7 @@ def varied_portfolio(
                     min_reliable_anchors=min_reliable_anchors,
                     min_attacking_anchors=min_attacking_anchors,
                     min_core_budget_share=min_core_budget_share,
+                    target_core_budget_share=target_core_budget_share,
                     minimum_spend=minimum_spend,
                     min_offensive_premium_anchors=(
                         min_offensive_premium_anchors
@@ -3459,6 +3686,7 @@ def varied_portfolio(
                     min_reliable_anchors=min_reliable_anchors,
                     min_attacking_anchors=min_attacking_anchors,
                     min_core_budget_share=min_core_budget_share,
+                    target_core_budget_share=target_core_budget_share,
                     minimum_spend=minimum_spend,
                     min_offensive_premium_anchors=(
                         min_offensive_premium_anchors
@@ -4066,6 +4294,19 @@ def output_payload(
     ]
     core_budget = sum(player.cost for player in core_players)
     core_budget_share = core_budget / max(squad.cost, 1)
+    effective_core_target = float(
+        getattr(args, "effective_core_budget_share_target", 0.0)
+    )
+    if (
+        effective_core_target > 0
+        and core_budget_share + 1e-9 < effective_core_target
+    ):
+        warnings.append(
+            "The market-adjusted starting-core target could not be fully "
+            "reached inside the quality, role and exact-budget constraints; "
+            f"selected={core_budget_share:.1%}, "
+            f"target={effective_core_target:.1%}."
+        )
     return {
         "profile": args.profile,
         "maintenance": args.maintenance,
@@ -4189,6 +4430,22 @@ def output_payload(
             "minimum_core_budget_share_percent": round(
                 100.0 * float(
                     getattr(args, "min_core_budget_share", 0.0)
+                ),
+                3,
+            ),
+            "requested_core_budget_share_target_percent": round(
+                100.0 * float(
+                    getattr(args, "target_core_budget_share", 0.0)
+                ),
+                3,
+            ),
+            "market_adjusted_core_budget_share_target_percent": round(
+                100.0 * float(
+                    getattr(
+                        args,
+                        "effective_core_budget_share_target",
+                        0.0,
+                    )
                 ),
                 3,
             ),
@@ -4531,6 +4788,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--target-core-budget-share",
+        type=float,
+        help=(
+            "Desired starting-eleven budget share before applying the current "
+            "market's positional price ceiling; default 0.80 for every "
+            "low-maintenance profile"
+        ),
+    )
+    parser.add_argument(
         "--min-offensive-premium-anchors",
         type=int,
         help=(
@@ -4664,6 +4930,15 @@ def parse_args() -> argparse.Namespace:
             )
             else 0.0
         )
+    if args.target_core_budget_share is None:
+        args.target_core_budget_share = (
+            max(0.80, args.min_core_budget_share)
+            if (
+                args.maintenance == "low"
+                and not args.allow_unannotated
+            )
+            else 0.0
+        )
     if args.min_spend_ratio is None:
         args.min_spend_ratio = (
             0.0
@@ -4688,8 +4963,25 @@ def parse_args() -> argparse.Namespace:
         parser.error("--min-offensive-premium-anchors cannot be negative")
     if not 0.0 <= args.min_core_budget_share <= 1.0:
         parser.error("--min-core-budget-share must be between 0 and 1")
+    if not 0.0 <= args.target_core_budget_share <= 1.0:
+        parser.error("--target-core-budget-share must be between 0 and 1")
+    if args.target_core_budget_share < args.min_core_budget_share:
+        parser.error(
+            "--target-core-budget-share cannot be below "
+            "--min-core-budget-share"
+        )
     if not 0.0 <= args.min_spend_ratio <= 1.0:
         parser.error("--min-spend-ratio must be between 0 and 1")
+    if (
+        not args.allow_unannotated
+        and not args.shortlist_only
+        and args.min_spend_ratio != 1.0
+    ):
+        parser.error(
+            "--min-spend-ratio must be 1.0 for final recommendations; "
+            "lower values are only allowed with --allow-unannotated or "
+            "--shortlist-only"
+        )
     args.slots = {
         "GOALKEEPER": args.goalkeepers,
         "DEFENDER": args.defenders,
@@ -5127,6 +5419,13 @@ def main() -> int:
         args.profile,
         args.maintenance,
     )
+    args.effective_core_budget_share_target = (
+        market_core_budget_share_target(
+            eligible_players,
+            args.budget,
+            args.target_core_budget_share,
+        )
+    )
     avoid_exposure = load_avoid_exposure(args.avoid_roster)
     minimum_spend = math.ceil(args.budget * args.min_spend_ratio)
     portfolio_audit: dict[str, Any] | None = None
@@ -5155,6 +5454,9 @@ def main() -> int:
                 min_reliable_anchors=args.min_reliable_anchors,
                 min_attacking_anchors=args.min_attacking_anchors,
                 min_core_budget_share=args.min_core_budget_share,
+                target_core_budget_share=(
+                    args.effective_core_budget_share_target
+                ),
                 min_offensive_premium_anchors=(
                     args.min_offensive_premium_anchors
                 ),
@@ -5191,6 +5493,9 @@ def main() -> int:
                     min_reliable_anchors=args.min_reliable_anchors,
                     min_attacking_anchors=args.min_attacking_anchors,
                     min_core_budget_share=args.min_core_budget_share,
+                    target_core_budget_share=(
+                        args.effective_core_budget_share_target
+                    ),
                     minimum_spend=minimum_spend,
                     min_offensive_premium_anchors=(
                         args.min_offensive_premium_anchors
@@ -5206,6 +5511,9 @@ def main() -> int:
                     min_reliable_anchors=args.min_reliable_anchors,
                     min_attacking_anchors=args.min_attacking_anchors,
                     min_core_budget_share=args.min_core_budget_share,
+                    target_core_budget_share=(
+                        args.effective_core_budget_share_target
+                    ),
                     minimum_spend=minimum_spend,
                     min_offensive_premium_anchors=(
                         args.min_offensive_premium_anchors
@@ -5226,6 +5534,17 @@ def main() -> int:
             "Optimization stopped: the post-processing step left budget "
             f"unused (spent={squad.cost}, required={minimum_spend}). "
             "Budget use has priority over low-maintenance bench shaping.",
+            file=sys.stderr,
+        )
+        return 2
+    if (
+        not args.allow_unannotated
+        and not args.shortlist_only
+        and squad.cost != args.budget
+    ):
+        print(
+            "Optimization stopped: final recommendations must spend the full "
+            f"budget (spent={squad.cost}, budget={args.budget}).",
             file=sys.stderr,
         )
         return 2
