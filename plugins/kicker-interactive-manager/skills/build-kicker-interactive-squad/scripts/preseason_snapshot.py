@@ -166,6 +166,12 @@ def validate_snapshot(
             )
         for field_name in SUMMARY_SCORES:
             _score(summary.get(field_name), field_name, str(player_id))
+        if "training_score" in summary:
+            _score(
+                summary.get("training_score"),
+                "training_score",
+                str(player_id),
+            )
         if summary.get("confidence") not in CONFIDENCE_LEVELS:
             raise PreseasonSnapshotError(
                 f"preseason confidence is invalid for {player_id}"
@@ -174,6 +180,25 @@ def validate_snapshot(
             raise PreseasonSnapshotError(
                 f"preseason classification is invalid for {player_id}"
             )
+        if (
+            "latest_training_status" in summary
+            and summary.get("latest_training_status") not in {
+            "full",
+            "partial",
+            "absent",
+            "unknown",
+            }
+        ):
+            raise PreseasonSnapshotError(
+                f"preseason latest training status is invalid for {player_id}"
+            )
+        if "latest_observation_date" in summary:
+            try:
+                datetime.fromisoformat(str(summary["latest_observation_date"]))
+            except ValueError as error:
+                raise PreseasonSnapshotError(
+                    f"preseason latest observation date is invalid for {player_id}"
+                ) from error
         for field_name in (
             "team_match_count",
             "appearances",

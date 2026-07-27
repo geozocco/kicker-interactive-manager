@@ -137,29 +137,41 @@ def fetch_fixtures(
 
 
 def fetch_fixture_details(
-    fixture_ids: Iterable[int],
+    fixtures: dict[int, dict[str, Any]],
     *,
     headers: dict[str, str],
     request_delay: float,
-) -> tuple[dict[int, dict[str, Any]], int]:
+) -> tuple[dict[int, dict[str, Any]], int, int]:
+    """Attach the player-stat endpoint to fixture metadata.
+
+    API-Sports' general ``/fixtures`` response does not contain the ``players``
+    collection. Fetching that endpoint again therefore produced apparently
+    healthy snapshots with zero player evidence. ``/fixtures/players`` is the
+    authoritative per-player source.
+    """
+
     details: dict[int, dict[str, Any]] = {}
     calls = 0
-    for batch in chunks(sorted(set(fixture_ids)), 20):
+    covered_fixtures = 0
+    for fixture_id in sorted(fixtures):
+        player_blocks: list[dict[str, Any]] = []
         for page in api_sports_pages(
-            f"{API_BASE}/fixtures",
-            query={"ids": "-".join(str(value) for value in batch)},
+            f"{API_BASE}/fixtures/players",
+            query={"fixture": fixture_id},
             headers=headers,
             paginate=False,
         ):
             calls += 1
             for item in page.get("response", []):
-                if not isinstance(item, dict):
-                    continue
-                fixture_id = optional_int(item.get("fixture", {}).get("id"))
-                if fixture_id is not None:
-                    details[fixture_id] = item
+                if isinstance(item, dict):
+                    player_blocks.append(item)
+        detail = dict(fixtures[fixture_id])
+        detail["players"] = player_blocks
+        details[fixture_id] = detail
+        if player_blocks:
+            covered_fixtures += 1
         time.sleep(request_delay)
-    return details, calls
+    return details, calls, covered_fixtures
 
 
 def starter_ids(item: dict[str, Any], team_id: int) -> set[int]:
@@ -200,7 +212,9 @@ def provider_observations(
             games = stats.get("games", {}) if isinstance(stats, dict) else {}
             goals = stats.get("goals", {}) if isinstance(stats, dict) else {}
             minutes = optional_int(games.get("minutes")) or 0
-            appeared = minutes > 0 or provider_id in starters
+            provider_started = games.get("substitute") is False
+            started = provider_id in starters or provider_started
+            appeared = minutes > 0 or started
             if not appeared:
                 continue
             output[player_key] = {
@@ -211,7 +225,7 @@ def provider_observations(
                 "competition": str(league.get("name", "Club Friendly")),
                 "home_away": side,
                 "appeared": True,
-                "started": provider_id in starters,
+                "started": started,
                 "minutes": minutes,
                 "position": str(games.get("position", "")).strip(),
                 "goals": optional_int(goals.get("total")) or 0,
@@ -420,6 +434,16 @@ def summarize(
         }
     )
     sample_size = sum(item.get("appeared", False) for item in observations)
+    latest_observation = max(
+        observations,
+        key=lambda item: (str(item.get("date", "")), str(item.get("event_key", ""))),
+        default={},
+    )
+    latest_training_status = str(
+        latest_observation.get("training_status", "unknown")
+    )
+    if latest_training_status not in TRAINING_STATUS:
+        latest_training_status = "unknown"
     confidence = (
         "high"
         if sample_size >= 3 and official_source_count >= 1
@@ -428,7 +452,11 @@ def summarize(
         else "low"
     )
     classification = (
-        "insufficient"
+        "negative"
+        if sample_size == 0
+        and official_source_count >= 1
+        and latest_training_status in {"partial", "absent"}
+        else "insufficient"
         if sample_size == 0
         else "strong"
         if signal_score >= 72 and confidence in {"medium", "high"}
@@ -450,6 +478,9 @@ def summarize(
         "role_score": role_score,
         "performance_score": performance_score,
         "opponent_score": clamp(opponent_score),
+        "training_score": clamp(training_score),
+        "latest_training_status": latest_training_status,
+        "latest_observation_date": str(latest_observation.get("date", "")),
         "signal_score": signal_score,
         "effective_factor": clamp(100.0 * effective_factor),
         "confidence": confidence,
@@ -522,11 +553,16 @@ def build_snapshot(
             headers=headers,
             request_delay=request_delay,
         )
-    details, detail_calls = fetch_fixture_details(
+    details, detail_calls, player_stat_fixtures = fetch_fixture_details(
         fixtures,
         headers=headers,
         request_delay=request_delay,
     )
+    if len(fixtures) >= 5 and player_stat_fixtures == 0:
+        raise RuntimeError(
+            "API-Sports returned preseason fixtures but no fixture player "
+            "statistics; refusing to publish an empty green snapshot"
+        )
     by_player: dict[str, list[dict[str, Any]]] = defaultdict(list)
     team_match_count_by_player: dict[str, int] = {}
     for team_id, fixture_ids in team_fixtures.items():
@@ -620,6 +656,7 @@ def build_snapshot(
                 "status": "ok",
                 "requests": fixture_calls + detail_calls,
                 "fixtures": len(fixtures),
+                "player_stat_fixtures": player_stat_fixtures,
                 "player_observations": sum(len(items) for items in by_player.values()),
             },
             "official_evidence": {

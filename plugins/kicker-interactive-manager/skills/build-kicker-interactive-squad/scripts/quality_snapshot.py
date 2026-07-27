@@ -16,8 +16,9 @@ from urllib.parse import urlparse
 
 
 SCHEMA_VERSION = 3
-GOALKEEPER_HIERARCHY_MODEL = "multi-season-v7-recency-form"
-RECENCY_FORM_MODEL = "recency-context-v1"
+GOALKEEPER_HIERARCHY_MODEL = "multi-season-v8-readiness-rebound"
+RECENCY_FORM_MODEL = "recency-context-v2-rebound"
+PRESEASON_READINESS_MODEL = "preseason-readiness-v2-provider-stats"
 COMPONENTS = {
     "confirmed_performance",
     "minutes",
@@ -520,6 +521,32 @@ def validate_snapshot(
             raise QualitySnapshotError(
                 f"quality preseason readiness_delta is invalid for {player_id}"
             )
+        if payload.get("preseason_model_version") == PRESEASON_READINESS_MODEL:
+            training_score = preseason_summary.get("training_score")
+            if (
+                isinstance(training_score, bool)
+                or not isinstance(training_score, (int, float))
+                or not 0 <= float(training_score) <= 100
+                or preseason_summary.get("latest_training_status") not in {
+                    "full",
+                    "partial",
+                    "absent",
+                    "unknown",
+                }
+            ):
+                raise QualitySnapshotError(
+                    f"quality preseason recovery state is invalid for {player_id}"
+                )
+            for field_name in ("recovery_risk_floor", "injury_risk"):
+                value = preseason_summary.get(field_name)
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not 0 <= float(value) <= 100
+                ):
+                    raise QualitySnapshotError(
+                        f"quality preseason {field_name} is invalid for {player_id}"
+                    )
         kicker_trend = annotation.get("kicker_trend")
         if not isinstance(kicker_trend, dict):
             raise QualitySnapshotError(

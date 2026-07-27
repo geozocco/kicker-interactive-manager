@@ -15,5 +15,88 @@
     "friendly",
     "friendlies"
   ],
-  "players": {}
+  "players": {
+    "api_sports:24856": {
+      "name": "Berkan Taz",
+      "club": "VfL Bochum",
+      "team_match_count": 5,
+      "events": [
+        {
+          "date": "2026-07-11",
+          "opponent": "Royal Antwerpen",
+          "appeared": true,
+          "started": true,
+          "minutes": 60,
+          "goals": 1,
+          "lineup_role": "first_group",
+          "training_status": "full",
+          "coach_signal": 72,
+          "opponent_score": 78,
+          "confidence": "high",
+          "claim": "Taz begann gegen Royal Antwerpen in der ersten Bochumer Gruppe, übernahm einen Freistoß und erzielte den Siegtreffer.",
+          "source_provider": "official_club",
+          "source_url": "https://www.vfl-bochum.de/aktuelles/2026/07/taz-trifft-zum-dritten-testspielsieg/"
+        },
+        {
+          "date": "2026-07-21",
+          "opponent": "Swansea City",
+          "appeared": true,
+          "started": true,
+          "minutes": 61,
+          "goals": 1,
+          "lineup_role": "first_group",
+          "training_status": "full",
+          "coach_signal": 75,
+          "opponent_score": 76,
+          "confidence": "high",
+          "claim": "Taz begann beim 2:0 gegen Swansea, erzielte das zweite Tor und wurde nach 61 Minuten ausgewechselt.",
+          "source_provider": "official_club",
+          "source_url": "https://www.vfl-bochum.de/aktuelles/2026/07/tag-4-von-vflinbramberg-erfolgreiches-bergfest/"
+        }
+      ]
+    },
+    "api_sports:125312": {
+      "name": "Fabian Nürnberger",
+      "club": "SV Darmstadt 98",
+      "team_match_count": 5,
+      "events": [
+        {
+          "date": "2026-07-20",
+          "appeared": false,
+          "started": false,
+          "minutes": 0,
+          "lineup_role": "unknown",
+          "training_status": "partial",
+          "coach_signal": 50,
+          "opponent_score": 50,
+          "confidence": "high",
+          "claim": "Nürnberger arbeitet im Trainingslager weiterhin individuell an seinem Comeback.",
+          "source_provider": "official_club",
+          "source_url": "https://www.sv98.de/tagebuch/"
+        }
+      ]
+    },
+    "api_sports:432553": {
+      "name": "Lukas Reich",
+      "club": "SpVgg Greuther Fürth",
+      "team_match_count": 2,
+      "events": [
+        {
+          "date": "2026-07-08",
+          "opponent": "SC Eltersdorf",
+          "appeared": true,
+          "started": false,
+          "minutes": 45,
+          "lineup_role": "second_group",
+          "training_status": "full",
+          "coach_signal": 56,
+          "opponent_score": 42,
+          "confidence": "high",
+          "claim": "Reich führte die junge Fürther Mannschaft in der zweiten Halbzeit des Tests gegen Eltersdorf mit an.",
+          "source_provider": "official_club",
+          "source_url": "https://www.sgf1903.de/news/profis/kleeblatt-gewinnt-test-in-eltersdorf"
+        }
+      ]
+    }
+  }
 }

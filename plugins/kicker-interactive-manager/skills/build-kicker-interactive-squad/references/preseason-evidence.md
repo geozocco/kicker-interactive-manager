@@ -44,6 +44,10 @@ Positive Vorbereitung darf `minutes`, `role`, `upside`, `value` und `unknown_rol
 
 Negative oder fehlende Vorbereitung bei einem jungen Spieler als Unsicherheit behandeln. Belegte Nichtteilnahme, Reha oder dauerhafte zweite Formation dürfen Einsatz- und Rollenwerte senken, benötigen aber aktuelle Quellen.
 
+API-Sports-Testspiele über `/fixtures` liefern nur die Begegnungshülle. Spielerbeobachtungen ausschließlich aus `/fixtures/players` oder einem direkten offiziellen Vereinsbeleg ableiten. Findet der zentrale Lauf mehrere Testspiele, aber keinerlei Spielerstatistiken, darf er keinen scheinbar gesunden leeren Snapshot veröffentlichen.
+
+Bei einem belegten Comeback gesundes, mehrjährig bestätigtes Leistungsniveau und aktuelle Einsatzreife strikt trennen: Ein verletzungsbedingt minutenarmes Jahr senkt nicht zusätzlich `confirmed_performance`. Individuelles beziehungsweise teilweises Training begrenzt stattdessen `fitness`, setzt einen aktuellen Boden für `injury` und hält die Rollenunsicherheit sichtbar. Erst wiederholtes Mannschaftstraining und Spieleinsätze lösen diese Begrenzung schrittweise.
+
 ## Verfall
 
 Einzelbeobachtungen besitzen eine Halbwertszeit von 28 Tagen. Ab dem ersten Pflichtspieltag sinkt das gesamte Vorbereitungssignal innerhalb von 35 Tagen auf neutral. Pflichtspieldaten ersetzen es damit schrittweise.

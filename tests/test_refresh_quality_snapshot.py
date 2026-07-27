@@ -358,6 +358,108 @@ def exceptional_goalkeeper_history() -> dict:
 
 
 class RefreshQualitySnapshotTests(unittest.TestCase):
+    def test_recovery_preserves_healthy_quality_but_caps_readiness(self) -> None:
+        histories = [
+            form_season(
+                2025,
+                minutes=350,
+                lineups=2,
+                rating=6.4,
+                goals=0,
+                assists=0,
+            ),
+            form_season(
+                2024,
+                minutes=2500,
+                lineups=28,
+                rating=7.0,
+                goals=8,
+                assists=6,
+            ),
+        ]
+        profile = quality.historical_form_profile(
+            position="MIDFIELDER",
+            histories=histories,
+            history_player={"seasons": []},
+            market_club="Example Club",
+            news_player=news_player(),
+            age=27,
+        )
+        self.assertEqual("recent_availability_drop", profile["recovery_status"])
+        self.assertGreaterEqual(
+            profile["adjustments"]["confirmed_performance"],
+            0,
+        )
+
+        adjustment = quality.preseason_adjustment(
+            {
+                "summary": {
+                    "appearances": 0,
+                    "starts": 0,
+                    "minutes": 0,
+                    "goals": 0,
+                    "assists": 0,
+                    "official_source_count": 1,
+                    "availability_score": 28,
+                    "role_score": 35,
+                    "performance_score": 45,
+                    "opponent_score": 50,
+                    "training_score": 55,
+                    "latest_training_status": "partial",
+                    "signal_score": 37,
+                    "effective_factor": 100,
+                    "confidence": "medium",
+                    "classification": "negative",
+                }
+            },
+            age=27,
+            proven_seasons=3,
+            comparable_minutes=6000,
+            youth_score=0,
+            talent_score=40,
+            minutes=82,
+            role=78,
+            upside=45,
+            value=77,
+            unknown_role=20,
+            fitness=90,
+            injury_risk=0,
+        )
+        self.assertTrue(adjustment["available"])
+        self.assertEqual(45, adjustment["injury_risk"])
+        self.assertLessEqual(adjustment["components"]["fitness"], 68)
+
+    def test_strong_third_tier_season_gets_bounded_translation_not_anchor_proof(
+        self,
+    ) -> None:
+        history = transfermarkt_history(proven_seasons=0)
+        history["seasons"] = [
+            {
+                "season": 2025,
+                "competitions": [
+                    {
+                        "label": "3. Liga",
+                        "kind": "domestic_league",
+                        "strength_factor": 0.64,
+                        "appearances": 34,
+                        "starts": 31,
+                        "minutes": 2700,
+                        "goals": 12,
+                        "assists": 10,
+                    }
+                ],
+            }
+        ]
+        profile = quality.lower_league_translation_profile(
+            history,
+            position="MIDFIELDER",
+            target_strength=0.8,
+            age=22,
+        )
+        self.assertEqual("standout_lower_league", profile["status"])
+        self.assertGreater(profile["value_bonus"], 0)
+        self.assertLessEqual(profile["value_bonus"], 8)
+        self.assertEqual(0, history["career"]["proven_seasons"])
     def test_recent_form_outweighs_older_form(self) -> None:
         strong = form_season(
             2025,

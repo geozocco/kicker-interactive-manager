@@ -54,9 +54,9 @@ from refresh_news_snapshot import (
 )
 
 
-MODEL_VERSION = "multi-season-v7-recency-form"
-PRESEASON_MODEL_VERSION = "preseason-readiness-v1"
-FORM_MODEL_VERSION = "recency-context-v1"
+MODEL_VERSION = "multi-season-v8-readiness-rebound"
+PRESEASON_MODEL_VERSION = "preseason-readiness-v2-provider-stats"
+FORM_MODEL_VERSION = "recency-context-v2-rebound"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
 
 
@@ -1129,6 +1129,17 @@ def historical_form_profile(
         -10.0,
         min(10.0, 0.20 * (form_score - 50)),
     ) * adjustment_confidence
+    # Missing minutes after an injury describe availability, not a sudden loss
+    # of the player's healthy footballing level. Keep that quality baseline and
+    # express the uncertainty through readiness and risk instead.
+    confirmed_delta = (
+        max(0.0, portable_delta)
+        if recovery_status in {
+            "current_injury_or_recovery",
+            "recent_availability_drop",
+        }
+        else portable_delta
+    )
     context_uncertainty = (
         6.0
         if club_changed is True
@@ -1174,7 +1185,7 @@ def historical_form_profile(
         "recovery_status": recovery_status,
         "adjustments": {
             "confirmed_performance": round(
-                portable_delta
+                confirmed_delta
                 * (0.85 if club_changed is True else 1.0),
                 2,
             ),
@@ -1265,6 +1276,8 @@ def preseason_adjustment(
     upside: float,
     value: float,
     unknown_role: float,
+    fitness: float = 50.0,
+    injury_risk: float = 0.0,
 ) -> dict[str, Any]:
     """Blend preparation into readiness without turning friendlies into proof."""
 
@@ -1291,21 +1304,37 @@ def preseason_adjustment(
             "role": role,
             "upside": upside,
             "value": value,
+            "fitness": fitness,
         },
+        "training_score": 50.0,
+        "latest_training_status": "unknown",
+        "recovery_risk_floor": 0.0,
+        "injury_risk": injury_risk,
         "unknown_role": unknown_role,
     }
     if not isinstance(preseason_player, dict):
         return empty
     summary = preseason_player.get("summary", {})
-    if not isinstance(summary, dict) or int(summary.get("appearances", 0)) <= 0:
+    if not isinstance(summary, dict):
+        return empty
+    appearances = int(summary.get("appearances", 0))
+    official_sources = int(summary.get("official_source_count", 0))
+    training_status = str(summary.get("latest_training_status", "unknown"))
+    recovery_evidence = (
+        official_sources >= 1 and training_status in {"partial", "absent"}
+    )
+    if appearances <= 0 and not recovery_evidence:
         return empty
     confidence = str(summary.get("confidence", "low"))
     confidence_factor = {"low": 0.55, "medium": 0.78, "high": 1.0}.get(
         confidence,
         0.55,
     )
-    appearances = int(summary.get("appearances", 0))
-    sample_factor = min(1.0, appearances / 3.0)
+    sample_factor = (
+        min(1.0, appearances / 3.0)
+        if appearances > 0
+        else 0.65
+    )
     effective_factor = clamp(summary.get("effective_factor"), 0) / 100.0
     thin_history = proven_seasons == 0 or comparable_minutes < 900
     base_weight = (
@@ -1321,6 +1350,7 @@ def preseason_adjustment(
     availability_score = clamp(summary.get("availability_score"), 50)
     role_score = clamp(summary.get("role_score"), 50)
     signal_score = clamp(summary.get("signal_score"), 50)
+    training_score = clamp(summary.get("training_score"), 50)
     adjusted_minutes = clamp(
         minutes + applied_weight * (availability_score - minutes)
     )
@@ -1344,6 +1374,20 @@ def preseason_adjustment(
             unknown_role - applied_weight * positive_signal * 0.75,
         )
     )
+    recovery_risk_floor = (
+        72.0 if training_status == "absent" else 45.0
+        if training_status == "partial" else 0.0
+    )
+    fitness_cap = (
+        35.0 if training_status == "absent" else 68.0
+        if training_status == "partial" else 100.0
+    )
+    adjusted_fitness = min(
+        fitness,
+        fitness_cap,
+        clamp(0.65 * fitness + 0.35 * training_score),
+    )
+    adjusted_injury_risk = max(injury_risk, recovery_risk_floor)
     high_upside = (
         age <= 21
         and proven_seasons == 0
@@ -1383,6 +1427,10 @@ def preseason_adjustment(
         "role_score": role_score,
         "performance_score": clamp(summary.get("performance_score"), 50),
         "opponent_score": clamp(summary.get("opponent_score"), 50),
+        "training_score": training_score,
+        "latest_training_status": training_status,
+        "recovery_risk_floor": recovery_risk_floor,
+        "injury_risk": adjusted_injury_risk,
         "effective_factor": clamp(summary.get("effective_factor"), 0),
         "applied_weight": round(applied_weight, 4),
         "readiness_delta": round(
@@ -1396,8 +1444,82 @@ def preseason_adjustment(
             "role": adjusted_role,
             "upside": adjusted_upside,
             "value": adjusted_value,
+            "fitness": adjusted_fitness,
         },
         "unknown_role": adjusted_unknown_role,
+    }
+
+
+def lower_league_translation_profile(
+    history_player: dict[str, Any],
+    *,
+    position: str,
+    target_strength: float,
+    age: int,
+) -> dict[str, Any]:
+    """Translate recent standout production one tier below the target league."""
+
+    candidates: list[dict[str, Any]] = []
+    for season in history_player.get("seasons", [])[:2]:
+        for competition in season.get("competitions", []):
+            if str(competition.get("kind", "")) != "domestic_league":
+                continue
+            strength = numeric(competition.get("strength_factor"))
+            if not target_strength * 0.70 <= strength < target_strength * 0.92:
+                continue
+            minutes = numeric(competition.get("minutes"))
+            appearances = numeric(competition.get("appearances"))
+            starts = numeric(competition.get("starts"))
+            contributions = numeric(competition.get("goals")) + numeric(
+                competition.get("assists")
+            )
+            if minutes < 700:
+                continue
+            translation = min(1.0, strength / max(0.01, target_strength))
+            start_rate = starts / max(1.0, appearances)
+            production_per_900 = 900.0 * contributions / max(1.0, minutes)
+            role_score = clamp(38 + 42 * start_rate + min(20, minutes / 120))
+            production_score = (
+                clamp(40 + 9 * production_per_900)
+                if position in {"MIDFIELDER", "FORWARD"}
+                else clamp(46 + 3 * production_per_900)
+            )
+            translated_score = clamp(
+                translation * (0.62 * role_score + 0.38 * production_score)
+                + (1.0 - translation) * 42
+            )
+            candidates.append(
+                {
+                    "season": int(season.get("season", 0)),
+                    "competition": str(competition.get("label", "")),
+                    "strength_ratio": round(translation, 3),
+                    "minutes": int(minutes),
+                    "start_rate": round(start_rate, 3),
+                    "contributions_per_900": round(production_per_900, 2),
+                    "translated_score": translated_score,
+                }
+            )
+    best = max(candidates, key=lambda item: item["translated_score"], default=None)
+    if best is None:
+        return {
+            "status": "none",
+            "score": 50.0,
+            "value_bonus": 0.0,
+            "upside_bonus": 0.0,
+            "evidence": None,
+        }
+    age_multiplier = 1.15 if age <= 22 else 1.0 if age <= 27 else 0.85
+    surplus = max(0.0, float(best["translated_score"]) - 55.0)
+    return {
+        "status": (
+            "standout_lower_league"
+            if surplus >= 8 and int(best["minutes"]) >= 1200
+            else "lower_league_watch"
+        ),
+        "score": best["translated_score"],
+        "value_bonus": round(min(8.0, surplus * 0.30 * age_multiplier), 2),
+        "upside_bonus": round(min(7.0, surplus * 0.26 * age_multiplier), 2),
+        "evidence": best,
     }
 
 
@@ -1415,6 +1537,7 @@ def build_annotation(
     points_pct: float,
     price_pct: float,
     generated_at: str,
+    target_strength: float = 0.8,
 ) -> dict[str, Any]:
     position = str(market_player["position"])
     consensus = news_player.get("consensus", {})
@@ -1613,6 +1736,16 @@ def build_annotation(
         + 0.26 * points_pct
         + 0.08 * (trend_score - 50)
     )
+    lower_league_profile = lower_league_translation_profile(
+        history_player,
+        position=position,
+        target_strength=target_strength,
+        age=age,
+    )
+    upside = clamp(
+        upside + float(lower_league_profile["upside_bonus"])
+    )
+    value = clamp(value + float(lower_league_profile["value_bonus"]))
     if age <= 21 and talent_score >= 68:
         talent_value = clamp(
             0.20 * (100 - price_pct)
@@ -1644,11 +1777,15 @@ def build_annotation(
         upside=upside,
         value=value,
         unknown_role=baseline_unknown_role,
+        fitness=fitness,
+        injury_risk=injury_risk,
     )
     minutes = float(preseason_summary["components"]["minutes"])
     role = float(preseason_summary["components"]["role"])
     upside = float(preseason_summary["components"]["upside"])
     value = float(preseason_summary["components"]["value"])
+    fitness = float(preseason_summary["components"]["fitness"])
+    injury_risk = float(preseason_summary["injury_risk"])
     risks = {
         "transfer": transfer_risk,
         "injury": injury_risk,
@@ -1793,6 +1930,7 @@ def build_annotation(
         ),
         "editorial_talent_signal": round(editorial_talent_signal, 2),
         "talent_profile": talent_profile,
+        "lower_league_translation": lower_league_profile,
     }
     return {
         "position": position,
@@ -2362,6 +2500,7 @@ def generate_snapshot(
                 prices_by_position[position],
             ),
             generated_at=generated_at,
+            target_strength=float(history_payload["target_strength"]),
         )
         annotations[str(market_player["id"])] = annotation
 
