@@ -54,8 +54,9 @@ from refresh_news_snapshot import (
 )
 
 
-MODEL_VERSION = "multi-season-v6-goalkeeper-hierarchy"
+MODEL_VERSION = "multi-season-v7-recency-form"
 PRESEASON_MODEL_VERSION = "preseason-readiness-v1"
+FORM_MODEL_VERSION = "recency-context-v1"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
 
 
@@ -88,7 +89,20 @@ def surname_key(value: str) -> str:
 def club_match(left: str, right: str) -> bool:
     left_words = set(identity_words(left))
     right_words = set(identity_words(right))
-    stopwords = {"1", "fc", "sc", "sv", "tsv", "vfb", "vfl", "bsc", "ev"}
+    stopwords = {
+        "1",
+        "fc",
+        "sc",
+        "sv",
+        "tsv",
+        "vfb",
+        "vfl",
+        "bsc",
+        "ev",
+        "club",
+        "football",
+        "fussball",
+    }
     return bool((left_words - stopwords) & (right_words - stopwords))
 
 
@@ -550,6 +564,7 @@ def empty_season_stats(season: int, age: int | None = None) -> dict[str, Any]:
         "penalties_missed": 0,
         "penalties_saved": 0,
         "age": age,
+        "clubs": [],
     }
 
 
@@ -565,6 +580,7 @@ def cached_api_histories(
         not isinstance(previous_quality_payload, dict)
         or previous_quality_payload.get("competition") != competition
         or previous_quality_payload.get("season") != season
+        or previous_quality_payload.get("model_version") != MODEL_VERSION
     ):
         return {}
     annotation = previous_quality_payload.get("annotations", {}).get(
@@ -573,12 +589,17 @@ def cached_api_histories(
     )
     if annotation.get("provider_news_id") != news_id:
         return {}
+    current_history_season = optional_int(str(season).split("/", 1)[0])
     return {
         int(item["season"]): item
         for item in annotation.get("api_sports_history", [])
         if (
             isinstance(item, dict)
             and optional_int(item.get("season")) is not None
+            and (
+                current_history_season is None
+                or int(item["season"]) < current_history_season
+            )
         )
     }
 
@@ -619,9 +640,11 @@ def fetch_player_season(
                 "rating_minutes": 0,
                 "pass_accuracy_weighted": 0.0,
                 "pass_accuracy_attempts": 0,
+                "clubs_by_name": {},
             })
             for item in response:
                 for statistics in item.get("statistics", []):
+                    team = statistics.get("team", {})
                     games = statistics.get("games", {})
                     goals = statistics.get("goals", {})
                     substitutes = statistics.get("substitutes", {})
@@ -635,6 +658,14 @@ def fetch_player_season(
                     penalty = statistics.get("penalty", {})
                     appearances = int(numeric(games.get("appearences")))
                     minutes = int(numeric(games.get("minutes")))
+                    club_name = str(team.get("name", "")).strip()
+                    if club_name:
+                        club_totals = totals["clubs_by_name"].setdefault(
+                            club_name,
+                            {"appearances": 0, "minutes": 0},
+                        )
+                        club_totals["appearances"] += appearances
+                        club_totals["minutes"] += minutes
                     rating = numeric(games.get("rating"))
                     pass_total = int(numeric(passes.get("total")))
                     pass_accuracy = numeric(passes.get("accuracy"))
@@ -711,6 +742,17 @@ def fetch_player_season(
                 / max(1, totals.pop("pass_accuracy_attempts")),
                 2,
             )
+            totals["clubs"] = [
+                {
+                    "name": name,
+                    "appearances": values["appearances"],
+                    "minutes": values["minutes"],
+                }
+                for name, values in sorted(
+                    totals.pop("clubs_by_name").items(),
+                    key=lambda item: (-item[1]["minutes"], item[0]),
+                )
+            ]
             return totals
         except RuntimeError as error:
             last_error = error
@@ -800,6 +842,358 @@ def event_role_score(position: str, stats: dict[str, Any]) -> float:
         + 7.0 * per_90(stats, "shots_on")
         + 5.0 * per_90(stats, "key_passes")
     )
+
+
+def provider_season_form_score(
+    position: str,
+    stats: dict[str, Any],
+) -> tuple[float, float]:
+    """Return a sample-shrunk season score and its evidence confidence."""
+
+    minutes = numeric(stats.get("minutes"))
+    appearances = numeric(stats.get("appearances"))
+    lineups = numeric(stats.get("lineups"))
+    rating = numeric(stats.get("rating"))
+    sample_confidence = min(
+        1.0,
+        max(minutes / 1_800.0, appearances / 24.0),
+    )
+    availability_score = clamp(32 + minutes / 32)
+    starting_score = clamp(
+        36 + 58 * lineups / max(1.0, appearances)
+    )
+    rating_score = (
+        clamp(50 + (rating - 6.35) * 62)
+        if rating > 0
+        else 50.0
+    )
+    event_score = event_role_score(position, stats)
+    observed_score = (
+        0.24 * availability_score
+        + 0.22 * starting_score
+        + 0.24 * rating_score
+        + 0.30 * event_score
+    )
+    return (
+        clamp(50 + sample_confidence * (observed_score - 50)),
+        sample_confidence,
+    )
+
+
+def transfermarkt_season_form_score(
+    position: str,
+    season: dict[str, Any],
+) -> tuple[float, float]:
+    """Score older seasons after league-strength adjustment."""
+
+    minutes = numeric(season.get("minutes"))
+    adjusted_minutes = numeric(season.get("level_adjusted_minutes"))
+    appearances = numeric(season.get("appearances"))
+    starts = numeric(season.get("starts"))
+    contributions = numeric(season.get("goals")) + numeric(
+        season.get("assists")
+    )
+    sample_confidence = min(
+        0.86,
+        max(adjusted_minutes / 1_900.0, appearances / 28.0),
+    )
+    strength_ratio = min(
+        1.2,
+        adjusted_minutes / max(1.0, minutes),
+    )
+    adjusted_contributions_per_900 = (
+        900.0
+        * contributions
+        * strength_ratio
+        / max(1.0, adjusted_minutes)
+    )
+    availability_score = clamp(30 + adjusted_minutes / 32)
+    starting_score = clamp(
+        38 + 55 * starts / max(1.0, appearances)
+    )
+    if position in {"MIDFIELDER", "FORWARD"}:
+        production_score = clamp(
+            42 + 8.5 * adjusted_contributions_per_900
+        )
+    else:
+        production_score = clamp(48 + 2.5 * adjusted_contributions_per_900)
+    observed_score = (
+        0.42 * availability_score
+        + 0.34 * starting_score
+        + 0.24 * production_score
+    )
+    return (
+        clamp(50 + sample_confidence * (observed_score - 50)),
+        sample_confidence,
+    )
+
+
+def historical_form_profile(
+    *,
+    position: str,
+    histories: list[dict[str, Any]],
+    history_player: dict[str, Any],
+    market_club: str,
+    news_player: dict[str, Any],
+    age: int,
+) -> dict[str, Any]:
+    """Build a recency-weighted form curve with context uncertainty."""
+
+    by_season: dict[int, dict[str, Any]] = {}
+    provider_by_season = {
+        int(stats.get("season", 0)): stats
+        for stats in histories
+        if int(stats.get("season", 0)) > 0
+    }
+    transfermarkt_by_season = {
+        int(season.get("season", 0)): season
+        for season in history_player.get("seasons", [])
+        if int(season.get("season", 0)) > 0
+    }
+    for season_id in sorted(
+        set(provider_by_season) | set(transfermarkt_by_season),
+        reverse=True,
+    ):
+        provider = provider_by_season.get(season_id)
+        transfermarkt = transfermarkt_by_season.get(season_id)
+        scores: list[tuple[float, float, float]] = []
+        competition_context_factor = 1.0
+        if transfermarkt is not None:
+            competition_context_factor = min(
+                1.0,
+                max(
+                    0.20,
+                    numeric(transfermarkt.get("level_adjusted_minutes"))
+                    / max(
+                        1.0,
+                        numeric(transfermarkt.get("minutes")),
+                    ),
+                ),
+            )
+        if provider is not None:
+            score, confidence = provider_season_form_score(
+                position,
+                provider,
+            )
+            score = clamp(
+                50
+                + competition_context_factor * (score - 50)
+            )
+            scores.append((score, confidence, 0.70))
+        if transfermarkt is not None:
+            score, confidence = transfermarkt_season_form_score(
+                position,
+                transfermarkt,
+            )
+            scores.append((score, confidence, 0.30 if provider else 1.0))
+        evidence_weight = sum(
+            confidence * source_weight
+            for _, confidence, source_weight in scores
+        )
+        if evidence_weight <= 0:
+            continue
+        season_score = (
+            sum(
+                score * confidence * source_weight
+                for score, confidence, source_weight in scores
+            )
+            / max(evidence_weight, 1e-9)
+        )
+        season_confidence = min(
+            1.0,
+            sum(
+                confidence * source_weight
+                for _, confidence, source_weight in scores
+            )
+            / max(
+                sum(source_weight for _, _, source_weight in scores),
+                1e-9,
+            ),
+        )
+        by_season[season_id] = {
+            "season": season_id,
+            "score": clamp(season_score),
+            "confidence": season_confidence,
+            "competition_context_factor": competition_context_factor,
+            "minutes": numeric(
+                (provider or transfermarkt or {}).get("minutes")
+            ),
+        }
+
+    seasons = list(by_season.values())
+    decay = 0.50 if age <= 21 else 0.62
+    weighted_sum = 0.0
+    total_weight = 0.0
+    for index, season in enumerate(seasons):
+        recency_weight = decay**index
+        evidence_weight = recency_weight * max(
+            0.20,
+            float(season["confidence"]),
+        )
+        season["recency_weight"] = round(recency_weight, 4)
+        weighted_sum += float(season["score"]) * evidence_weight
+        total_weight += evidence_weight
+    weighted_score = (
+        weighted_sum / total_weight if total_weight > 0 else 50.0
+    )
+    trajectory_delta = (
+        float(seasons[0]["score"]) - float(seasons[1]["score"])
+        if len(seasons) >= 2
+        else 0.0
+    )
+    development_adjustment = min(
+        7.0,
+        max(0.0, trajectory_delta)
+        * (
+            0.28
+            if age <= 19
+            else 0.20
+            if age == 20
+            else 0.13
+            if age <= 23
+            else 0.0
+        ),
+    )
+    form_score = clamp(weighted_score + development_adjustment)
+    form_confidence = min(
+        1.0,
+        sum(
+            float(season["confidence"]) * decay**index
+            for index, season in enumerate(seasons)
+        )
+        / max(
+            sum(decay**index for index in range(len(seasons))),
+            1e-9,
+        ),
+    )
+
+    latest_provider = (
+        provider_by_season[max(provider_by_season)]
+        if provider_by_season
+        else {}
+    )
+    historical_clubs = [
+        str(club.get("name", "")).strip()
+        for club in latest_provider.get("clubs", [])
+        if str(club.get("name", "")).strip()
+    ]
+    club_changed: bool | None = (
+        all(not club_match(market_club, club) for club in historical_clubs)
+        if historical_clubs
+        else None
+    )
+    context_transfer_factor = (
+        0.58
+        if club_changed is True
+        else 1.0
+        if club_changed is False
+        else 0.82
+    )
+
+    latest_minutes = (
+        numeric(seasons[0].get("minutes")) if seasons else 0.0
+    )
+    previous_minutes = (
+        numeric(seasons[1].get("minutes")) if len(seasons) >= 2 else 0.0
+    )
+    availability_ratio = (
+        latest_minutes / max(1.0, previous_minutes)
+        if previous_minutes > 0
+        else None
+    )
+    injury_risk = clamp(
+        news_player.get("consensus", {}).get("injury", 0),
+        0,
+    )
+    if injury_risk >= 40:
+        recovery_status = "current_injury_or_recovery"
+    elif (
+        availability_ratio is not None
+        and previous_minutes >= 900
+        and availability_ratio < 0.55
+    ):
+        recovery_status = "recent_availability_drop"
+    elif (
+        availability_ratio is not None
+        and latest_minutes >= 900
+        and availability_ratio > 1.35
+    ):
+        recovery_status = "rebounded"
+    elif len(seasons) >= 2:
+        recovery_status = "stable"
+    else:
+        recovery_status = "insufficient_history"
+
+    adjustment_confidence = 0.35 + 0.65 * form_confidence
+    portable_delta = max(
+        -10.0,
+        min(10.0, 0.20 * (form_score - 50)),
+    ) * adjustment_confidence
+    context_uncertainty = (
+        6.0
+        if club_changed is True
+        else 2.0
+        if club_changed is None
+        else 0.0
+    )
+    if recovery_status == "recent_availability_drop":
+        context_uncertainty += 4.0
+    return {
+        "model_version": FORM_MODEL_VERSION,
+        "score": round(form_score, 2),
+        "confidence": round(form_confidence, 3),
+        "season_count": len(seasons),
+        "recency_decay": decay,
+        "latest_season_score": (
+            round(float(seasons[0]["score"]), 2) if seasons else 50.0
+        ),
+        "trajectory_delta": round(trajectory_delta, 2),
+        "development_adjustment": round(development_adjustment, 2),
+        "seasons": [
+            {
+                "season": int(season["season"]),
+                "score": round(float(season["score"]), 2),
+                "confidence": round(float(season["confidence"]), 3),
+                "recency_weight": season["recency_weight"],
+                "competition_context_factor": round(
+                    float(season["competition_context_factor"]),
+                    3,
+                ),
+            }
+            for season in seasons
+        ],
+        "current_club": market_club,
+        "latest_historical_clubs": historical_clubs,
+        "club_changed": club_changed,
+        "context_transfer_factor": context_transfer_factor,
+        "availability_ratio": (
+            round(availability_ratio, 3)
+            if availability_ratio is not None
+            else None
+        ),
+        "recovery_status": recovery_status,
+        "adjustments": {
+            "confirmed_performance": round(
+                portable_delta
+                * (0.85 if club_changed is True else 1.0),
+                2,
+            ),
+            "role": round(portable_delta * context_transfer_factor, 2),
+            "context": round(
+                portable_delta * context_transfer_factor * 0.80,
+                2,
+            ),
+            "upside": round(
+                min(
+                    8.0,
+                    max(0.0, trajectory_delta)
+                    * (0.24 if age <= 21 else 0.08),
+                ),
+                2,
+            ),
+            "unknown_role_risk": round(context_uncertainty, 2),
+        },
+    }
 
 
 def kicker_trend_summary(
@@ -1024,7 +1418,15 @@ def build_annotation(
 ) -> dict[str, Any]:
     position = str(market_player["position"])
     consensus = news_player.get("consensus", {})
-    latest = histories[0] if histories else {}
+    latest = next(
+        (
+            stats
+            for stats in histories
+            if numeric(stats.get("minutes")) >= 90
+            or numeric(stats.get("appearances")) >= 2
+        ),
+        histories[0] if histories else {},
+    )
     api_proven_seasons = sum(
         season_is_proven(position, stats) for stats in histories
     )
@@ -1138,6 +1540,19 @@ def build_annotation(
         (int(stats["age"]) for stats in histories if stats.get("age") is not None),
         27,
     )
+    form_summary = historical_form_profile(
+        position=position,
+        histories=histories,
+        history_player=history_player,
+        market_club=str(market_player["club"]),
+        news_player=news_player,
+        age=age,
+    )
+    form_adjustments = form_summary["adjustments"]
+    confirmed = clamp(
+        confirmed + float(form_adjustments["confirmed_performance"])
+    )
+    role = clamp(role + float(form_adjustments["role"]))
     talent_profile = youth_talent_profile(history_player, age)
     talent_score = float(talent_profile["talent_score"])
     readiness_score = float(talent_profile["readiness_score"])
@@ -1188,7 +1603,10 @@ def build_annotation(
     editorial_upside = clamp(
         talent_score + 0.10 * editorial_talent_signal
     )
-    upside = max(base_upside, youth_upside, editorial_upside)
+    upside = clamp(
+        max(base_upside, youth_upside, editorial_upside)
+        + float(form_adjustments["upside"])
+    )
     value = clamp(
         0.42 * (100 - price_pct)
         + 0.32 * confirmed
@@ -1236,14 +1654,21 @@ def build_annotation(
         "injury": injury_risk,
         "rotation": max(rotation_risk, clamp(82 - minutes)),
         "outlier": clamp(42 - 15 * proven_seasons + max(0, points_pct - 88) * 1.2),
-        "unknown_role": float(preseason_summary["unknown_role"]),
+        "unknown_role": clamp(
+            float(preseason_summary["unknown_role"])
+            + float(form_adjustments["unknown_role_risk"])
+        ),
     }
     components = {
         "confirmed_performance": confirmed,
         "minutes": minutes,
         "role": role,
         "stability": stability,
-        "context": clamp(65 + 0.18 * (trend_score - 50)),
+        "context": clamp(
+            65
+            + 0.18 * (trend_score - 50)
+            + float(form_adjustments["context"])
+        ),
         "fitness": fitness,
         "upside": upside,
         "value": value,
@@ -1260,6 +1685,7 @@ def build_annotation(
         and fitness >= 70
         and transfer_risk < 45
         and injury_risk < 45
+        and float(form_summary["context_transfer_factor"]) >= 0.75
     )
     provider_id = int(news_player["mapping"]["api_sports_player_id"])
     evidence = [
@@ -1408,6 +1834,16 @@ def build_annotation(
                     if preseason_summary["available"]
                     else ""
                 ),
+                (
+                    "Formkurve: "
+                    f"{form_summary['score']:.1f}/100 über "
+                    f"{form_summary['season_count']} Spielzeiten, "
+                    f"Trend {form_summary['trajectory_delta']:+.1f}; "
+                    f"Kontext {form_summary['context_transfer_factor']:.2f}, "
+                    f"Status {form_summary['recovery_status']}."
+                    if form_summary["season_count"] > 0
+                    else ""
+                ),
                 str(talent_evidence.get("note", "")).strip(),
             )
             if part
@@ -1422,6 +1858,7 @@ def build_annotation(
             "rating_weight_in_api_confirmation": 0.08,
         },
         "kicker_trend": trend_summary,
+        "form_summary": form_summary,
         "history_summary": history_summary,
         "preseason_summary": {
             key: value
@@ -1939,6 +2376,7 @@ def generate_snapshot(
             kicker_history_payload
         ),
         "model_version": MODEL_VERSION,
+        "form_model_version": FORM_MODEL_VERSION,
         "preseason_model_version": PRESEASON_MODEL_VERSION,
         "requirements": {
             "candidate_count": int(config["minimum_candidates"]),

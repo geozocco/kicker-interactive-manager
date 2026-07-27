@@ -107,7 +107,8 @@ Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüf
 - Mehrjährige Konstanz, Standards, Kapitänsrolle und trainerbestätigte Schlüsselrollen als wiederholbare Signale aufwerten.
 - API-Sports-Providernoten nur als kleines Hilfssignal verwenden. Positionsabhängige, wiederholbare Ereignisse wie Startelfquote, Schüsse aufs Tor, Key Passes, Duelle, Defensivaktionen, Saves und Scorer tragen stärker. Eine Provider-Note niemals als Kicker-Note ausgeben.
 - Den zentralen Kicker-Zeitverlauf für Preise, kumulierte Punkte und Notenschnitt einbeziehen. Eine einzelne Beobachtung bleibt neutral; erst mindestens zwei zeitlich getrennte Beobachtungen erzeugen ein begrenztes Formsignal. Kurzfristige Form darf eine mehrjährige Leistungsbasis ergänzen, aber nicht ersetzen.
-- Transfers als Rollenreset behandeln. Qualität des Spielers und Passung zum neuen Team getrennt von seiner alten Produktion bewerten.
+- Die zentrale `form_summary` als primäres historisches Formsignal verwenden: jüngste Saison deutlich höher gewichten, Stichproben schrumpfen, positive U23-Entwicklung altersabhängig erfassen und Einsatzminuten-Einbrüche als Verfügbarkeitswarnung markieren. Mehrjährig nachgewiesene Klasse bleibt ein getrenntes Fundament.
+- Transfers als Rollenreset behandeln. Qualität des Spielers und Passung zum neuen Team getrennt von seiner alten Produktion bewerten. Bei nachgewiesenem Vereinswechsel den `context_transfer_factor` und das erhöhte `unknown_role` berücksichtigen; taktische Systempassung ohne aktuelle Positions-, Trainer- oder Formationsquelle nicht behaupten.
 - Transfer-, Rotations- und Verletzungsrisiken aktuell recherchieren. Unsicherheit offen markieren, nicht erfinden.
 
 ### 3. Kandidaten bewerten
@@ -158,7 +159,7 @@ Wettbewerb, Saison und vier Positionsargumente immer mit den zuvor von der sicht
 - Transfergefahr vor Saisonstart gesondert prüfen
 - `news_audit` muss frisch sein, zum Wettbewerb und zur Saison passen und darf bei ausgewählten Spielern weder fehlende Provider-Zuordnungen noch offene Konflikte enthalten
 - `market_audit` muss frisch sein, zum Wettbewerb und zur Saison passen und die vollständige zentrale Spielerliste ausweisen
-- `quality_audit` muss frisch sein, dieselbe Markt-, News-, Vorbereitungs-, Transfermarkt-Historien- und Kicker-Zeitreihen-Prüfsumme tragen, mindestens 75 Prozent eindeutig oder mit hoher Plausibilität zugeordnete Transfermarkt-Historien ausweisen und die Mindestwerte von 60 Kandidaten, 20 Ankern, 15 offensiven Ankern und sechs Torwartblöcken erreichen
+- `quality_audit` muss frisch sein, dieselbe Markt-, News-, Vorbereitungs-, Transfermarkt-Historien- und Kicker-Zeitreihen-Prüfsumme tragen, das aktuelle `form_model_version` ausweisen, mindestens 75 Prozent eindeutig oder mit hoher Plausibilität zugeordnete Transfermarkt-Historien ausweisen und die Mindestwerte von 60 Kandidaten, 20 Ankern, 15 offensiven Ankern und sechs Torwartblöcken erreichen
 - Für `gering` unabhängig vom Strategieprofil standardmäßig 11 bis 14 Kernspieler, wenige günstige direkte Vertreter und anschließend preiswerte einsatzfähige Ergänzungen bilden. Eine gleichmäßig teure Bank ist kein Qualitätsmerkmal und erschwert die Finanzierung von Ausnahmespielern.
 - Für `gering` müssen mindestens 80 Prozent des gesamten Kaderwerts in der stärksten legalen Startelf liegen. Diese enthält mindestens zwei Stürmer, höchstens vier Verteidiger und die vereinsinterne Nummer eins eines freigegebenen Torwartblocks. Im Profil `verlässlich` enthält sie außerdem mindestens einen evidenzbasierten offensiven Premiumanker. Die Torwartprognose muss mindestens 70 Prozent Saison-Stammplatzwahrscheinlichkeit, höchstens 40 Prozent externes Besetzungsrisiko und mindestens mittlere Sicherheit erreichen. Ein Verstoß ist ein Abbruchgrund.
 - Variabilität darf einzelne Kernentscheidungen und günstige Ergänzungen verändern, aber nicht die Kaderarchitektur in 22 gleichwertige Alternativen auflösen.
@@ -185,6 +186,7 @@ Der Ergebnisentwurf muss enthalten:
 7. Verbleibende Risiken und den sinnvollen nächsten Kontrollzeitpunkt nennen.
 8. News-Audit knapp nennen: Snapshot-Zeitpunkt und -Ablauf, verwendete Provider, Abdeckung des Zielkaders, Konflikte sowie manuell geprüfte Lücken.
 9. Bei jungen, neuen oder datenarmen Spielern den Vorbereitungseinfluss offen nennen: Zahl der Einsätze und Starts, Formationsrolle, Signalstärke, Quellen und verbleibende Unsicherheit. Einzelne Tore nie als alleinige Begründung verwenden.
+10. Bei formabhängigen Entscheidungen `form_summary` knapp nennen: zeitgewichteter Formwert, Trend, Konfidenz, Vereinswechsel-/Kontextfaktor sowie einen möglichen Verfügbarkeits- oder Rückkehrstatus. Formwert und dauerhafte Grundqualität sprachlich nicht vermischen.
 
 Generische drei bis fünf Gründe für den Gesamtkader genügen diesem Vertrag nicht.
 

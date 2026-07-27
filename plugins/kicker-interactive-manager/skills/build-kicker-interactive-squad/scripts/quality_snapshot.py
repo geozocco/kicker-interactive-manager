@@ -16,7 +16,8 @@ from urllib.parse import urlparse
 
 
 SCHEMA_VERSION = 3
-GOALKEEPER_HIERARCHY_MODEL = "multi-season-v6-goalkeeper-hierarchy"
+GOALKEEPER_HIERARCHY_MODEL = "multi-season-v7-recency-form"
+RECENCY_FORM_MODEL = "recency-context-v1"
 COMPONENTS = {
     "confirmed_performance",
     "minutes",
@@ -234,6 +235,13 @@ def validate_snapshot(
             raise QualitySnapshotError(
                 f"quality snapshot field {field_name!r} is missing"
             )
+    if (
+        payload.get("model_version") == GOALKEEPER_HIERARCHY_MODEL
+        and payload.get("form_model_version") != RECENCY_FORM_MODEL
+    ):
+        raise QualitySnapshotError(
+            "quality snapshot form model version is missing or unsupported"
+        )
     annotations = payload.get("annotations")
     if not isinstance(annotations, dict):
         raise QualitySnapshotError(
@@ -247,6 +255,7 @@ def validate_snapshot(
     hierarchy_model = (
         payload.get("model_version") == GOALKEEPER_HIERARCHY_MODEL
     )
+    recency_form_model = hierarchy_model
     for player_id, annotation in annotations.items():
         if not str(player_id).strip() or not isinstance(annotation, dict):
             raise QualitySnapshotError(
@@ -322,6 +331,94 @@ def validate_snapshot(
             raise QualitySnapshotError(
                 f"quality history youth_score is invalid for {player_id}"
             )
+        if recency_form_model:
+            form_summary = annotation.get("form_summary")
+            if (
+                not isinstance(form_summary, dict)
+                or form_summary.get("model_version") != RECENCY_FORM_MODEL
+            ):
+                raise QualitySnapshotError(
+                    f"quality form summary is missing for {player_id}"
+                )
+            for field_name in (
+                "score",
+                "confidence",
+                "recency_decay",
+                "latest_season_score",
+                "context_transfer_factor",
+            ):
+                value = form_summary.get(field_name)
+                upper_bound = 1 if field_name in {
+                    "confidence",
+                    "recency_decay",
+                    "context_transfer_factor",
+                } else 100
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not 0 <= float(value) <= upper_bound
+                ):
+                    raise QualitySnapshotError(
+                        f"quality form {field_name} is invalid for {player_id}"
+                    )
+            season_count = form_summary.get("season_count")
+            seasons = form_summary.get("seasons")
+            if (
+                isinstance(season_count, bool)
+                or not isinstance(season_count, int)
+                or season_count < 0
+                or not isinstance(seasons, list)
+                or len(seasons) != season_count
+            ):
+                raise QualitySnapshotError(
+                    f"quality form seasons are invalid for {player_id}"
+                )
+            club_changed = form_summary.get("club_changed")
+            if club_changed is not None and not isinstance(
+                club_changed,
+                bool,
+            ):
+                raise QualitySnapshotError(
+                    f"quality form club context is invalid for {player_id}"
+                )
+            availability_ratio = form_summary.get("availability_ratio")
+            if (
+                availability_ratio is not None
+                and (
+                    isinstance(availability_ratio, bool)
+                    or not isinstance(availability_ratio, (int, float))
+                    or float(availability_ratio) < 0
+                )
+            ):
+                raise QualitySnapshotError(
+                    f"quality form availability ratio is invalid for {player_id}"
+                )
+            if not str(form_summary.get("recovery_status", "")).strip():
+                raise QualitySnapshotError(
+                    f"quality form recovery status is invalid for {player_id}"
+                )
+            adjustments = form_summary.get("adjustments")
+            if not isinstance(adjustments, dict):
+                raise QualitySnapshotError(
+                    f"quality form adjustments are invalid for {player_id}"
+                )
+            for field_name in (
+                "confirmed_performance",
+                "role",
+                "context",
+                "upside",
+                "unknown_role_risk",
+            ):
+                value = adjustments.get(field_name)
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not -15 <= float(value) <= 15
+                ):
+                    raise QualitySnapshotError(
+                        f"quality form adjustment {field_name} is invalid "
+                        f"for {player_id}"
+                    )
         role_metrics = annotation.get("api_sports_role_metrics")
         if not isinstance(role_metrics, dict):
             raise QualitySnapshotError(
@@ -644,6 +741,30 @@ def snapshot_audit(payload: dict[str, Any]) -> dict[str, Any]:
         "kicker_history_sha256": payload["kicker_history_sha256"],
         "model_version": payload["model_version"],
         "preseason_model_version": payload["preseason_model_version"],
+        "form_model_version": (
+            payload.get("form_model_version")
+            if payload.get("model_version") == GOALKEEPER_HIERARCHY_MODEL
+            else None
+        ),
+        "form_covered_count": sum(
+            isinstance(annotation.get("form_summary"), dict)
+            and annotation["form_summary"].get("season_count", 0) > 0
+            for annotation in annotations.values()
+        ),
+        "form_club_change_count": sum(
+            isinstance(annotation.get("form_summary"), dict)
+            and annotation["form_summary"].get("club_changed") is True
+            for annotation in annotations.values()
+        ),
+        "form_recovery_watch_count": sum(
+            isinstance(annotation.get("form_summary"), dict)
+            and annotation["form_summary"].get("recovery_status")
+            in {
+                "current_injury_or_recovery",
+                "recent_availability_drop",
+            }
+            for annotation in annotations.values()
+        ),
         "preseason_covered_count": sum(
             annotation["preseason_summary"]["available"]
             for annotation in annotations.values()

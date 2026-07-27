@@ -28,6 +28,7 @@ class QualityProviderRetryTests(unittest.TestCase):
         previous = {
             "competition": "3. Liga",
             "season": "2026/27",
+            "model_version": quality.MODEL_VERSION,
             "annotations": {
                 "p1": {
                     "provider_news_id": "api_sports:123",
@@ -55,6 +56,60 @@ class QualityProviderRetryTests(unittest.TestCase):
                 news_id="api_sports:999",
             ),
         )
+
+    def test_previous_model_history_is_not_reused_for_new_form_model(
+        self,
+    ) -> None:
+        previous = {
+            "competition": "3. Liga",
+            "season": "2026/27",
+            "model_version": "multi-season-v6-goalkeeper-hierarchy",
+            "annotations": {
+                "p1": {
+                    "provider_news_id": "api_sports:123",
+                    "api_sports_history": [
+                        {"season": 2025, "appearances": 20}
+                    ],
+                }
+            },
+        }
+
+        self.assertEqual(
+            {},
+            quality.cached_api_histories(
+                previous,
+                competition="3. Liga",
+                season="2026/27",
+                player_id="p1",
+                news_id="api_sports:123",
+            ),
+        )
+
+    def test_current_season_history_is_refreshed(self) -> None:
+        previous = {
+            "competition": "3. Liga",
+            "season": "2026/27",
+            "model_version": quality.MODEL_VERSION,
+            "annotations": {
+                "p1": {
+                    "provider_news_id": "api_sports:123",
+                    "api_sports_history": [
+                        {"season": 2026, "appearances": 1},
+                        {"season": 2025, "appearances": 20},
+                    ],
+                }
+            },
+        }
+
+        cached = quality.cached_api_histories(
+            previous,
+            competition="3. Liga",
+            season="2026/27",
+            player_id="p1",
+            news_id="api_sports:123",
+        )
+
+        self.assertEqual({2025}, set(cached))
 
     @patch.object(quality.time, "sleep")
     @patch.object(quality, "api_sports_pages")
@@ -151,6 +206,36 @@ def richer_api_history() -> list[dict]:
     return histories
 
 
+def form_season(
+    season: int,
+    *,
+    minutes: int,
+    lineups: int,
+    rating: float,
+    goals: int,
+    assists: int,
+    club: str = "Example Club",
+) -> dict:
+    return {
+        **quality.empty_season_stats(season, 24),
+        "appearances": 30,
+        "minutes": minutes,
+        "lineups": lineups,
+        "rating": rating,
+        "goals": goals,
+        "assists": assists,
+        "shots_on": goals * 3,
+        "key_passes": assists * 5,
+        "clubs": [
+            {
+                "name": club,
+                "appearances": 30,
+                "minutes": minutes,
+            }
+        ],
+    }
+
+
 def transfermarkt_history(
     *,
     proven_seasons: int,
@@ -245,6 +330,266 @@ def exceptional_goalkeeper_history() -> dict:
 
 
 class RefreshQualitySnapshotTests(unittest.TestCase):
+    def test_recent_form_outweighs_older_form(self) -> None:
+        strong = form_season(
+            2025,
+            minutes=2500,
+            lineups=28,
+            rating=7.2,
+            goals=15,
+            assists=7,
+        )
+        weak = form_season(
+            2024,
+            minutes=900,
+            lineups=7,
+            rating=6.1,
+            goals=2,
+            assists=1,
+        )
+        current_strong = quality.historical_form_profile(
+            position="FORWARD",
+            histories=[strong, weak],
+            history_player={"seasons": []},
+            market_club="Example Club",
+            news_player=news_player(),
+            age=26,
+        )
+        current_weak = quality.historical_form_profile(
+            position="FORWARD",
+            histories=[
+                {**weak, "season": 2025},
+                {**strong, "season": 2024},
+            ],
+            history_player={"seasons": []},
+            market_club="Example Club",
+            news_player=news_player(),
+            age=26,
+        )
+
+        self.assertGreater(
+            current_strong["score"],
+            current_weak["score"],
+        )
+        self.assertEqual(1.0, current_strong["seasons"][0]["recency_weight"])
+        self.assertEqual(0.62, current_strong["seasons"][1]["recency_weight"])
+
+    def test_form_respects_historical_competition_level(self) -> None:
+        provider = form_season(
+            2025,
+            minutes=2400,
+            lineups=27,
+            rating=7.2,
+            goals=15,
+            assists=7,
+        )
+        season = {
+            "season": 2025,
+            "appearances": 30,
+            "starts": 27,
+            "minutes": 2400,
+            "goals": 15,
+            "assists": 7,
+        }
+        target_level = quality.historical_form_profile(
+            position="FORWARD",
+            histories=[provider],
+            history_player={
+                "seasons": [
+                    {
+                        **season,
+                        "level_adjusted_minutes": 2400,
+                    }
+                ]
+            },
+            market_club="Example Club",
+            news_player=news_player(),
+            age=25,
+        )
+        lower_level = quality.historical_form_profile(
+            position="FORWARD",
+            histories=[provider],
+            history_player={
+                "seasons": [
+                    {
+                        **season,
+                        "level_adjusted_minutes": 960,
+                    }
+                ]
+            },
+            market_club="Example Club",
+            news_player=news_player(),
+            age=25,
+        )
+
+        self.assertGreater(target_level["score"], lower_level["score"])
+        self.assertEqual(
+            0.4,
+            lower_level["seasons"][0]["competition_context_factor"],
+        )
+
+    def test_empty_current_season_does_not_hide_previous_form(self) -> None:
+        previous = form_season(
+            2025,
+            minutes=2300,
+            lineups=25,
+            rating=7.0,
+            goals=11,
+            assists=6,
+        )
+        profile = quality.historical_form_profile(
+            position="FORWARD",
+            histories=[
+                quality.empty_season_stats(2026, 25),
+                previous,
+            ],
+            history_player={"seasons": []},
+            market_club="Example Club",
+            news_player=news_player(),
+            age=25,
+        )
+
+        self.assertEqual(1, profile["season_count"])
+        self.assertEqual(2025, profile["seasons"][0]["season"])
+
+    def test_young_positive_trajectory_gets_development_adjustment(self) -> None:
+        strong = form_season(
+            2025,
+            minutes=1800,
+            lineups=20,
+            rating=7.0,
+            goals=8,
+            assists=6,
+        )
+        weak = form_season(
+            2024,
+            minutes=700,
+            lineups=5,
+            rating=6.2,
+            goals=1,
+            assists=1,
+        )
+        young = quality.historical_form_profile(
+            position="MIDFIELDER",
+            histories=[strong, weak],
+            history_player={"seasons": []},
+            market_club="Example Club",
+            news_player=news_player(),
+            age=19,
+        )
+        established = quality.historical_form_profile(
+            position="MIDFIELDER",
+            histories=[strong, weak],
+            history_player={"seasons": []},
+            market_club="Example Club",
+            news_player=news_player(),
+            age=27,
+        )
+
+        self.assertGreater(young["development_adjustment"], 0)
+        self.assertEqual(0, established["development_adjustment"])
+        self.assertGreater(
+            young["adjustments"]["upside"],
+            established["adjustments"]["upside"],
+        )
+
+    def test_club_change_reduces_form_transferability_not_form_score(
+        self,
+    ) -> None:
+        history = [
+            form_season(
+                2025,
+                minutes=2300,
+                lineups=25,
+                rating=7.0,
+                goals=10,
+                assists=5,
+                club="Old Club",
+            ),
+            form_season(
+                2024,
+                minutes=2100,
+                lineups=23,
+                rating=6.9,
+                goals=9,
+                assists=5,
+                club="Old Club",
+            ),
+        ]
+        stable = quality.historical_form_profile(
+            position="FORWARD",
+            histories=history,
+            history_player={"seasons": []},
+            market_club="Old Club",
+            news_player=news_player(),
+            age=25,
+        )
+        transferred = quality.historical_form_profile(
+            position="FORWARD",
+            histories=history,
+            history_player={"seasons": []},
+            market_club="New Club",
+            news_player=news_player(),
+            age=25,
+        )
+
+        self.assertEqual(stable["score"], transferred["score"])
+        self.assertFalse(stable["club_changed"])
+        self.assertTrue(transferred["club_changed"])
+        self.assertEqual(1.0, stable["context_transfer_factor"])
+        self.assertEqual(0.58, transferred["context_transfer_factor"])
+        self.assertGreater(
+            transferred["adjustments"]["unknown_role_risk"],
+            stable["adjustments"]["unknown_role_risk"],
+        )
+
+    def test_availability_drop_and_current_injury_are_visible(self) -> None:
+        histories = [
+            form_season(
+                2025,
+                minutes=400,
+                lineups=3,
+                rating=6.4,
+                goals=1,
+                assists=0,
+            ),
+            form_season(
+                2024,
+                minutes=2400,
+                lineups=27,
+                rating=6.9,
+                goals=10,
+                assists=6,
+            ),
+        ]
+        availability_drop = quality.historical_form_profile(
+            position="FORWARD",
+            histories=histories,
+            history_player={"seasons": []},
+            market_club="Example Club",
+            news_player=news_player(),
+            age=27,
+        )
+        injured_news = news_player()
+        injured_news["consensus"]["injury"] = 60
+        current_injury = quality.historical_form_profile(
+            position="FORWARD",
+            histories=histories,
+            history_player={"seasons": []},
+            market_club="Example Club",
+            news_player=injured_news,
+            age=27,
+        )
+
+        self.assertEqual(
+            "recent_availability_drop",
+            availability_drop["recovery_status"],
+        )
+        self.assertEqual(
+            "current_injury_or_recovery",
+            current_injury["recovery_status"],
+        )
+
     def test_goalkeeper_shortlist_keeps_every_keeper_in_every_complete_club(
         self,
     ) -> None:
@@ -507,6 +852,7 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
                         "player": {"age": 27},
                         "statistics": [
                             {
+                                "team": {"name": "Example Club"},
                                 "games": {
                                     "appearences": 20,
                                     "minutes": 1500,
@@ -568,6 +914,16 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
         self.assertEqual(41, result["tackles"] + result["interceptions"])
         self.assertEqual(82.0, result["pass_accuracy"])
         self.assertEqual(5, result["yellow_cards"])
+        self.assertEqual(
+            [
+                {
+                    "name": "Example Club",
+                    "appearances": 20,
+                    "minutes": 1500,
+                }
+            ],
+            result["clubs"],
+        )
 
     def test_reliable_anchor_requires_transfermarkt_target_level_history(self) -> None:
         annotation = quality.build_annotation(
@@ -601,6 +957,55 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
         )
         self.assertFalse(lower_level_only["reliable_anchor"])
         self.assertEqual(0, lower_level_only["proven_seasons"])
+
+    def test_verified_club_change_resets_anchor_role_confidence(self) -> None:
+        stable_history = api_history()
+        changed_history = api_history()
+        for stable, changed in zip(stable_history, changed_history):
+            stable["clubs"] = [
+                {
+                    "name": "Example Club",
+                    "appearances": stable["appearances"],
+                    "minutes": stable["minutes"],
+                }
+            ]
+            changed["clubs"] = [
+                {
+                    "name": "Previous Club",
+                    "appearances": changed["appearances"],
+                    "minutes": changed["minutes"],
+                }
+            ]
+        stable = quality.build_annotation(
+            market_player(),
+            "news-1",
+            news_player(),
+            stable_history,
+            transfermarkt_history(proven_seasons=3),
+            competition="2. Bundesliga",
+            points_pct=90,
+            price_pct=70,
+            generated_at="2026-07-24T12:00:00Z",
+        )
+        transferred = quality.build_annotation(
+            market_player(),
+            "news-1",
+            news_player(),
+            changed_history,
+            transfermarkt_history(proven_seasons=3),
+            competition="2. Bundesliga",
+            points_pct=90,
+            price_pct=70,
+            generated_at="2026-07-24T12:00:00Z",
+        )
+
+        self.assertTrue(stable["reliable_anchor"])
+        self.assertFalse(transferred["reliable_anchor"])
+        self.assertTrue(transferred["form_summary"]["club_changed"])
+        self.assertGreater(
+            transferred["risks"]["unknown_role"],
+            stable["risks"]["unknown_role"],
+        )
 
     def test_candidate_rank_uses_history_not_only_previous_kicker_points(self) -> None:
         points = {"FORWARD": [0, 50, 100, 150]}

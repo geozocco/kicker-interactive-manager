@@ -407,6 +407,10 @@ class Player:
         default_factory=dict,
         compare=False,
     )
+    form_summary: dict[str, Any] = field(
+        default_factory=dict,
+        compare=False,
+    )
 
 
 @dataclass
@@ -594,6 +598,7 @@ def merge_annotations(
             "risks",
             "goalkeeper_outlook",
             "preseason_summary",
+            "form_summary",
         ):
             central_nested = current.get(nested_key, {})
             local_nested = local_value.get(nested_key, {})
@@ -740,6 +745,14 @@ def load_players_from_rows(
                     dict(annotation.get("preseason_summary", {}))
                     if isinstance(
                         annotation.get("preseason_summary"),
+                        dict,
+                    )
+                    else {}
+                ),
+                form_summary=(
+                    dict(annotation.get("form_summary", {}))
+                    if isinstance(
+                        annotation.get("form_summary"),
                         dict,
                     )
                     else {}
@@ -3783,6 +3796,8 @@ def output_payload(
             payload["preseason_summary"] = dict(
                 player.preseason_summary
             )
+        if player.form_summary:
+            payload["form_summary"] = dict(player.form_summary)
         if selection_role is not None:
             payload["selection_role"] = selection_role
         if comparison_to is not None:
