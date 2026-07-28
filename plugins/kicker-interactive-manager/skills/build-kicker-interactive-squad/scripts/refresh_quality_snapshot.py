@@ -54,7 +54,7 @@ from refresh_news_snapshot import (
 )
 
 
-MODEL_VERSION = "multi-season-v12-news-role-cache"
+MODEL_VERSION = "multi-season-v13-complete-role-environment"
 PRESEASON_MODEL_VERSION = "preseason-readiness-v3-role-responsibilities"
 FORM_MODEL_VERSION = "recency-context-v4-evidence-role-transfer"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
@@ -69,6 +69,28 @@ ROLE_RESPONSIBILITIES = {
     "captain",
 }
 ROLE_LEVELS = {"none", "shared", "primary"}
+ROLE_ENVIRONMENT = {
+    "coach_trust": {"unknown", "low", "medium", "high"},
+    "squad_status": {
+        "unknown",
+        "core",
+        "regular",
+        "rotation",
+        "development",
+        "surplus",
+    },
+    "tactical_fit": {"unknown", "poor", "good", "strong"},
+    "positional_competition": {"unknown", "low", "medium", "high"},
+    "expected_minutes_band": {
+        "unknown",
+        "under_300",
+        "300_899",
+        "900_1799",
+        "1800_2699",
+        "2700_plus",
+    },
+    "role_stability": {"unknown", "fragile", "uncertain", "stable"},
+}
 MANUAL_NEWS_CLEARANCE_CATEGORIES = {
     "availability",
     "fitness",
@@ -974,6 +996,7 @@ def cached_role_evidence(
             0,
         ),
         "responsibilities": dict(profile.get("responsibilities", {})),
+        "role_environment": dict(profile.get("role_environment", {})),
         "designation": str(profile.get("designation", "")),
         "note": str(profile.get("note", "")),
         "evidence": evidence,
@@ -1341,6 +1364,19 @@ def expected_role_profile(
         responsibilities = {
             key: "none" for key in ROLE_RESPONSIBILITIES
         }
+    raw_environment = evidence.get("role_environment", {})
+    if not isinstance(raw_environment, dict):
+        raw_environment = {}
+    role_environment = {
+        key: (
+            str(raw_environment.get(key, "unknown"))
+            if str(raw_environment.get(key, "unknown")) in allowed
+            else "unknown"
+        )
+        for key, allowed in ROLE_ENVIRONMENT.items()
+    }
+    if not evidence_items:
+        role_environment = {key: "unknown" for key in ROLE_ENVIRONMENT}
 
     recent = [
         season
@@ -1433,6 +1469,44 @@ def expected_role_profile(
         "reduced": -10.0,
         "unknown": 0.0,
     }[continuity]
+    environment_adjustment = (
+        {
+            "unknown": 0.0,
+            "low": -4.0,
+            "medium": 1.0,
+            "high": 4.0,
+        }[role_environment["coach_trust"]]
+        + {
+            "unknown": 0.0,
+            "core": 4.0,
+            "regular": 2.0,
+            "rotation": -4.0,
+            "development": -7.0,
+            "surplus": -12.0,
+        }[role_environment["squad_status"]]
+        + {
+            "unknown": 0.0,
+            "poor": -5.0,
+            "good": 1.5,
+            "strong": 3.0,
+        }[role_environment["tactical_fit"]]
+        + {
+            "unknown": 0.0,
+            "low": 2.0,
+            "medium": 0.0,
+            "high": -5.0,
+        }[role_environment["positional_competition"]]
+        + {
+            "unknown": 0.0,
+            "fragile": -5.0,
+            "uncertain": -2.0,
+            "stable": 3.0,
+        }[role_environment["role_stability"]]
+    )
+    environment_adjustment = max(
+        -10.0,
+        min(10.0, environment_adjustment),
+    )
     expected_start_probability = clamp(
         evidence.get("expected_start_probability"),
         0,
@@ -1446,7 +1520,7 @@ def expected_role_profile(
     if not evidence_items:
         team_quality_delta = 0.0
     return {
-        "model_version": "expected-role-v2",
+        "model_version": "expected-role-v3",
         "evidence_source": str(evidence.get("source", "explicit")),
         "continuity": continuity,
         "evidence_confidence": (
@@ -1457,6 +1531,7 @@ def expected_role_profile(
         "expected_start_probability": round(expected_start_probability, 2),
         "team_quality_delta": round(team_quality_delta, 2),
         "responsibilities": responsibilities,
+        "role_environment": role_environment,
         "historical_metrics": {
             "penalties_scored": round(recent_penalties, 2),
             "key_passes_per_90": round(key_passes_per_90, 3),
@@ -1485,19 +1560,34 @@ def expected_role_profile(
                 2,
             ),
             "role": round(
-                max(-12.0, min(12.0, continuity_adjustment + responsibility_score)),
+                max(
+                    -14.0,
+                    min(
+                        14.0,
+                        continuity_adjustment
+                        + responsibility_score
+                        + environment_adjustment,
+                    ),
+                ),
                 2,
             ),
             "context": round(
                 max(-8.0, min(8.0, 0.25 * team_quality_delta)),
                 2,
             ),
-            "unknown_role_risk": {
-                "expanded": -12.0,
-                "confirmed": -10.0,
-                "reduced": 8.0,
-                "unknown": 0.0,
-            }[continuity],
+            "unknown_role_risk": max(
+                -15.0,
+                min(
+                    15.0,
+                    {
+                        "expanded": -12.0,
+                        "confirmed": -10.0,
+                        "reduced": 8.0,
+                        "unknown": 0.0,
+                    }[continuity]
+                    - 0.5 * environment_adjustment,
+                ),
+            ),
             "rotation_risk_cap": round(
                 max(0.0, 100.0 - expected_start_probability)
                 if expected_start_probability > 0

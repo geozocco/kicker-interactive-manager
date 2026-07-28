@@ -70,6 +70,14 @@ def annotation(position: str, *, anchor: bool = False) -> dict:
                 "aerial_set_piece_target": "none",
                 "captain": "none",
             },
+            "role_environment": {
+                "coach_trust": "high",
+                "squad_status": "core",
+                "tactical_fit": "good",
+                "positional_competition": "low",
+                "expected_minutes_band": "2700_plus",
+                "role_stability": "stable",
+            },
         },
         "kicker_trend": {
             "observation_count": 2,

@@ -1164,6 +1164,62 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
         self.assertGreater(role["adjustments"]["role"], 0)
         self.assertLessEqual(role["adjustments"]["rotation_risk_cap"], 4)
 
+    def test_current_role_environment_changes_role_only_within_bounds(
+        self,
+    ) -> None:
+        base = {
+            "continuity": "confirmed",
+            "confidence": "high",
+            "expected_start_probability": 80,
+            "team_quality_delta": 0,
+            "responsibilities": {},
+            "evidence": [
+                {
+                    "claim": "The coach described the current squad role.",
+                    "source_url": "https://example.com/current-role",
+                    "checked_at": "2026-07-28T10:00:00Z",
+                }
+            ],
+        }
+        strong = quality.expected_role_profile(
+            position="MIDFIELDER",
+            histories=[],
+            role_evidence={
+                **base,
+                "role_environment": {
+                    "coach_trust": "high",
+                    "squad_status": "core",
+                    "tactical_fit": "strong",
+                    "positional_competition": "low",
+                    "expected_minutes_band": "2700_plus",
+                    "role_stability": "stable",
+                },
+            },
+        )
+        fragile = quality.expected_role_profile(
+            position="MIDFIELDER",
+            histories=[],
+            role_evidence={
+                **base,
+                "role_environment": {
+                    "coach_trust": "low",
+                    "squad_status": "surplus",
+                    "tactical_fit": "poor",
+                    "positional_competition": "high",
+                    "expected_minutes_band": "under_300",
+                    "role_stability": "fragile",
+                },
+            },
+        )
+
+        self.assertEqual("core", strong["role_environment"]["squad_status"])
+        self.assertGreater(
+            strong["adjustments"]["role"],
+            fragile["adjustments"]["role"],
+        )
+        self.assertLessEqual(strong["adjustments"]["role"], 14)
+        self.assertGreaterEqual(fragile["adjustments"]["role"], -14)
+
     def test_unknown_training_status_does_not_reduce_fitness(self) -> None:
         adjustment = quality.preseason_adjustment(
             {

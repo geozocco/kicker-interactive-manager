@@ -65,6 +65,14 @@ def raw_profile(
             "penalties": "shared",
             "playmaker": "primary",
         },
+        "role_environment": {
+            "coach_trust": "high",
+            "squad_status": "core",
+            "tactical_fit": "strong",
+            "positional_competition": "low",
+            "expected_minutes_band": "2700_plus",
+            "role_stability": "stable",
+        },
         "confidence": "high",
         "contradiction": contradiction,
         "note": "Der Trainer plant mit ihm als zentraler Offensivkraft.",
@@ -107,6 +115,32 @@ def response_for(profiles: list[dict]) -> dict:
 
 
 class TargetSelectionTests(unittest.TestCase):
+    def test_zero_limit_selects_every_available_market_player(self) -> None:
+        market = {
+            "players": [
+                {
+                    "id": f"p{index}",
+                    "name": f"Spieler {index}",
+                    "club": f"Verein {index % 3}",
+                    "position": (
+                        "GOALKEEPER",
+                        "DEFENDER",
+                        "MIDFIELDER",
+                        "FORWARD",
+                    )[index % 4],
+                    "market_value": 100_000 + index,
+                    "available": True,
+                }
+                for index in range(25)
+            ]
+        }
+        selected = role.select_role_targets(market, None, max_players=0)
+        self.assertEqual(25, len(selected))
+        self.assertEqual(
+            {f"p{index}" for index in range(25)},
+            {item["player_id"] for item in selected},
+        )
+
     def test_priority_mix_includes_open_research_benchmarks_and_goalkeepers(
         self,
     ) -> None:
@@ -216,6 +250,10 @@ class GroundingTests(unittest.TestCase):
         self.assertEqual(91, normalized["expected_start_probability"])
         self.assertEqual("high", normalized["confidence"])
         self.assertEqual("primary", normalized["responsibilities"]["playmaker"])
+        self.assertEqual(
+            "strong",
+            normalized["role_environment"]["tactical_fit"],
+        )
 
     def test_contradiction_fails_closed_to_open_competition(self) -> None:
         normalized = role.normalize_profile(

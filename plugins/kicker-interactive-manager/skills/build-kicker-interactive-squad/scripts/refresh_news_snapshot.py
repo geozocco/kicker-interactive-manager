@@ -1248,8 +1248,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--market")
     parser.add_argument("--previous-quality")
     parser.add_argument("--openai-role-model", default=DEFAULT_OPENAI_ROLE_MODEL)
-    parser.add_argument("--openai-role-max-players", type=int, default=96)
-    parser.add_argument("--openai-role-batch-size", type=int, default=4)
+    parser.add_argument(
+        "--openai-role-max-players",
+        type=int,
+        default=0,
+        help="maximum targets; 0 researches every available market player",
+    )
+    parser.add_argument("--openai-role-batch-size", type=int, default=8)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--previous")
     parser.add_argument(
@@ -1268,8 +1273,10 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.ttl_hours < 1 or args.ttl_hours > 72:
         parser.error("--ttl-hours must be between 1 and 72")
-    if not 1 <= args.openai_role_max_players <= 96:
-        parser.error("--openai-role-max-players must be between 1 and 96")
+    if not 0 <= args.openai_role_max_players <= 2_000:
+        parser.error(
+            "--openai-role-max-players must be 0 (all) or between 1 and 2000"
+        )
     if not 1 <= args.openai_role_batch_size <= 8:
         parser.error("--openai-role-batch-size must be between 1 and 8")
     if bool(args.market) != bool(args.previous_quality):

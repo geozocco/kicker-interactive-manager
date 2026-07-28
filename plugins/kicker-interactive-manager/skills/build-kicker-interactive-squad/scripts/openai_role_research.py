@@ -21,8 +21,8 @@ from urllib.parse import urlparse
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_MODEL = "gpt-5.6-luna"
-MODEL_VERSION = "openai-role-web-v1"
-PROMPT_VERSION = "role-research-2026-07-28-v1"
+MODEL_VERSION = "openai-role-web-v2"
+PROMPT_VERSION = "role-research-2026-07-28-v2"
 USER_AGENT = "kicker-interactive-manager-role-research/1"
 ROLE_RESPONSIBILITIES = {
     "penalties",
@@ -51,6 +51,28 @@ SOURCE_AUTHORITY = {
     "reputable_editorial": 2,
 }
 POSITIONS = {"GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD"}
+ROLE_ENVIRONMENT = {
+    "coach_trust": {"unknown", "low", "medium", "high"},
+    "squad_status": {
+        "unknown",
+        "core",
+        "regular",
+        "rotation",
+        "development",
+        "surplus",
+    },
+    "tactical_fit": {"unknown", "poor", "good", "strong"},
+    "positional_competition": {"unknown", "low", "medium", "high"},
+    "expected_minutes_band": {
+        "unknown",
+        "under_300",
+        "300_899",
+        "900_1799",
+        "1800_2699",
+        "2700_plus",
+    },
+    "role_stability": {"unknown", "fragile", "uncertain", "stable"},
+}
 
 
 def parsed_timestamp(value: Any) -> datetime | None:
@@ -109,11 +131,11 @@ def select_role_targets(
     previous_quality: dict[str, Any] | None,
     *,
     explicit_player_ids: Iterable[str] = (),
-    max_players: int = 96,
+    max_players: int = 0,
 ) -> list[dict[str, Any]]:
-    """Select a broad, deterministic and position-balanced target set."""
+    """Order every available player, optionally truncating for local tests."""
 
-    if max_players < 1:
+    if max_players < 0:
         return []
     players = _available_market_players(market)
     by_id = {str(player["id"]): player for player in players}
@@ -243,9 +265,20 @@ def select_role_targets(
         + goalkeeper_coverage_ids
         + offensive_club_coverage_ids
         + priority_order
+        + sorted(
+            by_id,
+            key=lambda player_id: (
+                -float(by_id[player_id]["market_value"]),
+                -float(by_id[player_id].get("points", 0) or 0),
+                str(by_id[player_id]["club"]),
+                str(by_id[player_id]["position"]),
+                player_id,
+            ),
+        )
     ):
         if player_id not in ordered_ids:
             ordered_ids.append(player_id)
+    selected_ids = ordered_ids if max_players == 0 else ordered_ids[:max_players]
     return [
         {
             "player_id": player_id,
@@ -254,7 +287,7 @@ def select_role_targets(
             "position": str(by_id[player_id]["position"]),
             "market_value": int(float(by_id[player_id]["market_value"])),
         }
-        for player_id in ordered_ids[:max_players]
+        for player_id in selected_ids
     ]
 
 
@@ -392,6 +425,18 @@ def _schema() -> dict[str, Any]:
                 "properties": responsibility_properties,
                 "required": sorted(ROLE_RESPONSIBILITIES),
             },
+            "role_environment": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    key: {
+                        "type": "string",
+                        "enum": sorted(values),
+                    }
+                    for key, values in ROLE_ENVIRONMENT.items()
+                },
+                "required": sorted(ROLE_ENVIRONMENT),
+            },
             "confidence": {
                 "type": "string",
                 "enum": ["low", "medium", "high"],
@@ -412,6 +457,7 @@ def _schema() -> dict[str, Any]:
             "expected_start_probability",
             "external_signing_risk",
             "responsibilities",
+            "role_environment",
             "confidence",
             "contradiction",
             "note",
@@ -451,7 +497,12 @@ def build_request(
         "a challenger, and credible risk that another starter will be signed. For "
         "outfield players, capture penalties, direct free kicks, corners, playmaking, "
         "offensive focal-point status, captaincy, and aerial set-piece target status "
-        "only when a source supports it. Evidence must be current, player-specific, "
+        "only when a source supports it. Separately capture coach trust, current squad "
+        "status, tactical fit in the coach's likely system, positional competition, "
+        "an expected league-minutes band, and role stability. Use unknown whenever "
+        "the evidence does not support one of those environment fields. Do not infer "
+        "fitness from role reporting; injuries and training readiness are handled by "
+        "separate feeds. Evidence must be current, player-specific, "
         "and use a URL actually found by web search. Use has_role_signal=false and "
         "an empty evidence list when the available evidence is insufficient. Never "
         "infer a role merely from price, age, fame, or prior-season points."
@@ -471,7 +522,7 @@ def build_request(
         "tool_choice": "auto",
         "include": ["web_search_call.action.sources"],
         "store": False,
-        "max_output_tokens": 6000,
+        "max_output_tokens": 10000,
         "input": [
             {"role": "system", "content": instructions},
             {
@@ -680,6 +731,34 @@ def normalize_profile(
         key: value if value in {"none", "shared", "primary"} else "none"
         for key, value in responsibilities.items()
     }
+    raw_environment = raw.get("role_environment")
+    if not isinstance(raw_environment, dict):
+        raw_environment = {}
+    role_environment = {
+        key: (
+            str(raw_environment.get(key, "unknown"))
+            if str(raw_environment.get(key, "unknown")) in allowed
+            else "unknown"
+        )
+        for key, allowed in ROLE_ENVIRONMENT.items()
+    }
+    if confidence == "low":
+        role_environment = {
+            key: (
+                value
+                if value
+                in {
+                    "unknown",
+                    "medium",
+                    "regular",
+                    "uncertain",
+                    "900_1799",
+                    "1800_2699",
+                }
+                else "unknown"
+            )
+            for key, value in role_environment.items()
+        }
 
     observed_at = max(
         parsed_timestamp(item["observed_at"]) for item in evidence
@@ -721,6 +800,7 @@ def normalize_profile(
         "team_quality_delta": 0.0,
         "external_signing_risk": round(external_risk, 2),
         "responsibilities": responsibilities,
+        "role_environment": role_environment,
         "confidence": confidence,
         "observed_at": iso_timestamp(observed_at),
         "refresh_after": iso_timestamp(now + timedelta(days=refresh_days)),

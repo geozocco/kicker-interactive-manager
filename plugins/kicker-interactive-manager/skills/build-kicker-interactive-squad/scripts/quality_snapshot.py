@@ -16,10 +16,10 @@ from urllib.parse import urlparse
 
 
 SCHEMA_VERSION = 3
-GOALKEEPER_HIERARCHY_MODEL = "multi-season-v12-news-role-cache"
+GOALKEEPER_HIERARCHY_MODEL = "multi-season-v13-complete-role-environment"
 RECENCY_FORM_MODEL = "recency-context-v4-evidence-role-transfer"
 PRESEASON_READINESS_MODEL = "preseason-readiness-v3-role-responsibilities"
-EXPECTED_ROLE_MODEL = "expected-role-v2"
+EXPECTED_ROLE_MODEL = "expected-role-v3"
 COMPONENTS = {
     "confirmed_performance",
     "minutes",
@@ -491,6 +491,50 @@ def validate_snapshot(
             ):
                 raise QualitySnapshotError(
                     f"quality role responsibilities are invalid for {player_id}"
+                )
+            role_environment = role_context.get("role_environment")
+            valid_environment = {
+                "coach_trust": {"unknown", "low", "medium", "high"},
+                "squad_status": {
+                    "unknown",
+                    "core",
+                    "regular",
+                    "rotation",
+                    "development",
+                    "surplus",
+                },
+                "tactical_fit": {"unknown", "poor", "good", "strong"},
+                "positional_competition": {
+                    "unknown",
+                    "low",
+                    "medium",
+                    "high",
+                },
+                "expected_minutes_band": {
+                    "unknown",
+                    "under_300",
+                    "300_899",
+                    "900_1799",
+                    "1800_2699",
+                    "2700_plus",
+                },
+                "role_stability": {
+                    "unknown",
+                    "fragile",
+                    "uncertain",
+                    "stable",
+                },
+            }
+            if (
+                not isinstance(role_environment, dict)
+                or set(role_environment) != set(valid_environment)
+                or any(
+                    role_environment[key] not in allowed
+                    for key, allowed in valid_environment.items()
+                )
+            ):
+                raise QualitySnapshotError(
+                    f"quality role environment is invalid for {player_id}"
                 )
             for field_name in (
                 "expected_start_probability",
