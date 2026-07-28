@@ -52,9 +52,10 @@ from refresh_news_snapshot import (
     is_api_sports_rate_limit,
     optional_int,
 )
+from advanced_signals import apply_advanced_signals
 
 
-MODEL_VERSION = "multi-season-v13-complete-role-environment"
+MODEL_VERSION = "multi-season-v14-advanced-context"
 PRESEASON_MODEL_VERSION = "preseason-readiness-v3-role-responsibilities"
 FORM_MODEL_VERSION = "recency-context-v4-evidence-role-transfer"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
@@ -653,6 +654,7 @@ def empty_season_stats(season: int, age: int | None = None) -> dict[str, Any]:
         "penalties_saved": 0,
         "age": age,
         "clubs": [],
+        "positions": [],
     }
 
 
@@ -687,6 +689,11 @@ def cached_api_histories(
         if (
             isinstance(item, dict)
             and optional_int(item.get("season")) is not None
+            # v14 adds the observed match-position input used by the
+            # flexibility signal. Older cached rows remain a valid
+            # rate-limit fallback, but must be refreshed when the provider is
+            # available instead of silently freezing the migration forever.
+            and ("positions" in item or include_current)
             and (
                 include_current
                 or
@@ -736,6 +743,7 @@ def fetch_player_season(
                 "pass_accuracy_weighted": 0.0,
                 "pass_accuracy_attempts": 0,
                 "clubs_by_name": {},
+                "positions_seen": set(),
             })
             for item in response:
                 for statistics in item.get("statistics", []):
@@ -754,6 +762,11 @@ def fetch_player_season(
                     appearances = int(numeric(games.get("appearences")))
                     minutes = int(numeric(games.get("minutes")))
                     club_name = str(team.get("name", "")).strip()
+                    provider_position = str(
+                        games.get("position", "")
+                    ).strip()
+                    if provider_position:
+                        totals["positions_seen"].add(provider_position)
                     if club_name:
                         club_totals = totals["clubs_by_name"].setdefault(
                             club_name,
@@ -848,6 +861,7 @@ def fetch_player_season(
                     key=lambda item: (-item[1]["minutes"], item[0]),
                 )
             ]
+            totals["positions"] = sorted(totals.pop("positions_seen"))
             return totals
         except RuntimeError as error:
             last_error = error
@@ -3678,6 +3692,8 @@ def generate_snapshot(
         news_payload,
         config,
     )
+
+    apply_advanced_signals(annotations, preseason_payload, news_payload)
 
     mark_benchmark_references(annotations)
 

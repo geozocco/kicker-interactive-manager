@@ -167,6 +167,19 @@ jobs:
             --mapping config/quality/3-liga.json \
             --output public/v1/quality/3-liga.json
 
+      - name: Refresh matchday opponent context
+        env:
+          API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
+        run: |
+          python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_matchday_snapshot.py \
+            --mapping config/news/2-bundesliga.json \
+            --quality public/v1/quality/2-bundesliga.json \
+            --output public/v1/matchday/2-bundesliga.json
+          python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_matchday_snapshot.py \
+            --mapping config/news/3-liga.json \
+            --quality public/v1/quality/3-liga.json \
+            --output public/v1/matchday/3-liga.json
+
       - name: Validate generated snapshots
         run: |
           python - <<'PY'
@@ -182,6 +195,9 @@ jobs:
           from preseason_snapshot import load_snapshot as load_preseason_snapshot
           from market_snapshot import load_snapshot as load_market_snapshot
           from quality_snapshot import load_snapshot as load_quality_snapshot
+          from matchday_snapshot import (
+              load_snapshot as load_matchday_snapshot,
+          )
           from history_snapshot import load_snapshot as load_history_snapshot
           from kicker_history_snapshot import (
               load_snapshot as load_kicker_history_snapshot,
@@ -248,6 +264,16 @@ jobs:
                   snapshot["season"],
                   len(snapshot["annotations"]),
                   anchors,
+              )
+          for path in sorted(Path("public/v1/matchday").glob("*.json")):
+              snapshot = load_matchday_snapshot(path)
+              print(
+                  path,
+                  snapshot["competition"],
+                  snapshot["season"],
+                  snapshot["status"],
+                  len(snapshot["fixtures"]),
+                  len(snapshot["teams"]),
               )
           PY
 

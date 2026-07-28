@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 
 SCHEMA_VERSION = 3
-GOALKEEPER_HIERARCHY_MODEL = "multi-season-v13-complete-role-environment"
+GOALKEEPER_HIERARCHY_MODEL = "multi-season-v14-advanced-context"
 RECENCY_FORM_MODEL = "recency-context-v4-evidence-role-transfer"
 PRESEASON_READINESS_MODEL = "preseason-readiness-v3-role-responsibilities"
 EXPECTED_ROLE_MODEL = "expected-role-v3"
@@ -554,6 +554,193 @@ def validate_snapshot(
                         f"quality expected role {field_name} is invalid "
                         f"for {player_id}"
                     )
+            advanced = annotation.get("advanced_signals")
+            if (
+                not isinstance(advanced, dict)
+                or advanced.get("model_version") != "advanced-context-v1"
+                or set(advanced)
+                != {
+                    "model_version",
+                    "positional_flexibility",
+                    "team_projection",
+                    "competition_graph",
+                    "coach_usage",
+                    "discipline",
+                    "usage_trajectory",
+                }
+            ):
+                raise QualitySnapshotError(
+                    f"quality advanced signals are missing for {player_id}"
+                )
+            flexibility = advanced["positional_flexibility"]
+            if (
+                not isinstance(flexibility, dict)
+                or not isinstance(
+                    flexibility.get("positions_observed"),
+                    list,
+                )
+                or flexibility.get("confidence")
+                not in {"low", "medium", "high"}
+                or not isinstance(
+                    flexibility.get("observation_count"),
+                    int,
+                )
+                or flexibility["observation_count"] < 0
+                or not isinstance(flexibility.get("score"), (int, float))
+                or not 0 <= float(flexibility["score"]) <= 100
+            ):
+                raise QualitySnapshotError(
+                    f"quality positional flexibility is invalid for {player_id}"
+                )
+            team_projection = advanced["team_projection"]
+            if (
+                not isinstance(team_projection, dict)
+                or any(
+                    isinstance(team_projection.get(field_name), bool)
+                    or not isinstance(
+                        team_projection.get(field_name),
+                        (int, float),
+                    )
+                    or not 0
+                    <= float(team_projection[field_name])
+                    <= 100
+                    for field_name in {
+                        "attack_strength",
+                        "defense_strength",
+                        "chance_creation",
+                        "clean_sheet_outlook",
+                    }
+                )
+            ):
+                raise QualitySnapshotError(
+                    f"quality team projection is invalid for {player_id}"
+                )
+            competition = advanced["competition_graph"]
+            if (
+                not isinstance(competition, dict)
+                or any(
+                    isinstance(competition.get(field_name), bool)
+                    or not isinstance(competition.get(field_name), int)
+                    or competition[field_name] < 0
+                    for field_name in {
+                        "rank_within_club_position",
+                        "direct_competitor_count",
+                        "strong_competitor_count",
+                        "close_competitor_count",
+                    }
+                )
+                or competition.get("rank_within_club_position", 0) < 1
+                or not isinstance(
+                    competition.get("pressure_score"),
+                    (int, float),
+                )
+                or not 0 <= float(competition["pressure_score"]) <= 100
+                or not isinstance(
+                    competition.get("nearest_competitors"),
+                    list,
+                )
+            ):
+                raise QualitySnapshotError(
+                    f"quality competition graph is invalid for {player_id}"
+                )
+            coach_usage = advanced["coach_usage"]
+            if (
+                not isinstance(coach_usage, dict)
+                or coach_usage.get("source")
+                not in {
+                    "current_squad_role_and_usage_evidence",
+                    "grounded_coach_history_plus_current_usage",
+                }
+                or not isinstance(
+                    coach_usage.get("preferred_systems"),
+                    list,
+                )
+                or any(
+                    coach_usage.get(field_name)
+                    not in {"unknown", "low", "medium", "high"}
+                    for field_name in {
+                        "historical_youth_usage",
+                        "historical_rotation_tendency",
+                        "system_stability",
+                    }
+                )
+                or coach_usage.get("youth_usage_signal")
+                not in {"unknown", "low", "medium", "high"}
+                or coach_usage.get("rotation_signal")
+                not in {"low", "medium", "high"}
+                or not isinstance(coach_usage.get("young_player"), bool)
+            ):
+                raise QualitySnapshotError(
+                    f"quality coach usage is invalid for {player_id}"
+                )
+            discipline = advanced["discipline"]
+            if (
+                not isinstance(discipline, dict)
+                or discipline.get("confidence")
+                not in {"low", "medium", "high"}
+                or any(
+                    isinstance(discipline.get(field_name), bool)
+                    or not isinstance(
+                        discipline.get(field_name),
+                        (int, float),
+                    )
+                    or float(discipline[field_name]) < 0
+                    for field_name in {
+                        "sample_minutes",
+                        "yellow_cards_per_90",
+                        "red_cards_per_90",
+                        "current_yellow_cards",
+                        "current_red_cards",
+                    }
+                )
+                or not isinstance(
+                    discipline.get("one_card_from_suspension"),
+                    bool,
+                )
+                or not isinstance(
+                    discipline.get("suspension_risk"),
+                    (int, float),
+                )
+                or not 0 <= float(discipline["suspension_risk"]) <= 100
+            ):
+                raise QualitySnapshotError(
+                    f"quality discipline profile is invalid for {player_id}"
+                )
+            trajectory = advanced["usage_trajectory"]
+            if (
+                not isinstance(trajectory, dict)
+                or trajectory.get("status")
+                not in {"rising", "falling", "stable", "insufficient"}
+                or any(
+                    isinstance(trajectory.get(field_name), bool)
+                    or not isinstance(
+                        trajectory.get(field_name),
+                        (int, float),
+                    )
+                    or not 0 <= float(trajectory[field_name]) <= 1
+                    for field_name in {
+                        "appearance_share",
+                        "early_start_share",
+                        "recent_start_share",
+                        "competitive_start_share",
+                    }
+                )
+                or not isinstance(trajectory.get("trend"), (int, float))
+                or not -100 <= float(trajectory["trend"]) <= 100
+                or any(
+                    isinstance(trajectory.get(field_name), bool)
+                    or not isinstance(trajectory.get(field_name), int)
+                    or trajectory[field_name] < 0
+                    for field_name in {
+                        "observation_count",
+                        "consecutive_starts",
+                        "competitive_appearances",
+                    }
+                )
+            ):
+                raise QualitySnapshotError(
+                    f"quality usage trajectory is invalid for {player_id}"
+                )
         preseason_summary = annotation.get("preseason_summary")
         if not isinstance(preseason_summary, dict):
             raise QualitySnapshotError(
@@ -903,6 +1090,37 @@ def snapshot_audit(payload: dict[str, Any]) -> dict[str, Any]:
         "preseason_high_upside_count": sum(
             annotation["preseason_summary"]["talent_status"]
             == "high_upside_pre_breakthrough"
+            for annotation in annotations.values()
+        ),
+        "advanced_signal_covered_count": sum(
+            isinstance(annotation.get("advanced_signals"), dict)
+            for annotation in annotations.values()
+        ),
+        "observed_position_covered_count": sum(
+            (
+                annotation.get("advanced_signals", {})
+                .get("positional_flexibility", {})
+                .get("observation_count", 0)
+                > 0
+            )
+            for annotation in annotations.values()
+        ),
+        "usage_trajectory_covered_count": sum(
+            (
+                annotation.get("advanced_signals", {})
+                .get("usage_trajectory", {})
+                .get("status")
+                != "insufficient"
+            )
+            for annotation in annotations.values()
+        ),
+        "grounded_coach_profile_count": sum(
+            (
+                annotation.get("advanced_signals", {})
+                .get("coach_usage", {})
+                .get("source")
+                == "grounded_coach_history_plus_current_usage"
+            )
             for annotation in annotations.values()
         ),
         "candidate_count": len(annotations),

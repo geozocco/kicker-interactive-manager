@@ -314,6 +314,57 @@ def validate_snapshot(
             raise NewsSnapshotError(
                 f"invalid role-research abstention expiry for {player_id!r}"
             )
+    team_profiles = payload.get("team_profiles", {})
+    if not isinstance(team_profiles, dict):
+        raise NewsSnapshotError("news team_profiles must be an object")
+    for club, profile in team_profiles.items():
+        if (
+            not str(club).strip()
+            or not isinstance(profile, dict)
+            or profile.get("model_version") != "openai-team-context-v1"
+            or not str(profile.get("research_model", "")).strip()
+            or any(
+                profile.get(field_name)
+                not in {"unknown", "low", "medium", "high"}
+                for field_name in {
+                    "youth_usage",
+                    "rotation_tendency",
+                    "system_stability",
+                    "attacking_outlook",
+                    "defensive_outlook",
+                }
+            )
+            or not isinstance(profile.get("preferred_systems"), list)
+            or not profile.get("evidence")
+        ):
+            raise NewsSnapshotError(
+                f"invalid team research profile for {club!r}"
+            )
+        observed_at = parse_timestamp(
+            profile.get("observed_at"),
+            "team_profile.observed_at",
+        )
+        refresh_after = parse_timestamp(
+            profile.get("refresh_after"),
+            "team_profile.refresh_after",
+        )
+        team_expires_at = parse_timestamp(
+            profile.get("expires_at"),
+            "team_profile.expires_at",
+        )
+        if not observed_at < refresh_after < team_expires_at:
+            raise NewsSnapshotError(
+                f"invalid team profile expiry for {club!r}"
+            )
+        for item in profile["evidence"]:
+            if (
+                not isinstance(item, dict)
+                or not str(item.get("claim", "")).strip()
+                or not str(item.get("source_url", "")).startswith("https://")
+            ):
+                raise NewsSnapshotError(
+                    f"invalid team profile evidence for {club!r}"
+                )
     role_research = payload.get("role_research", {})
     if not isinstance(role_research, dict):
         raise NewsSnapshotError("news role_research must be an object")

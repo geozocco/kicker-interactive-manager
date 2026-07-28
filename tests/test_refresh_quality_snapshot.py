@@ -24,7 +24,11 @@ class QualityProviderRetryTests(unittest.TestCase):
     def test_matching_previous_quality_history_is_reused_by_season(
         self,
     ) -> None:
-        history = {"season": 2025, "appearances": 20}
+        history = {
+            "season": 2025,
+            "appearances": 20,
+            "positions": ["MIDFIELDER"],
+        }
         previous = {
             "competition": "3. Liga",
             "season": "2026/27",
@@ -57,7 +61,7 @@ class QualityProviderRetryTests(unittest.TestCase):
             ),
         )
 
-    def test_previous_model_raw_history_is_reused_during_model_migration(
+    def test_legacy_history_without_positions_is_only_rate_limit_fallback(
         self,
     ) -> None:
         previous = {
@@ -75,6 +79,16 @@ class QualityProviderRetryTests(unittest.TestCase):
         }
 
         self.assertEqual(
+            {},
+            quality.cached_api_histories(
+                previous,
+                competition="3. Liga",
+                season="2026/27",
+                player_id="p1",
+                news_id="api_sports:123",
+            ),
+        )
+        self.assertEqual(
             {2025: {"season": 2025, "appearances": 20}},
             quality.cached_api_histories(
                 previous,
@@ -82,6 +96,7 @@ class QualityProviderRetryTests(unittest.TestCase):
                 season="2026/27",
                 player_id="p1",
                 news_id="api_sports:123",
+                include_current=True,
             ),
         )
 
@@ -94,7 +109,11 @@ class QualityProviderRetryTests(unittest.TestCase):
                 "p1": {
                     "provider_news_id": "api_sports:123",
                     "api_sports_history": [
-                        {"season": 2026, "appearances": 1}
+                        {
+                            "season": 2026,
+                            "appearances": 1,
+                            "positions": ["MIDFIELDER"],
+                        }
                     ],
                 }
             },
@@ -117,8 +136,16 @@ class QualityProviderRetryTests(unittest.TestCase):
                 "p1": {
                     "provider_news_id": "api_sports:123",
                     "api_sports_history": [
-                        {"season": 2026, "appearances": 1},
-                        {"season": 2025, "appearances": 20},
+                        {
+                            "season": 2026,
+                            "appearances": 1,
+                            "positions": ["MIDFIELDER"],
+                        },
+                        {
+                            "season": 2025,
+                            "appearances": 20,
+                            "positions": ["MIDFIELDER"],
+                        },
                     ],
                 }
             },

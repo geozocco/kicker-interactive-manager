@@ -29,6 +29,7 @@ from openai_role_research import (
     research_role_profiles,
     select_role_targets,
 )
+from openai_team_research import research_team_profiles
 from quality_snapshot import load_snapshot as load_quality_snapshot
 
 
@@ -70,6 +71,8 @@ def merge_role_research_into_previous_snapshot(
     role_profiles: dict[str, dict[str, Any]],
     role_research_abstentions: dict[str, dict[str, Any]],
     role_research_audit: dict[str, Any],
+    team_profiles: dict[str, dict[str, Any]] | None = None,
+    team_research_audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Refresh grounded roles without extending stale provider timestamps."""
 
@@ -79,6 +82,19 @@ def merge_role_research_into_previous_snapshot(
         role_research_abstentions
     )
     merged["role_research"] = copy.deepcopy(role_research_audit)
+    merged["team_profiles"] = copy.deepcopy(team_profiles or {})
+    merged["team_research"] = copy.deepcopy(
+        team_research_audit
+        or {
+            "status": "not_configured",
+            "targets": 0,
+            "cache_hits": 0,
+            "researched_profiles": 0,
+            "inconclusive": 0,
+            "requests": 0,
+            "failures": [],
+        }
+    )
     merged.pop("content_sha256", None)
     merged["content_sha256"] = canonical_sha256(merged)
     return merged
@@ -1095,6 +1111,8 @@ def build_snapshot(
     researched_role_profiles: dict[str, dict[str, Any]] | None = None,
     role_research_abstentions: dict[str, dict[str, Any]] | None = None,
     role_research_audit: dict[str, Any] | None = None,
+    researched_team_profiles: dict[str, dict[str, Any]] | None = None,
+    team_research_audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     observed_at = iso_now()
     runtime_config = copy.deepcopy(config)
@@ -1235,6 +1253,16 @@ def build_snapshot(
             "requests": 0,
             "failures": [],
         },
+        "team_profiles": researched_team_profiles or {},
+        "team_research": team_research_audit or {
+            "status": "not_configured",
+            "targets": 0,
+            "cache_hits": 0,
+            "researched_profiles": 0,
+            "inconclusive": 0,
+            "requests": 0,
+            "failures": [],
+        },
     }
     validate_snapshot(payload)
     payload["content_sha256"] = canonical_sha256(payload)
@@ -1338,6 +1366,16 @@ def main() -> int:
         "researched_profiles": 0,
         "researched_abstentions": 0,
         "researched_inconclusive": 0,
+        "requests": 0,
+        "failures": [],
+    }
+    researched_team_profiles: dict[str, dict[str, Any]] = {}
+    team_research_audit: dict[str, Any] = {
+        "status": "not_configured",
+        "targets": 0,
+        "cache_hits": 0,
+        "researched_profiles": 0,
+        "inconclusive": 0,
         "requests": 0,
         "failures": [],
     }
@@ -1458,6 +1496,47 @@ def main() -> int:
         role_research_audit["target_clubs"] = len(
             {str(target.get("club", "")) for target in targets}
         )
+        clubs = sorted(
+            {
+                str(player.get("club", "")).strip()
+                for player in market_payload.get("players", [])
+                if isinstance(player, dict)
+                and player.get("available", True)
+                and str(player.get("club", "")).strip()
+            }
+        )
+        if api_key:
+            (
+                researched_team_profiles,
+                team_research_audit,
+            ) = research_team_profiles(
+                clubs,
+                competition=str(config["competition"]),
+                season=str(config["season"]),
+                previous_profiles=(
+                    previous_news.get("team_profiles", {})
+                    if isinstance(previous_news, dict)
+                    else {}
+                ),
+                api_key=api_key,
+                model=args.openai_role_model,
+            )
+        else:
+            researched_team_profiles = {
+                str(club): dict(profile)
+                for club, profile in (
+                    previous_news.get("team_profiles", {}).items()
+                    if isinstance(previous_news, dict)
+                    and isinstance(previous_news.get("team_profiles"), dict)
+                    else []
+                )
+                if isinstance(profile, dict)
+            }
+            team_research_audit = {
+                **team_research_audit,
+                "targets": len(clubs),
+                "cache_hits": len(researched_team_profiles),
+            }
 
     try:
         payload = build_snapshot(
@@ -1471,6 +1550,8 @@ def main() -> int:
             researched_role_profiles=researched_role_profiles,
             role_research_abstentions=role_research_abstentions,
             role_research_audit=role_research_audit,
+            researched_team_profiles=researched_team_profiles,
+            team_research_audit=team_research_audit,
         )
     except RuntimeError as error:
         if not args.previous or not is_api_sports_daily_limit(error):
@@ -1488,6 +1569,8 @@ def main() -> int:
             role_profiles=researched_role_profiles,
             role_research_abstentions=role_research_abstentions,
             role_research_audit=role_research_audit,
+            team_profiles=researched_team_profiles,
+            team_research_audit=team_research_audit,
         )
         validate_snapshot(payload)
         print(
@@ -1512,6 +1595,7 @@ def main() -> int:
                 "players": len(payload["players"]),
                 "providers": sorted(payload["providers"]),
                 "role_research": payload["role_research"],
+                "team_research": payload["team_research"],
                 "content_sha256": payload["content_sha256"],
             },
             ensure_ascii=False,
