@@ -278,12 +278,22 @@ def validate_snapshot(
             "news role_research_abstentions must be an object"
         )
     for player_id, record in role_research_abstentions.items():
+        abstention_status = (
+            str(record.get("status", ""))
+            if isinstance(record, dict)
+            else ""
+        )
         if (
             not str(player_id).strip()
             or not isinstance(record, dict)
-            or record.get("status") != "no_grounded_signal"
+            or abstention_status
+            not in {"no_grounded_signal", "research_inconclusive"}
             or not str(record.get("model_version", "")).strip()
             or not str(record.get("research_model", "")).strip()
+            or (
+                abstention_status == "research_inconclusive"
+                and not str(record.get("reason", "")).strip()
+            )
         ):
             raise NewsSnapshotError(
                 f"invalid role-research abstention for {player_id!r}"

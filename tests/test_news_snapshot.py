@@ -89,6 +89,28 @@ def snapshot_payload() -> dict:
 
 
 class SnapshotValidationTests(unittest.TestCase):
+    def test_inconclusive_role_research_is_a_valid_retryable_record(
+        self,
+    ) -> None:
+        payload = snapshot_payload()
+        payload["role_research_abstentions"] = {
+            "k1": {
+                "status": "research_inconclusive",
+                "reason": "omitted_from_model_output",
+                "model_version": "openai-role-web-v2",
+                "research_model": "gpt-5.6-luna",
+                "checked_at": "2026-07-24T08:00:00Z",
+                "refresh_after": "2026-07-24T08:01:00Z",
+                "expires_at": "2026-07-27T08:00:00Z",
+            }
+        }
+        payload["content_sha256"] = news_snapshot.canonical_sha256(payload)
+
+        news_snapshot.validate_snapshot(
+            payload,
+            now=datetime(2026, 7, 24, 12, tzinfo=timezone.utc),
+        )
+
     def test_valid_snapshot_loads_from_local_file(self) -> None:
         payload = snapshot_payload()
         with tempfile.TemporaryDirectory() as temporary_directory:

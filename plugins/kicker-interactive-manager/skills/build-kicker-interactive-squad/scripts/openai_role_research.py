@@ -399,7 +399,7 @@ def inconclusive_record(
         "research_model": model,
         "research_fingerprint": fingerprint,
         "checked_at": iso_timestamp(now),
-        "refresh_after": iso_timestamp(now),
+        "refresh_after": iso_timestamp(now + timedelta(minutes=1)),
         "expires_at": iso_timestamp(now + timedelta(days=3)),
     }
 
