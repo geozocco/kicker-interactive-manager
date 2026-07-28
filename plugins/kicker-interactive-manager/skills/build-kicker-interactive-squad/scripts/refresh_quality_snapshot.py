@@ -969,6 +969,10 @@ def cached_role_evidence(
             0,
         ),
         "team_quality_delta": profile.get("team_quality_delta", 0),
+        "external_signing_risk": profile.get(
+            "external_signing_risk",
+            0,
+        ),
         "responsibilities": dict(profile.get("responsibilities", {})),
         "designation": str(profile.get("designation", "")),
         "note": str(profile.get("note", "")),
@@ -3085,6 +3089,26 @@ def apply_goalkeeper_hierarchy(
             external_signing_risk = clamp(
                 club_override["external_signing_risk"]
             )
+        top_cached_profile = (
+            news_payload.get("role_profiles", {}).get(top_id, {})
+            if isinstance(news_payload.get("role_profiles"), dict)
+            else {}
+        )
+        if (
+            isinstance(top_cached_profile, dict)
+            and top_cached_profile.get("fresh", False)
+        ):
+            cached_external_risk = top_cached_profile.get(
+                "external_signing_risk"
+            )
+            if isinstance(cached_external_risk, (int, float)) and not isinstance(
+                cached_external_risk,
+                bool,
+            ):
+                external_signing_risk = max(
+                    external_signing_risk,
+                    clamp(cached_external_risk),
+                )
         if isinstance(club_override, dict):
             override_note = str(club_override.get("note", "")).strip()
             override_evidence = club_override.get("evidence", [])

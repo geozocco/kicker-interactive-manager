@@ -222,6 +222,15 @@ def validate_snapshot(
             raise NewsSnapshotError(
                 f"invalid role probability for player {player_id!r}"
             )
+        external_signing_risk = profile.get("external_signing_risk", 0)
+        if (
+            isinstance(external_signing_risk, bool)
+            or not isinstance(external_signing_risk, (int, float))
+            or not 0 <= float(external_signing_risk) <= 100
+        ):
+            raise NewsSnapshotError(
+                f"invalid external signing risk for player {player_id!r}"
+            )
         if profile.get("confidence") not in CONFIDENCE_ORDER:
             raise NewsSnapshotError(
                 f"invalid role confidence for player {player_id!r}"
@@ -260,6 +269,16 @@ def validate_snapshot(
                 item.get("observed_at"),
                 "role_profile.evidence.observed_at",
             )
+    role_research = payload.get("role_research", {})
+    if not isinstance(role_research, dict):
+        raise NewsSnapshotError("news role_research must be an object")
+    if role_research and role_research.get("status") not in {
+        "ok",
+        "partial",
+        "unavailable",
+        "not_configured",
+    }:
+        raise NewsSnapshotError("news role_research status is invalid")
     expected_hash = str(payload.get("content_sha256", "")).strip()
     if expected_hash and expected_hash != canonical_sha256(payload):
         raise NewsSnapshotError("news snapshot content_sha256 does not match its content")
@@ -343,6 +362,7 @@ def snapshot_audit(payload: dict[str, Any]) -> dict[str, Any]:
         "expires_at": payload["expires_at"],
         "sha256": canonical_sha256(payload),
         "providers": providers,
+        "role_research": dict(payload.get("role_research", {})),
         "player_count": len(player_entries),
         "signal_count": sum(
             len(entry.get("signals", [])) for entry in player_entries.values()

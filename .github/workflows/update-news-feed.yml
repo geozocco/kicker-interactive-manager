@@ -56,10 +56,13 @@ jobs:
         env:
           API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
           SPORTMONKS_API_TOKEN: ${{ secrets.SPORTMONKS_API_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_APIKEY }}
         run: |
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_news_snapshot.py \
             --mapping config/news/2-bundesliga.json \
             --role-evidence-config config/quality/2-bundesliga.json \
+            --market public/v1/market/2-bundesliga.json \
+            --previous-quality https://geozocco.github.io/kicker-interactive-manager/v1/quality/2-bundesliga.json \
             --output public/v1/news/2-bundesliga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/news/2-bundesliga.json \
             --provider api_sports \
@@ -72,10 +75,13 @@ jobs:
         env:
           API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
           SPORTMONKS_API_TOKEN: ${{ secrets.SPORTMONKS_API_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_APIKEY }}
         run: |
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_news_snapshot.py \
             --mapping config/news/3-liga.json \
             --role-evidence-config config/quality/3-liga.json \
+            --market public/v1/market/3-liga.json \
+            --previous-quality https://geozocco.github.io/kicker-interactive-manager/v1/quality/3-liga.json \
             --output public/v1/news/3-liga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/news/3-liga.json \
             --provider api_sports \

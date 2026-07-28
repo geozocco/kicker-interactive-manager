@@ -23,6 +23,13 @@ from news_snapshot import (
     load_snapshot as load_news_snapshot,
     validate_snapshot,
 )
+from market_snapshot import load_snapshot as load_market_snapshot
+from openai_role_research import (
+    DEFAULT_MODEL as DEFAULT_OPENAI_ROLE_MODEL,
+    research_role_profiles,
+    select_role_targets,
+)
+from quality_snapshot import load_snapshot as load_quality_snapshot
 
 
 USER_AGENT = "kicker-interactive-manager-news-refresh/1"
@@ -1065,6 +1072,8 @@ def build_snapshot(
     optional_providers: list[str] | None = None,
     ttl_hours: int,
     role_config: dict[str, Any] | None = None,
+    researched_role_profiles: dict[str, dict[str, Any]] | None = None,
+    role_research_audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     observed_at = iso_now()
     runtime_config = copy.deepcopy(config)
@@ -1177,6 +1186,13 @@ def build_snapshot(
         }
 
     generated = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+    role_profiles = cached_role_profiles(
+        role_config,
+        generated_at=observed_at,
+    )
+    for player_id, profile in (researched_role_profiles or {}).items():
+        if isinstance(profile, dict):
+            role_profiles[str(player_id)] = dict(profile)
     payload = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": observed_at,
@@ -1187,10 +1203,15 @@ def build_snapshot(
         "season": str(config["season"]),
         "providers": provider_audit,
         "players": players,
-        "role_profiles": cached_role_profiles(
-            role_config,
-            generated_at=observed_at,
-        ),
+        "role_profiles": role_profiles,
+        "role_research": role_research_audit or {
+            "status": "not_configured",
+            "targets": 0,
+            "cache_hits": 0,
+            "researched_profiles": 0,
+            "requests": 0,
+            "failures": [],
+        },
     }
     validate_snapshot(payload)
     payload["content_sha256"] = canonical_sha256(payload)
@@ -1201,6 +1222,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mapping", type=Path, required=True)
     parser.add_argument("--role-evidence-config", type=Path)
+    parser.add_argument("--market")
+    parser.add_argument("--previous-quality")
+    parser.add_argument("--openai-role-model", default=DEFAULT_OPENAI_ROLE_MODEL)
+    parser.add_argument("--openai-role-max-players", type=int, default=48)
+    parser.add_argument("--openai-role-batch-size", type=int, default=4)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--previous")
     parser.add_argument(
@@ -1219,6 +1245,14 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.ttl_hours < 1 or args.ttl_hours > 72:
         parser.error("--ttl-hours must be between 1 and 72")
+    if not 1 <= args.openai_role_max_players <= 96:
+        parser.error("--openai-role-max-players must be between 1 and 96")
+    if not 1 <= args.openai_role_batch_size <= 8:
+        parser.error("--openai-role-batch-size must be between 1 and 8")
+    if bool(args.market) != bool(args.previous_quality):
+        parser.error(
+            "--market and --previous-quality must be provided together"
+        )
     if not args.providers:
         args.providers = ["api_sports"]
     return args
@@ -1255,6 +1289,102 @@ def main() -> int:
             "mapping players must be a non-empty object unless "
             "api_sports.auto_discover_players is enabled"
         )
+    previous_news: dict[str, Any] | None = None
+    if args.previous:
+        try:
+            previous_news = load_news_snapshot(
+                args.previous,
+                require_fresh=False,
+            )
+        except (OSError, ValueError):
+            previous_news = None
+
+    researched_role_profiles: dict[str, dict[str, Any]] = {}
+    role_research_audit: dict[str, Any] = {
+        "status": "not_configured",
+        "targets": 0,
+        "cache_hits": 0,
+        "researched_profiles": 0,
+        "requests": 0,
+        "failures": [],
+    }
+    if args.market and args.previous_quality:
+        market_payload = load_market_snapshot(args.market)
+        try:
+            previous_quality = load_quality_snapshot(
+                args.previous_quality,
+                require_fresh=False,
+            )
+        except (OSError, ValueError):
+            previous_quality = {
+                "competition": config["competition"],
+                "season": config["season"],
+                "annotations": {},
+            }
+        if (
+            market_payload["competition"] != config["competition"]
+            or market_payload["season"] != config["season"]
+            or previous_quality["competition"] != config["competition"]
+            or previous_quality["season"] != config["season"]
+        ):
+            raise RuntimeError(
+                "OpenAI role-research inputs belong to another competition"
+            )
+        explicit_player_ids = (
+            role_config.get("role_evidence", {}).keys()
+            if isinstance(role_config, dict)
+            and isinstance(role_config.get("role_evidence"), dict)
+            else ()
+        )
+        targets = select_role_targets(
+            market_payload,
+            previous_quality,
+            explicit_player_ids=explicit_player_ids,
+            max_players=args.openai_role_max_players,
+        )
+        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if api_key:
+            researched_role_profiles, role_research_audit = (
+                research_role_profiles(
+                    targets,
+                    competition=str(config["competition"]),
+                    season=str(config["season"]),
+                    previous_profiles=(
+                        previous_news.get("role_profiles", {})
+                        if isinstance(previous_news, dict)
+                        else {}
+                    ),
+                    api_key=api_key,
+                    model=args.openai_role_model,
+                    batch_size=args.openai_role_batch_size,
+                )
+            )
+        else:
+            reusable = {
+                str(player_id): dict(profile)
+                for player_id, profile in (
+                    previous_news.get("role_profiles", {}).items()
+                    if isinstance(previous_news, dict)
+                    and isinstance(previous_news.get("role_profiles"), dict)
+                    else []
+                )
+                if isinstance(profile, dict)
+                and str(profile.get("model_version", "")).startswith(
+                    "openai-role-web-"
+                )
+                and profile.get("fresh", False)
+            }
+            researched_role_profiles = reusable
+            role_research_audit = {
+                "status": "not_configured",
+                "model": args.openai_role_model,
+                "targets": len(targets),
+                "cache_hits": len(reusable),
+                "researched_profiles": 0,
+                "requests": 0,
+                "failures": [],
+            }
+
     try:
         payload = build_snapshot(
             config,
@@ -1264,6 +1394,8 @@ def main() -> int:
             ),
             ttl_hours=args.ttl_hours,
             role_config=role_config,
+            researched_role_profiles=researched_role_profiles,
+            role_research_audit=role_research_audit,
         )
     except RuntimeError as error:
         if not args.previous or not is_api_sports_daily_limit(error):
@@ -1296,6 +1428,7 @@ def main() -> int:
                 "season": payload["season"],
                 "players": len(payload["players"]),
                 "providers": sorted(payload["providers"]),
+                "role_research": payload["role_research"],
                 "content_sha256": payload["content_sha256"],
             },
             ensure_ascii=False,

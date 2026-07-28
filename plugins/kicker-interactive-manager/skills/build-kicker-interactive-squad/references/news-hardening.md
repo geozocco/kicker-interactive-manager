@@ -4,7 +4,7 @@
 
 Die News-Prüfung ist hybrid:
 
-1. Ein zentraler Lauf liest API-Sports viermal täglich mit dem geheimen Provider-Schlüssel aus. Sportmonks ist als optionale unabhängige Zweitquelle zugeschaltet, sobald Token sowie verifizierte Team- und Spielerzuordnungen vorliegen.
+1. Ein zentraler Lauf liest API-Sports viermal täglich mit dem geheimen Provider-Schlüssel aus. Sportmonks ist als optionale unabhängige Zweitquelle zugeschaltet, sobald Token sowie verifizierte Team- und Spielerzuordnungen vorliegen. OpenAI Web Search recherchiert priorisierte aktuelle Rollenfragen und liefert streng strukturierte, quellengebundene Profile.
 2. Er veröffentlicht ausschließlich ein normalisiertes Snapshot ohne Schlüssel und ohne vollständige Rohantworten.
 3. Der zentrale Qualitätslauf verbindet dieses Snapshot mit einem getrennten, ebenfalls frischen Vorbereitungssnapshot und prüft Alter, Wettbewerb, Saison, Prüfsummen, Spielerzuordnung und Provider-Konflikte.
 4. Offizielle Vereins-, Liga- und Transfermeldungen bleiben der gezielte Fallback für fehlende Zuordnungen, Konflikte und besonders folgenreiche Meldungen.
@@ -27,17 +27,23 @@ Vorbereitung nicht als gewöhnliche News-Risikomeldung modellieren. Testspiele b
 - Für jeden ausgewählten Spieler muss bei mindestens einem Provider ein verifiziertes Paar aus Spieler- und aktuellem Team-ID vorliegen. Nur so lässt sich die Richtung eines Transfers sicher bewerten. Fehlt es, den Spieler am selben Tag manuell in Primärquellen prüfen und die zentrale Zuordnung ergänzen, bevor Chrome geändert wird.
 - Ein fehlendes Provider-Paar darf einen Feldspieler nicht bereits aus dem zentralen Qualitäts- und Near-Miss-Pool entfernen. Bis zur nachgezogenen Zuordnung ist eine manuelle Freigabe zulässig, wenn Verfügbarkeit, Fitness, Rolle und Transferlage mit mindestens zwei aktuellen direkten Quellen geprüft, Risiken nur erhöht und die Prüfung spätestens nach sieben Tagen verworfen wird. Für Torwartblöcke gilt diese Ausnahme wegen der unvollständigen Konkurrenzhierarchie nicht.
 - Direkt vor dem ersten Verkauf Snapshot erneut laden. Liegt die letzte Prüfung mehr als zwei Stunden zurück oder gab es neue Meldungen, finalen Lauf ohne `--new-variant` wiederholen; so bleibt die automatische persönliche Variante stabil. Bei einem ausdrücklich gesetzten Seed denselben Wert verwenden.
+- Das Sprachmodell darf keine Rolle aus Preis, Bekanntheit oder Vorjahrespunkten erfinden. Ein maschinelles Rollenprofil wird nur akzeptiert, wenn jede Evidenz-URL tatsächlich in den Web-Search-Quellen vorkommt, höchstens 45 Tage alt ist und einem bekannten Spieler des aktuellen Marktes zugeordnet werden kann.
+- Widersprüchliche Rollenmeldungen werden deterministisch auf `open_competition` mit niedriger Konfidenz begrenzt. Hohe Konfidenz verlangt mindestens eine starke Primärquelle. Der Qualitätsalgorithmus und der Torwart-Resolver bleiben deterministisch; das Modell entscheidet niemals allein über Kauf oder Verkauf.
 
 ## Zentraler GitHub-Aktualisierungslauf
 
-Der Workflow `.github/workflows/update-news-feed.yml` läuft um 02:17, 08:17, 14:17 und 20:17 UTC sowie manuell. Der API-Sports-Schlüssel liegt ausschließlich als Repository-Secret `API_SPORTS_KEY` vor. `SPORTMONKS_API_TOKEN` ist optional: Fehlt er, veröffentlicht das Provider-Audit `not_configured`; fehlen bei vorhandenem Token noch verifizierte Zuordnungen, erscheint `configuration_required`. Beides blockiert den bewährten API-Sports-Lauf nicht. GitHub Pages veröffentlicht danach:
+Der Workflow `.github/workflows/update-news-feed.yml` läuft um 02:17, 08:17, 14:17 und 20:17 UTC sowie manuell. Der API-Sports-Schlüssel liegt ausschließlich als Repository-Secret `API_SPORTS_KEY` vor. Der OpenAI-Schlüssel liegt als Repository-Secret `OPENAI_APIKEY` vor und wird im Workflow nur für den Prozess als `OPENAI_API_KEY` bereitgestellt. `SPORTMONKS_API_TOKEN` ist optional: Fehlt er, veröffentlicht das Provider-Audit `not_configured`; fehlen bei vorhandenem Token noch verifizierte Zuordnungen, erscheint `configuration_required`. Beides blockiert den bewährten API-Sports-Lauf nicht. GitHub Pages veröffentlicht danach:
 
 ```text
 https://geozocco.github.io/kicker-interactive-manager/v1/news/2-bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/news/3-liga.json
 ```
 
-Die Konfigurationen in `config/news/` enthalten nur Wettbewerb, Saison und öffentliche Provider-IDs. Der Lauf ermittelt alle aktuellen Teams und Spieler automatisch, verlangt die erwartete Teamzahl und bricht bei unvollständigen Ligadaten ab. Über `--role-evidence-config` liest er zusätzlich die belegten Rollenmeldungen aus `config/quality/` ein und veröffentlicht daraus einen separaten `role_profiles`-Cache. Trainerentscheidungen, Aussagen zur sofortigen Hilfe oder Perspektivrolle und aktuelle Standardverantwortungen bleiben dadurch zentral wiederverwendbar, ohne Provider-Risikosignale mit redaktioneller Rolleninterpretation zu vermischen. Snapshots werden als Pages-Artefakt veröffentlicht und nicht in Git eingecheckt.
+Die Konfigurationen in `config/news/` enthalten nur Wettbewerb, Saison und öffentliche Provider-IDs. Der Lauf ermittelt alle aktuellen Teams und Spieler automatisch, verlangt die erwartete Teamzahl und bricht bei unvollständigen Ligadaten ab. Über `--role-evidence-config` liest er zusätzlich die manuell belegten Rollenmeldungen aus `config/quality/` ein.
+
+Die OpenAI-Rollenrecherche wählt automatisch offene Rollenfälle, Benchmarks, bestätigte Ankerkandidaten, hochpreisige Offensivspieler und die zwei wahrscheinlichsten Torhüter jedes Vereins aus. Sie verwendet standardmäßig `gpt-5.6-luna` mit niedriger Reasoning-Stufe und Web Search. Ergebnisse besitzen getrennte Fristen: offene Torwartfragen werden nach drei Tagen, übrige Torwartrollen nach sieben Tagen und stabile Feldspielerrollen nach vierzehn Tagen erneut geprüft. Bis zum nächsten Prüfzeitpunkt entstehen keine neuen Modellaufrufe. Ein noch gültiges altes Profil bleibt bei einem vorübergehenden API-Fehler als gekennzeichneter Fallback erhalten; ohne gültigen Beleg greift die bestehende deterministische Rollenheuristik. Das Snapshot-Audit `role_research` nennt Modell, Zielzahl, Cachetreffer, neue Profile, Requests und Fehler, aber niemals Schlüssel oder vollständige Modellprompts.
+
+Trainerentscheidungen, Aussagen zur sofortigen Hilfe oder Perspektivrolle, glaubhafte externe Torwart-Transfergefahr und aktuelle Standardverantwortungen bleiben so zentral wiederverwendbar, ohne Provider-Risikosignale mit redaktioneller Rolleninterpretation zu vermischen. Snapshots werden als Pages-Artefakt veröffentlicht und nicht in Git eingecheckt.
 
 Für eine manuelle zentrale Ausführung gilt weiterhin:
 
@@ -80,7 +86,7 @@ Eine optionale Mapping-Datei kann einzelne Kicker-IDs ausdrücklich mit Provider
 Die Liga- und Team-IDs sind providerabhängig und müssen vor dem ersten Lauf gegen den aktuellen Wettbewerb geprüft werden. Bei `auto_discover_players: true` setzt das Skript `competition_team_ids_complete` nur nach erfolgreicher Prüfung der erwarteten Teamzahl. Ohne automatische Erkennung darf das Feld erst dann auf `true` gesetzt werden, wenn wirklich alle aktuellen Vereine enthalten sind. Nur dann darf ein Zielverein außerhalb dieser Menge als bestätigter Abgang aus dem Wettbewerb gewertet werden. Ein Wechsel innerhalb der Ligamenge erhöht dagegen lediglich Rollen- und Transferrisiko. Anschließend zentral ausführen:
 
 ```text
-SPORTMONKS_API_TOKEN=<secret> API_SPORTS_KEY=<secret> <python-3-command> scripts/refresh_news_snapshot.py --mapping <mapping-json> --role-evidence-config <quality-config-json> --output <snapshot-directory>/2-bundesliga.json --provider api_sports --optional-provider sportsmonks
+OPENAI_API_KEY=<secret> SPORTMONKS_API_TOKEN=<secret> API_SPORTS_KEY=<secret> <python-3-command> scripts/refresh_news_snapshot.py --mapping <mapping-json> --role-evidence-config <quality-config-json> --market <market-snapshot-json> --previous-quality <quality-snapshot-url-oder-json> --previous <news-snapshot-url-oder-json> --output <snapshot-directory>/2-bundesliga.json --provider api_sports --optional-provider sportsmonks
 ```
 
 Der Lauf ist für mehrere Aktualisierungen pro Tag gedacht. Er verwendet begrenzte Wiederholungen mit Backoff, vollständige Pagination, API-Sports-Batches bis 20 Spieler, vereinsweise statt spielerweise Transferabfragen, bei optionalem SportsMonks-Betrieb nur Gerüchte der letzten höchstens 31 Tage, providerseitige Aktualitätsdaten und atomaren Dateiaustausch. Nach einem fehlgeschlagenen Refresh bleibt im selbst gehosteten Modus die vorige Datei erhalten, läuft aber regulär ab und wird danach vom Optimierer abgelehnt; GitHub Pages veröffentlicht bei einem fehlgeschlagenen Workflow gar kein neues Artefakt.
