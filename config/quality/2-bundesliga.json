@@ -37,6 +37,33 @@
     }
   },
   "role_evidence": {
+    "pl-k00074593": {
+      "continuity": "confirmed",
+      "confidence": "high",
+      "expected_start_probability": 89,
+      "team_quality_delta": 14,
+      "responsibilities": {
+        "offensive_focal_point": "primary"
+      },
+      "note": "Glatzel wird als erfahrener Torjäger für das Wolfsburger Offensivzentrum verpflichtet und startet wiederholt in der ersten Testspielformation.",
+      "evidence": [
+        {
+          "claim": "Wolfsburg verpflichtet den früheren Zweitliga-Torschützenkönig ausdrücklich wegen seines Torriechers zur Verstärkung des Offensivspiels.",
+          "source_url": "https://www.vfl-wolfsburg.de/newsdetails/news-detail/detail/news/neuzugang-aus-hamburg",
+          "checked_at": "2026-07-28"
+        },
+        {
+          "claim": "Glatzel erzielt im zweiten Vorbereitungsspiel als Starter drei Tore.",
+          "source_url": "https://www.vfl-wolfsburg.de/newsdetails/news-detail/detail/news/glatzel-dreierpack-inklusive",
+          "checked_at": "2026-07-28"
+        },
+        {
+          "claim": "Glatzel beginnt auch den deutlich stärkeren Test gegen Olympique Lyon im Wolfsburger Angriff.",
+          "source_url": "https://www.vfl-wolfsburg.de/newsdetails/news-detail/detail/news/erste-niederlage-der-vorbereitung-1",
+          "checked_at": "2026-07-28"
+        }
+      ]
+    },
     "pl-k00079554": {
       "continuity": "confirmed",
       "confidence": "high",

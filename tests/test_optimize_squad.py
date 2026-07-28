@@ -2251,7 +2251,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             after["bench_usage_weights"]["FORWARD"],
         )
         self.assertEqual(
-            "joint-xi-bench-v6-role-potential-premium-restarts",
+            "joint-xi-bench-v7-scorer-defense-opportunity",
             optimized.architecture_diagnostics["model_version"],
         )
         self.assertGreater(
@@ -2704,6 +2704,93 @@ class ReliableCorePolicyTests(unittest.TestCase):
             0.0,
             weighted["premium-m1"]
             - scores["premium-m1"] * multipliers["premium-m1"],
+        )
+
+    def test_starting_scorer_leverage_rewards_repeatable_current_role(
+        self,
+    ) -> None:
+        base = player(
+            "scorer",
+            "Scorer Club",
+            "FORWARD",
+            800,
+            reliable_anchor=True,
+            role_context={
+                "continuity": "confirmed",
+                "responsibilities": {
+                    "offensive_focal_point": "primary",
+                    "penalties": "shared",
+                },
+            },
+        )
+        scorer = optimizer.replace(
+            base,
+            proven_seasons=4,
+            scorer_profile={
+                "sample_minutes": 6_000,
+                "proven_seasons": 4,
+                "goals_per_90": 0.42,
+                "contributions_per_90": 0.58,
+            },
+        )
+        ordinary = optimizer.replace(
+            scorer,
+            player_id="ordinary",
+            role_context={},
+            scorer_profile={},
+        )
+
+        self.assertGreater(
+            optimizer.starting_scorer_leverage(scorer),
+            8.0,
+        )
+        self.assertEqual(
+            0.0,
+            optimizer.starting_scorer_leverage(ordinary),
+        )
+
+    def test_defensive_overspend_is_softly_penalized_when_scorer_exists(
+        self,
+    ) -> None:
+        squad_players: list[optimizer.Player] = []
+        scores: dict[str, float] = {}
+        for position, prefix, count in (
+            ("GOALKEEPER", "og", 3),
+            ("DEFENDER", "od", 7),
+            ("MIDFIELDER", "om", 7),
+            ("FORWARD", "of", 5),
+        ):
+            for index in range(count):
+                item = player(
+                    f"{prefix}{index}",
+                    (
+                        "Opportunity Goalkeeper Club"
+                        if position == "GOALKEEPER"
+                        else f"Opportunity Club {prefix}{index}"
+                    ),
+                    position,
+                    100,
+                )
+                squad_players.append(item)
+                scores[item.player_id] = 90.0 - index
+        metrics = optimizer.squad_architecture_metrics(
+            optimizer.Squad(squad_players, 0.0),
+            scores,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.0,
+            target_core_budget_share=0.0,
+            premium_starter_ids=frozenset({"of0"}),
+        )
+
+        self.assertGreater(
+            metrics["defender_spend_share"],
+            metrics["defender_spend_soft_cap"],
+        )
+        self.assertLess(
+            metrics["defensive_overspend_adjustment"],
+            0.0,
         )
 
     def test_joint_architecture_values_goalkeeper_primary_over_backups(

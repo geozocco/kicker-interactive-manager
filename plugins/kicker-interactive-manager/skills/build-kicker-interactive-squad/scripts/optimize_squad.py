@@ -24,6 +24,7 @@ import unicodedata
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import AbstractSet, Any, Iterable
 
@@ -120,7 +121,7 @@ VARIATION_STATE_ENV = "KICKER_VARIATION_STATE"
 VARIATION_STATE_SCHEMA_VERSION = 1
 OPTIMIZER_CACHE_ENV = "KICKER_OPTIMIZER_CACHE"
 OPTIMIZER_CACHE_SCHEMA_VERSION = 1
-OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v3"
+OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v4-scorer-architecture"
 COMPETITION_BUDGETS = {
     "Bundesliga": 42_500_000,
     "2. Bundesliga": 10_000_000,
@@ -425,6 +426,18 @@ class Player:
         default_factory=dict,
         compare=False,
     )
+    scorer_profile: dict[str, Any] = field(
+        default_factory=dict,
+        compare=False,
+    )
+    role_research: dict[str, Any] = field(
+        default_factory=dict,
+        compare=False,
+    )
+    manual_news_clearance: dict[str, Any] = field(
+        default_factory=dict,
+        compare=False,
+    )
 
 
 @dataclass
@@ -617,6 +630,10 @@ def merge_annotations(
             "goalkeeper_outlook",
             "preseason_summary",
             "form_summary",
+            "role_context",
+            "scorer_profile",
+            "role_research",
+            "manual_news_clearance",
         ):
             central_nested = current.get(nested_key, {})
             local_nested = local_value.get(nested_key, {})
@@ -788,6 +805,24 @@ def load_players_from_rows(
                     if isinstance(annotation.get("role_context"), dict)
                     else {}
                 ),
+                scorer_profile=(
+                    dict(annotation.get("scorer_profile", {}))
+                    if isinstance(annotation.get("scorer_profile"), dict)
+                    else {}
+                ),
+                role_research=(
+                    dict(annotation.get("role_research", {}))
+                    if isinstance(annotation.get("role_research"), dict)
+                    else {}
+                ),
+                manual_news_clearance=(
+                    dict(annotation.get("manual_news_clearance", {}))
+                    if isinstance(
+                        annotation.get("manual_news_clearance"),
+                        dict,
+                    )
+                    else {}
+                ),
             )
         )
     return players, annotated_count, annotated_by_position
@@ -910,6 +945,7 @@ def apply_news_snapshot(
     excluded: list[dict[str, Any]] = []
     applied_ids: list[str] = []
     provider_mapped_ids: list[str] = []
+    manually_cleared_ids: list[str] = []
     conflicts: dict[str, list[str]] = {}
     identity_bindings: dict[str, str] = {}
     matched_snapshot_keys: set[str] = set()
@@ -953,6 +989,10 @@ def apply_news_snapshot(
         )
         if has_provider_mapping:
             provider_mapped_ids.append(player.player_id)
+        elif manual_news_clearance_is_current(
+            player.manual_news_clearance
+        ):
+            manually_cleared_ids.append(player.player_id)
 
         entry_conflicts = list(entry.get("consensus", {}).get("conflicts", []))
         entry_name = str(entry.get("name", "")).strip()
@@ -1055,11 +1095,18 @@ def apply_news_snapshot(
         updated.append(refreshed)
 
     audit = snapshot_audit(payload)
+    coverage_cleared_ids = sorted(
+        set(provider_mapped_ids).union(manually_cleared_ids)
+    )
     audit.update(
         {
             "applied_player_ids": sorted(applied_ids),
             "provider_mapped_player_ids": sorted(provider_mapped_ids),
-            "unmapped_csv_player_ids": sorted(csv_ids - set(provider_mapped_ids)),
+            "manually_cleared_player_ids": sorted(manually_cleared_ids),
+            "coverage_cleared_player_ids": coverage_cleared_ids,
+            "unmapped_csv_player_ids": sorted(
+                csv_ids - set(coverage_cleared_ids)
+            ),
             "snapshot_only_player_ids": sorted(
                 set(entries) - matched_snapshot_keys
             ),
@@ -1069,6 +1116,34 @@ def apply_news_snapshot(
         }
     )
     return updated, audit, excluded
+
+
+def manual_news_clearance_is_current(value: Any) -> bool:
+    """Accept only complete manual coverage checked within the last week."""
+
+    if not isinstance(value, dict) or value.get("valid") is not True:
+        return False
+    coverage = {
+        str(item).strip().casefold()
+        for item in value.get("coverage", [])
+    }
+    if not {
+        "availability",
+        "fitness",
+        "role",
+        "transfer",
+    }.issubset(coverage):
+        return False
+    try:
+        checked_at = datetime.fromisoformat(
+            str(value.get("checked_at", "")).replace("Z", "+00:00")
+        )
+    except ValueError:
+        return False
+    if checked_at.tzinfo is None:
+        checked_at = checked_at.replace(tzinfo=timezone.utc)
+    age = datetime.now(timezone.utc) - checked_at.astimezone(timezone.utc)
+    return 0 <= age.total_seconds() <= 7 * 24 * 3600
 
 
 def classify_reliable_anchor(
@@ -1178,6 +1253,117 @@ def is_offensive_premium_anchor(player: Player) -> bool:
     return (
         offensive_premium_anchor_strength(player)
         >= OFFENSIVE_PREMIUM_ANCHOR_MINIMUM
+    )
+
+
+def starting_scorer_leverage(player: Player) -> float:
+    """Reward repeatable, currently usable Kicker scoring paths in the XI."""
+
+    if player.position == "GOALKEEPER":
+        return 0.0
+    profile = player.scorer_profile
+    responsibilities = player.role_context.get(
+        "responsibilities",
+        profile.get("responsibilities", {}),
+    )
+    if not isinstance(responsibilities, dict):
+        responsibilities = {}
+
+    level_factor = {"none": 0.0, "shared": 0.58, "primary": 1.0}
+    responsibility_weights = (
+        {
+            "penalties": 5.0,
+            "direct_free_kicks": 3.5,
+            "corners": 1.8,
+            "playmaker": 3.5,
+            "offensive_focal_point": 4.5,
+        }
+        if player.position in {"MIDFIELDER", "FORWARD"}
+        else {
+            "penalties": 3.5,
+            "direct_free_kicks": 2.5,
+            "aerial_set_piece_target": 5.0,
+        }
+    )
+    role_bonus = sum(
+        weight
+        * level_factor.get(
+            str(responsibilities.get(key, "none")).casefold(),
+            0.0,
+        )
+        for key, weight in responsibility_weights.items()
+    )
+    sample_minutes = numeric(profile.get("sample_minutes"))
+    sample_factor = min(1.0, sample_minutes / 1_200.0)
+    proven_seasons = max(
+        player.proven_seasons,
+        int(numeric(profile.get("proven_seasons"))),
+    )
+    repeatability = min(1.0, 0.35 + 0.22 * proven_seasons)
+    goals_per_90 = numeric(profile.get("goals_per_90"))
+    contributions_per_90 = numeric(
+        profile.get("contributions_per_90")
+    )
+    if player.position in {"MIDFIELDER", "FORWARD"}:
+        production_bonus = min(
+            9.0,
+            18.0 * max(0.0, contributions_per_90 - 0.12)
+            + 8.0 * max(0.0, goals_per_90 - 0.08),
+        )
+        maximum = 16.0
+    else:
+        production_bonus = min(
+            4.5,
+            24.0 * max(0.0, goals_per_90 - 0.035),
+        )
+        maximum = 8.0
+    readiness = (
+        player.components["minutes"]
+        + player.components["role"]
+        + player.components["fitness"]
+    ) / 300.0
+    continuity = str(
+        player.role_context.get("continuity", "unknown")
+    ).casefold()
+    club_changed = player.form_summary.get("club_changed") is True
+    portability = (
+        0.45
+        if club_changed and continuity == "unknown"
+        else 0.35
+        if continuity == "reduced"
+        else 1.0
+    )
+    uncertainty = (
+        1.0
+        - 0.003 * player.risks["rotation"]
+        - 0.002 * player.risks["unknown_role"]
+        - 0.0015 * player.risks["injury"]
+    )
+    return round(
+        min(
+            maximum,
+            max(
+                0.0,
+                (
+                    role_bonus
+                    + production_bonus * sample_factor * repeatability
+                )
+                * readiness
+                * portability
+                * max(0.45, uncertainty),
+            ),
+        ),
+        3,
+    )
+
+
+def scorer_leverage_candidate_ids(
+    players: Iterable[Player],
+) -> frozenset[str]:
+    return frozenset(
+        player.player_id
+        for player in players
+        if starting_scorer_leverage(player) >= 4.0
     )
 
 
@@ -1707,6 +1893,16 @@ POSITION_CONCENTRATION_WEIGHTS = {
     "MIDFIELDER": 600.0,
     "FORWARD": 600.0,
 }
+DEFENSIVE_TOTAL_BUDGET_SOFT_CAPS = {
+    "low": 0.28,
+    "normal": 0.32,
+    "active": 0.36,
+}
+DEFENSIVE_OVERSPEND_WEIGHTS = {
+    "low": 500.0,
+    "normal": 260.0,
+    "active": 120.0,
+}
 PACKAGE_STARTER_LIMITS = {
     "MIDFIELDER": 4,
     "FORWARD": 3,
@@ -1806,9 +2002,20 @@ def squad_architecture_metrics(
 ) -> dict[str, Any]:
     """Value starters at full use and reserves at expected positional use."""
 
+    scorer_leverage = {
+        player.player_id: starting_scorer_leverage(player)
+        for player in squad.players
+    }
+    lineup_scores = {
+        player.player_id: (
+            raw_scores[player.player_id]
+            + scorer_leverage[player.player_id]
+        )
+        for player in squad.players
+    }
     audit = reliable_core_audit(
         squad,
-        dict(raw_scores),
+        lineup_scores,
         min_reliable_anchors,
         min_attacking_anchors,
         min_core_budget_share,
@@ -1875,7 +2082,10 @@ def squad_architecture_metrics(
     player_contributions: dict[str, float] = {}
     for player in squad.players:
         player_contributions[player.player_id] = (
-            raw_scores[player.player_id]
+            (
+                raw_scores[player.player_id]
+                + scorer_leverage[player.player_id]
+            )
             * player_usage_weights[player.player_id]
         )
     expected_contribution = sum(player_contributions.values())
@@ -1926,6 +2136,44 @@ def squad_architecture_metrics(
         0,
         premium_starter_target - len(premium_starters),
     )
+    defender_spend = sum(
+        player.cost
+        for player in squad.players
+        if player.position == "DEFENDER"
+    )
+    defender_spend_share = defender_spend / max(squad.cost, 1)
+    defender_scorer_credit = min(
+        0.02,
+        sum(
+            scorer_leverage[player.player_id]
+            for player in squad.players
+            if (
+                player.position == "DEFENDER"
+                and player.player_id in core_ids
+            )
+        )
+        / 400.0,
+    )
+    defender_spend_soft_cap = (
+        DEFENSIVE_TOTAL_BUDGET_SOFT_CAPS.get(
+            maintenance,
+            DEFENSIVE_TOTAL_BUDGET_SOFT_CAPS["normal"],
+        )
+        + defender_scorer_credit
+    )
+    offensive_scorer_opportunity_available = bool(premium_starter_ids)
+    defender_overspend = (
+        max(0.0, defender_spend_share - defender_spend_soft_cap)
+        if offensive_scorer_opportunity_available
+        else 0.0
+    )
+    defensive_overspend_adjustment = (
+        -DEFENSIVE_OVERSPEND_WEIGHTS.get(
+            maintenance,
+            DEFENSIVE_OVERSPEND_WEIGHTS["normal"],
+        )
+        * defender_overspend
+    )
     forward_budget = position_core_budget["FORWARD"]
     midfield_budget = position_core_budget["MIDFIELDER"]
     return {
@@ -1958,6 +2206,24 @@ def squad_architecture_metrics(
             len(premium_starters) >= premium_starter_target
         ),
         "premium_starter_adjustment": premium_starter_adjustment,
+        "scorer_leverage": scorer_leverage,
+        "starting_scorer_leverage": round(
+            sum(
+                scorer_leverage[player_id]
+                for player_id in core_ids
+            ),
+            3,
+        ),
+        "defender_spend": defender_spend,
+        "defender_spend_share": defender_spend_share,
+        "defender_spend_soft_cap": defender_spend_soft_cap,
+        "defender_scorer_credit": defender_scorer_credit,
+        "offensive_scorer_opportunity_available": (
+            offensive_scorer_opportunity_available
+        ),
+        "defensive_overspend_adjustment": (
+            defensive_overspend_adjustment
+        ),
         "qualified_potential_candidate_ids": sorted(
             qualified_potential_ids
         ),
@@ -1996,6 +2262,7 @@ def squad_architecture_metrics(
             + position_concentration_adjustment
             + premium_starter_adjustment
             + potential_core_adjustment
+            + defensive_overspend_adjustment
         ),
         "player_contributions": player_contributions,
         "player_usage_weights": player_usage_weights,
@@ -2376,7 +2643,11 @@ def optimize_joint_squad_architecture(
     # player plus a compact three-player balancing package. Keep the package
     # pool deliberately narrow so this broader search remains fast.
     compact_by_position: dict[str, list[Player]] = {}
-    focus_ids = premium_starter_ids.union(qualified_potential_ids)
+    focus_ids = (
+        premium_starter_ids
+        .union(qualified_potential_ids)
+        .union(scorer_leverage_candidate_ids(candidates))
+    )
     for position in positions:
         position_players = candidate_by_position[position]
         compact_ids = {
@@ -3004,7 +3275,7 @@ def optimize_joint_squad_architecture(
     )
     current.architecture_diagnostics = {
         "model_version": (
-            "joint-xi-bench-v6-role-potential-premium-restarts"
+            "joint-xi-bench-v7-scorer-defense-opportunity"
         ),
         "expected_contribution": round(
             current_metrics["expected_contribution"],
@@ -3098,6 +3369,26 @@ def optimize_joint_squad_architecture(
         ],
         "potential_core_adjustment": current_metrics[
             "potential_core_adjustment"
+        ],
+        "scorer_leverage": current_metrics["scorer_leverage"],
+        "starting_scorer_leverage": current_metrics[
+            "starting_scorer_leverage"
+        ],
+        "defender_spend": current_metrics["defender_spend"],
+        "defender_spend_share": current_metrics[
+            "defender_spend_share"
+        ],
+        "defender_spend_soft_cap": current_metrics[
+            "defender_spend_soft_cap"
+        ],
+        "defender_scorer_credit": current_metrics[
+            "defender_scorer_credit"
+        ],
+        "offensive_scorer_opportunity_available": current_metrics[
+            "offensive_scorer_opportunity_available"
+        ],
+        "defensive_overspend_adjustment": current_metrics[
+            "defensive_overspend_adjustment"
         ],
         "squad_average_age": current_metrics["squad_average_age"],
         "starting_xi_average_age": current_metrics[
@@ -4105,6 +4396,7 @@ def optimizer_cache_key(
                     if player.position == "GOALKEEPER"
                     else None
                 ),
+                "scorer_leverage": starting_scorer_leverage(player),
             }
             for player in sorted(players, key=lambda player: player.player_id)
         ],
@@ -4897,6 +5189,7 @@ def strategic_optimization_pool(
         )
     }
     retained_ids.update(qualified_potential_player_ids(players))
+    retained_ids.update(scorer_leverage_candidate_ids(players))
     for position, slot_count in slots.items():
         if position == "GOALKEEPER":
             continue
@@ -5954,6 +6247,9 @@ def output_payload(
                 offensive_premium_anchor_strength(player),
                 3,
             ),
+            "starting_scorer_leverage": starting_scorer_leverage(
+                player
+            ),
             "anchor_basis": player.anchor_basis,
             "anchor_reason": player.anchor_reason,
             "proven_seasons": player.proven_seasons,
@@ -5972,6 +6268,14 @@ def output_payload(
             payload["history_summary"] = dict(player.history_summary)
         if player.role_context:
             payload["role_context"] = dict(player.role_context)
+        if player.scorer_profile:
+            payload["scorer_profile"] = dict(player.scorer_profile)
+        if player.role_research:
+            payload["role_research"] = dict(player.role_research)
+        if player.manual_news_clearance:
+            payload["manual_news_clearance"] = dict(
+                player.manual_news_clearance
+            )
         if selection_role is not None:
             payload["selection_role"] = selection_role
         architecture_contributions = squad.architecture_diagnostics.get(
@@ -6500,6 +6804,18 @@ def output_payload(
             warnings.append(
                 "No quality-qualified player from the highest offensive "
                 "price tier reached the starting eleven."
+            )
+        if float(
+            architecture_audit.get(
+                "defensive_overspend_adjustment",
+                0.0,
+            )
+        ) < 0:
+            warnings.append(
+                "The defense exceeds its soft opportunity-cost budget "
+                "while a quality-qualified attacking scorer is available; "
+                "recheck a multi-player reallocation toward midfield or "
+                "attack."
             )
         if not architecture_audit.get(
             "qualified_potential_core_minimum_met",
@@ -7704,14 +8020,41 @@ def main() -> int:
         )
         hard_exclusions.extend(news_exclusions)
     if args.require_news_coverage:
-        provider_mapped_ids = set(
-            news_audit.get("provider_mapped_player_ids", [])
+        coverage_cleared_ids = set(
+            news_audit.get(
+                "coverage_cleared_player_ids",
+                news_audit.get("provider_mapped_player_ids", []),
+            )
         )
         players = [
             player
             for player in players
-            if player.player_id in provider_mapped_ids
+            if player.player_id in coverage_cleared_ids
         ]
+    unresolved_role_research = sorted(
+        player.player_id
+        for player in players
+        if (
+            player.role_research.get("required") is True
+            and str(player.role_research.get("priority", "")).casefold()
+            == "high"
+            and player.benchmark
+        )
+    )
+    if (
+        unresolved_role_research
+        and not args.shortlist_only
+        and not args.allow_unannotated
+    ):
+        print(
+            "Role research stopped optimization: proven attacking scorers "
+            "changed clubs without current evidence for their starting "
+            "probability and responsibilities: "
+            f"{unresolved_role_research}. Complete the central role evidence "
+            "before issuing a final recommendation.",
+            file=sys.stderr,
+        )
+        return 2
     raw_scores = score_players(players, args.profile, args.maintenance)
     if args.shortlist_only:
         payload = shortlist_payload(
@@ -8194,15 +8537,19 @@ def main() -> int:
         )
         return 2
     if args.require_news_coverage:
-        provider_mapped = set(
-            news_audit.get("provider_mapped_player_ids", [])
+        coverage_cleared = set(
+            news_audit.get(
+                "coverage_cleared_player_ids",
+                news_audit.get("provider_mapped_player_ids", []),
+            )
         )
-        missing_news_coverage = sorted(selected_ids - provider_mapped)
+        missing_news_coverage = sorted(selected_ids - coverage_cleared)
         if missing_news_coverage:
             print(
                 "News hardening stopped optimization: selected players lack a "
-                f"verified provider mapping: {missing_news_coverage}. Research "
-                "them manually or extend the central mapping before changing Chrome.",
+                "verified provider mapping or a fresh complete manual clearance: "
+                f"{missing_news_coverage}. Research them manually or extend "
+                "the central mapping before changing Chrome.",
                 file=sys.stderr,
             )
             return 2

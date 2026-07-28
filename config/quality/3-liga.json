@@ -12,5 +12,65 @@
   "minimum_anchors": 20,
   "minimum_attacking_anchors": 15,
   "minimum_goalkeeper_blocks": 6,
-  "minimum_history_resolved_percent": 75
+  "minimum_history_resolved_percent": 75,
+  "role_evidence": {
+    "pl-k00100600": {
+      "continuity": "confirmed",
+      "confidence": "high",
+      "expected_start_probability": 90,
+      "team_quality_delta": 0,
+      "responsibilities": {
+        "offensive_focal_point": "primary"
+      },
+      "note": "Schroers bleibt bei Aachen als zentraler Offensivspieler eingeplant; das öffentlich erkennbare Wechselinteresse bleibt separat als Transferunsicherheit bestehen.",
+      "evidence": [
+        {
+          "claim": "Aachen verpflichtet Schroers für drei Jahre; Trainer und Sportdirektor bezeichnen ihn nach seiner Scorer-Saison als enorm wichtigen Offensivspieler.",
+          "source_url": "https://www.kicker.de/starke-entwicklung-genommen-aachen-verpflichtet-schroers-fest-1207836/artikel",
+          "checked_at": "2026-07-28"
+        },
+        {
+          "claim": "Das aktuelle Kicker-Profil führt Schroers weiterhin bei Alemannia Aachen und weist 30 Scorerpunkte in 32 Drittligaspielen aus.",
+          "source_url": "https://www.kicker.de/mika-schroers/spieler",
+          "checked_at": "2026-07-28"
+        }
+      ]
+    }
+  },
+  "manual_news_clearance": {
+    "pl-k00100600": {
+      "checked_at": "2026-07-28T12:00:00Z",
+      "confidence": "medium",
+      "coverage": [
+        "availability",
+        "fitness",
+        "role",
+        "transfer"
+      ],
+      "risk_floors": {
+        "transfer": 40,
+        "injury": 5,
+        "rotation": 8
+      },
+      "fitness_cap": 92,
+      "note": "Zeitlich begrenzter manueller Fallback, bis API-Sports den aktuellen Aachener Kader vollständig abbildet. Das bekannte Wechselrisiko bleibt mit 40/100 sichtbar.",
+      "evidence": [
+        {
+          "claim": "Aachen hat Schroers mit einem Dreijahresvertrag fest verpflichtet und beschreibt ihn als zentralen Offensivspieler.",
+          "source_url": "https://www.kicker.de/starke-entwicklung-genommen-aachen-verpflichtet-schroers-fest-1207836/artikel",
+          "checked_at": "2026-07-28"
+        },
+        {
+          "claim": "Schroers äußerte den Wunsch, möglichst hoch zu spielen; deshalb bleibt ein relevantes, aber nicht ausschließendes Transferrisiko bestehen.",
+          "source_url": "https://www.kicker.de/abgang-im-sommer-schroers-moechte-so-hoch-spielen-wie-es-geht-4000000073108/transfermeldung",
+          "checked_at": "2026-07-28"
+        },
+        {
+          "claim": "Das aktuelle Kicker-Spielerprofil führt Schroers weiterhin im Aachener Kader.",
+          "source_url": "https://www.kicker.de/mika-schroers/spieler",
+          "checked_at": "2026-07-28"
+        }
+      ]
+    }
+  }
 }

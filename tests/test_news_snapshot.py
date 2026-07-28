@@ -190,6 +190,34 @@ class ConsensusTests(unittest.TestCase):
         self.assertTrue(consensus["exclude"])
         self.assertEqual(1, len(consensus["conflicts"]))
 
+    def test_later_confirmed_inbound_transfer_supersedes_loan_return(self) -> None:
+        consensus = refresh.consensus_for(
+            [
+                refresh.signal(
+                    kind="transfer_confirmed",
+                    status="confirmed",
+                    severity=95,
+                    provider="api_sports",
+                    observed_at="2026-07-28T08:00:00Z",
+                    effective_from="2026-06-29",
+                    availability_impact="out",
+                ),
+                refresh.signal(
+                    kind="transfer_confirmed",
+                    status="confirmed",
+                    severity=10,
+                    provider="api_sports",
+                    observed_at="2026-07-28T08:00:00Z",
+                    effective_from="2026-06-30",
+                    availability_impact="in",
+                ),
+            ]
+        )
+
+        self.assertFalse(consensus["exclude"])
+        self.assertEqual(10, consensus["transfer"])
+        self.assertEqual([], consensus["conflicts"])
+
     def test_duplicate_provider_player_mapping_is_rejected(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "maps to both"):
             refresh.provider_id_map(

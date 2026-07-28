@@ -31,6 +31,19 @@ Ein konfiguriertes zentrales News-Snapshot wird anschließend konservativ darüb
       "proven_seasons": 4,
       "anchor_reason": "Mehrjährig bestätigte Leistung, feste Rolle und aktuell hohe Einsatzwahrscheinlichkeit.",
       "benchmark": true,
+      "provider_mapping_status": "verified",
+      "scorer_profile": {
+        "goals_per_90": 0.28,
+        "assists_per_90": 0.22,
+        "contributions_per_90": 0.50,
+        "sample_minutes": 5400,
+        "proven_seasons": 3
+      },
+      "role_research": {
+        "required": false,
+        "priority": "none",
+        "reason": ""
+      },
       "evidence": [
         {
           "claim": "Feste Rolle und Standards in der aktuellen Saisonvorbereitung.",
@@ -83,6 +96,9 @@ Teilannotationen dürfen als vorläufige Arbeitsnotiz in einem Recherche- oder S
 - Das Feld `note` für eine kurze sportliche Zusammenfassung nutzen. Quellen gehören strukturiert in `evidence`; keine langen Zitate speichern.
 - Spieler mit bestätigtem Abgang, Langzeitverletzung oder fehlender Spielberechtigung mit `exclude: true` ausschließen.
 - Jeden vom Nutzer genannten Spieler vollständig und mit `benchmark: true` annotieren. Ist er nicht auswählbar, ihn mit `exclude: true` und passender `evidence` dokumentieren, statt ihn wegzulassen.
+- `provider_mapping_status: missing` ist kein sportlicher Ausschluss. Der Spieler bleibt im Qualitäts- und Vergleichspool; eine Endauswahl erfordert eine frische `manual_news_clearance` mit den vier Abdeckungen `availability`, `fitness`, `role` und `transfer` oder eine nachgezogene verifizierte Provider-Zuordnung.
+- `scorer_profile` führt ligagewichtete Tore und Vorlagen pro 90 Minuten, Stichprobenminuten, bestätigte Spielzeiten und die aktuell belegten Verantwortungen. Daraus darf nur in Verbindung mit Einsatzreife, Rolle und Wiederholbarkeit der begrenzte Startelf-Scorerhebel entstehen.
+- `role_research.required: true` verwenden, wenn ein mehrjährig bestätigter offensiver Scorer nach Vereinswechsel noch keine belastbar belegte Startwahrscheinlichkeit und aktuelle Rolle besitzt. Hochprioritäre offene Fälle blockieren die finale Empfehlung, bleiben aber im Recherchepool sichtbar.
 
 ## Mindestabdeckung
 

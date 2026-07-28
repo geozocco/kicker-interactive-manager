@@ -200,6 +200,66 @@ class BenchmarkResilienceTests(unittest.TestCase):
             self.assertEqual(4, len(selected))
 
 
+class ManualCoverageTests(unittest.TestCase):
+    def test_complete_recent_manual_clearance_is_valid(self) -> None:
+        clearance = quality.manual_news_clearance_profile(
+            {
+                "checked_at": "2026-07-28T10:00:00Z",
+                "confidence": "medium",
+                "coverage": [
+                    "availability",
+                    "fitness",
+                    "role",
+                    "transfer",
+                ],
+                "evidence": [
+                    {
+                        "claim": "Current club role checked",
+                        "source_url": "https://example.com/role",
+                        "checked_at": "2026-07-28",
+                    },
+                    {
+                        "claim": "Current transfer status checked",
+                        "source_url": "https://example.com/transfer",
+                        "checked_at": "2026-07-28",
+                    },
+                ],
+            },
+            generated_at="2026-07-28T12:00:00Z",
+        )
+
+        self.assertTrue(clearance["valid"])
+
+    def test_manual_clearance_expires_after_one_week(self) -> None:
+        clearance = quality.manual_news_clearance_profile(
+            {
+                "checked_at": "2026-07-20T10:00:00Z",
+                "confidence": "high",
+                "coverage": [
+                    "availability",
+                    "fitness",
+                    "role",
+                    "transfer",
+                ],
+                "evidence": [
+                    {
+                        "claim": "Current club role checked",
+                        "source_url": "https://example.com/role",
+                        "checked_at": "2026-07-20",
+                    },
+                    {
+                        "claim": "Current transfer status checked",
+                        "source_url": "https://example.com/transfer",
+                        "checked_at": "2026-07-20",
+                    },
+                ],
+            },
+            generated_at="2026-07-28T12:00:00Z",
+        )
+
+        self.assertFalse(clearance["valid"])
+
+
 def market_player(*, points: float = 100) -> dict:
     return {
         "id": "p1",
@@ -1142,6 +1202,71 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             {player["club"] for player, _, _ in selected},
         )
 
+    def test_unmapped_high_value_outfielder_remains_in_candidate_pool(
+        self,
+    ) -> None:
+        market_players = [
+            {
+                "id": "mapped",
+                "name": "Mapped Forward",
+                "club": "Club A",
+                "position": "FORWARD",
+                "market_value": 600_000,
+                "points": 180,
+                "average_grade": 3.1,
+                "available": True,
+            },
+            {
+                "id": "unmapped",
+                "name": "Unmapped Top Scorer",
+                "club": "Club B",
+                "position": "FORWARD",
+                "market_value": 700_000,
+                "points": 320,
+                "average_grade": 2.7,
+                "available": True,
+            },
+        ]
+        selected = quality.select_candidates(
+            {"players": market_players},
+            {
+                "players": {
+                    "api_sports:1": {
+                        "name": "Mapped Forward",
+                        "club": "Club A",
+                        "mapping": {
+                            "confidence": "verified",
+                            "api_sports_player_id": 1,
+                        },
+                    }
+                }
+            },
+            {
+                "players": {
+                    player["id"]: {
+                        "mapping": {"status": "verified"},
+                        "career": {
+                            "confirmed_score": 80,
+                            "proven_seasons": 2,
+                        },
+                    }
+                    for player in market_players
+                }
+            },
+            {
+                "GOALKEEPER": 0,
+                "DEFENDER": 0,
+                "MIDFIELDER": 0,
+                "FORWARD": 2,
+            },
+        )
+
+        by_id = {player["id"]: news for player, _, news in selected}
+        self.assertIn("unmapped", by_id)
+        self.assertIsNone(
+            by_id["unmapped"]["mapping"]["api_sports_player_id"]
+        )
+
     def test_goalkeeper_hierarchy_uses_club_gap_and_price_share(self) -> None:
         market = {
             "players": [
@@ -1496,6 +1621,7 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
         self.assertTrue(stable["reliable_anchor"])
         self.assertFalse(transferred["reliable_anchor"])
         self.assertTrue(transferred["form_summary"]["club_changed"])
+        self.assertTrue(transferred["role_research"]["required"])
         self.assertGreater(
             transferred["risks"]["unknown_role"],
             stable["risks"]["unknown_role"],

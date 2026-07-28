@@ -789,10 +789,41 @@ def sportsmonks_signals(
 
 def consensus_for(signals: list[dict[str, Any]]) -> dict[str, Any]:
     active = [item for item in signals if item["status"] != "cleared"]
+    confirmed_transfers = [
+        item
+        for item in active
+        if (
+            item["kind"] == "transfer_confirmed"
+            and item["status"] == "confirmed"
+        )
+    ]
+    latest_transfer_date = max(
+        (
+            str(item.get("effective_from", "")).strip()
+            for item in confirmed_transfers
+            if str(item.get("effective_from", "")).strip()
+        ),
+        default="",
+    )
+    current_confirmed_transfers = (
+        [
+            item
+            for item in confirmed_transfers
+            if str(item.get("effective_from", "")).strip()
+            == latest_transfer_date
+        ]
+        if latest_transfer_date
+        else confirmed_transfers
+    )
+    active_for_consensus = [
+        item
+        for item in active
+        if item["kind"] != "transfer_confirmed"
+    ] + current_confirmed_transfers
     injury = max(
         (
             item["severity"]
-            for item in active
+            for item in active_for_consensus
             if item["kind"] in {"injury", "suspension"}
         ),
         default=0,
@@ -800,13 +831,13 @@ def consensus_for(signals: list[dict[str, Any]]) -> dict[str, Any]:
     transfer = max(
         (
             item["severity"]
-            for item in active
+            for item in active_for_consensus
             if item["kind"] in {"transfer_confirmed", "transfer_rumour"}
         ),
         default=0,
     )
     provider_sets: dict[str, set[str]] = defaultdict(set)
-    for item in active:
+    for item in active_for_consensus:
         provider_sets[item["kind"]].add(item["source_provider"])
     corroborated = any(len(providers) >= 2 for providers in provider_sets.values())
     confirmed = any(item["status"] == "confirmed" for item in active)
@@ -821,7 +852,7 @@ def consensus_for(signals: list[dict[str, Any]]) -> dict[str, Any]:
         conflicts.append("providers disagree whether the player is currently available")
     transfer_impacts = {
         item.get("availability_impact")
-        for item in active
+        for item in current_confirmed_transfers
         if item["kind"] == "transfer_confirmed"
         and item.get("availability_impact")
         not in {None, "unknown", "unknown_destination"}
@@ -831,7 +862,7 @@ def consensus_for(signals: list[dict[str, Any]]) -> dict[str, Any]:
     confirmed_transfer_out = any(
         item["kind"] == "transfer_confirmed" and item["status"] == "confirmed"
         and item.get("availability_impact") == "out"
-        for item in active
+        for item in current_confirmed_transfers
     )
     return {
         "injury": injury,

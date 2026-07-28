@@ -54,7 +54,7 @@ from refresh_news_snapshot import (
 )
 
 
-MODEL_VERSION = "multi-season-v10-evidence-role-transfer"
+MODEL_VERSION = "multi-season-v11-scorer-role-coverage"
 PRESEASON_MODEL_VERSION = "preseason-readiness-v3-role-responsibilities"
 FORM_MODEL_VERSION = "recency-context-v4-evidence-role-transfer"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
@@ -69,6 +69,12 @@ ROLE_RESPONSIBILITIES = {
     "captain",
 }
 ROLE_LEVELS = {"none", "shared", "primary"}
+MANUAL_NEWS_CLEARANCE_CATEGORIES = {
+    "availability",
+    "fitness",
+    "role",
+    "transfer",
+}
 
 
 def utc_now() -> datetime:
@@ -420,8 +426,32 @@ def select_candidates(
     for player in market_players:
         match = match_news_player(player, by_name, by_surname)
         if match is None:
-            continue
-        news_id, news_player = match
+            if player["position"] == "GOALKEEPER":
+                # Goalkeeper selection depends on a complete, provider-backed
+                # club hierarchy. An unmapped keeper remains a block-level
+                # uncertainty rather than a safe standalone candidate.
+                continue
+            news_id = f"kicker-unmapped:{player['id']}"
+            news_player = {
+                "name": str(player["name"]),
+                "club": str(player["club"]),
+                "mapping": {
+                    "confidence": "none",
+                    "api_sports_player_id": None,
+                    "api_sports_team_id": None,
+                },
+                "consensus": {
+                    "transfer": 0,
+                    "injury": 0,
+                    "rotation": 0,
+                    "fitness_cap": 100,
+                    "confidence": "low",
+                    "exclude": False,
+                },
+                "signals": [],
+            }
+        else:
+            news_id, news_player = match
         history_player = history_payload["players"].get(
             str(player["id"]),
             {
@@ -447,6 +477,8 @@ def select_candidates(
         )
     selected: list[tuple[dict[str, Any], str, dict[str, Any]]] = []
     for position in POSITIONS:
+        if quotas[position] <= 0:
+            continue
         candidates = sorted(
             ranked[position],
             key=lambda item: (-item[0], int(item[1]["market_value"]), item[1]["id"]),
@@ -509,6 +541,29 @@ def select_candidates(
             and str(item[1]["id"]) not in diversified_ids
         ]
         diversified.extend(historically_proven)
+        included_ids = {str(item[1]["id"]) for item in diversified}
+        current_performance_references = [
+            item
+            for item in candidates
+            if (
+                (
+                    percentile(
+                        float(item[1].get("points", 0.0)),
+                        points_by_position[position],
+                    )
+                    >= 90
+                    or (
+                        0
+                        < float(item[1].get("average_grade", 0.0))
+                        <= 3.0
+                    )
+                )
+                and str(item[1]["id"]) not in included_ids
+            )
+        ]
+        # Top current Kicker performers are mandatory comparison references.
+        # This changes research coverage, never their numerical score.
+        diversified.extend(current_performance_references)
         selected.extend(
             (player, news_id, news_player)
             for _, player, news_id, news_player in diversified
@@ -882,6 +937,65 @@ def valid_role_evidence_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
             and str(item.get("checked_at", "")).strip()
         )
     ]
+
+
+def manual_news_clearance_profile(
+    payload: dict[str, Any] | None,
+    *,
+    generated_at: str,
+) -> dict[str, Any]:
+    """Validate a short-lived manual fallback for a missing provider mapping."""
+
+    value = payload if isinstance(payload, dict) else {}
+    evidence = valid_role_evidence_items(value)
+    categories = {
+        str(item).strip().casefold()
+        for item in value.get("coverage", [])
+        if str(item).strip()
+    }
+    try:
+        checked_at = datetime.fromisoformat(
+            str(value.get("checked_at", "")).replace("Z", "+00:00")
+        )
+        generated = datetime.fromisoformat(
+            generated_at.replace("Z", "+00:00")
+        )
+        age_hours = (
+            generated - checked_at
+        ).total_seconds() / 3600.0
+    except ValueError:
+        checked_at = None
+        age_hours = math.inf
+    valid = (
+        checked_at is not None
+        and 0 <= age_hours <= 168
+        and categories >= MANUAL_NEWS_CLEARANCE_CATEGORIES
+        and len(evidence) >= 2
+        and str(value.get("confidence", "")).casefold()
+        in {"medium", "high"}
+    )
+    return {
+        "model_version": "manual-news-clearance-v1",
+        "valid": valid,
+        "checked_at": (
+            checked_at.isoformat().replace("+00:00", "Z")
+            if checked_at is not None
+            else None
+        ),
+        "age_hours": round(age_hours, 2) if math.isfinite(age_hours) else None,
+        "coverage": sorted(categories),
+        "confidence": str(value.get("confidence", "none")).casefold(),
+        "risk_floors": {
+            key: clamp(
+                (value.get("risk_floors", {}) or {}).get(key),
+                0,
+            )
+            for key in ("transfer", "injury", "rotation")
+        },
+        "fitness_cap": clamp(value.get("fitness_cap"), 100),
+        "evidence": evidence,
+        "note": str(value.get("note", "")).strip(),
+    }
 
 
 def confirmed_inbound_transfer(news_player: dict[str, Any]) -> bool:
@@ -2062,6 +2176,7 @@ def build_annotation(
     kicker_history_player: dict[str, Any] | None = None,
     talent_evidence: dict[str, Any] | None = None,
     role_evidence: dict[str, Any] | None = None,
+    manual_news_clearance: dict[str, Any] | None = None,
     preseason_player: dict[str, Any] | None = None,
     *,
     competition: str,
@@ -2086,9 +2201,9 @@ def build_annotation(
     )
     career_appearances = sum(int(stats["appearances"]) for stats in histories)
     career_minutes = sum(int(stats["minutes"]) for stats in histories)
-    contributions = sum(
-        int(stats["goals"]) + int(stats["assists"]) for stats in histories
-    )
+    career_goals = sum(int(stats["goals"]) for stats in histories)
+    career_assists = sum(int(stats["assists"]) for stats in histories)
+    contributions = career_goals + career_assists
     ratings = [
         float(stats["rating"])
         for stats in histories
@@ -2358,6 +2473,100 @@ def build_annotation(
         club_changed=form_summary["club_changed"],
     )
     role_adjustments = role_context["adjustments"]
+    transfermarkt_scorer_metrics = transfermarkt_role_metrics(
+        history_player
+    )
+    api_goals_per_90 = 90.0 * career_goals / max(1.0, career_minutes)
+    api_assists_per_90 = 90.0 * career_assists / max(
+        1.0,
+        career_minutes,
+    )
+    scorer_profile = {
+        "model_version": "repeatable-scorer-v1",
+        "goals_per_90": round(
+            max(
+                api_goals_per_90,
+                transfermarkt_scorer_metrics["goals_per_90"],
+            ),
+            3,
+        ),
+        "assists_per_90": round(
+            max(
+                api_assists_per_90,
+                transfermarkt_scorer_metrics["assists_per_90"],
+            ),
+            3,
+        ),
+        "contributions_per_90": round(
+            max(
+                api_goals_per_90 + api_assists_per_90,
+                transfermarkt_scorer_metrics[
+                    "contributions_per_90"
+                ],
+            ),
+            3,
+        ),
+        "sample_minutes": round(
+            max(
+                float(career_minutes),
+                transfermarkt_scorer_metrics["minutes"],
+            ),
+            1,
+        ),
+        "proven_seasons": int(history_proven_seasons),
+        "responsibilities": dict(role_context["responsibilities"]),
+    }
+    repeatable_attacking_scorer = (
+        position in {"MIDFIELDER", "FORWARD"}
+        and history_proven_seasons >= 3
+        and confirmed >= 72
+        and (
+            scorer_profile["contributions_per_90"] >= 0.30
+            or points_pct >= 88
+        )
+    )
+    current_role_is_resolved = (
+        role_context["continuity"] in {"confirmed", "expanded"}
+        and bool(role_context["evidence"])
+        and float(role_context["expected_start_probability"]) >= 55
+    )
+    role_research_required = (
+        form_summary["club_changed"] is True
+        and repeatable_attacking_scorer
+        and not current_role_is_resolved
+    )
+    role_research = {
+        "model_version": "premium-transfer-role-gate-v1",
+        "required": role_research_required,
+        "priority": "high" if role_research_required else "none",
+        "reason": (
+            "A proven attacking scorer changed clubs, but the current "
+            "starting probability and responsibilities are not evidenced."
+            if role_research_required
+            else ""
+        ),
+    }
+    manual_clearance = manual_news_clearance_profile(
+        manual_news_clearance,
+        generated_at=generated_at,
+    )
+    if manual_clearance["valid"]:
+        transfer_risk = max(
+            transfer_risk,
+            float(manual_clearance["risk_floors"]["transfer"]),
+        )
+        injury_risk = max(
+            injury_risk,
+            float(manual_clearance["risk_floors"]["injury"]),
+        )
+        rotation_risk = max(
+            rotation_risk,
+            float(manual_clearance["risk_floors"]["rotation"]),
+        )
+        fitness = min(
+            fitness,
+            float(manual_clearance["fitness_cap"]),
+        )
     minutes = max(
         minutes,
         float(role_adjustments["minutes_floor"]),
@@ -2412,7 +2621,9 @@ def build_annotation(
         and injury_risk < 45
         and float(form_summary["context_transfer_factor"]) >= 0.75
     )
-    provider_id = int(news_player["mapping"]["api_sports_player_id"])
+    provider_id = optional_int(
+        news_player.get("mapping", {}).get("api_sports_player_id")
+    )
     evidence = [
         {
             "claim": "Aktueller Kicker-Marktwert und Vorjahresdaten",
@@ -2425,14 +2636,6 @@ def build_annotation(
             "checked_at": generated_at,
         },
         {
-            "claim": "Ergänzende mehrjährige Einsatz-, Bewertungs- und Scorerhistorie",
-            "source_url": (
-                "https://v3.football.api-sports.io/players"
-                f"?id={provider_id}"
-            ),
-            "checked_at": generated_at,
-        },
-        {
             "claim": "Aktuelle Verletzungs-, Transfer- und Rollenprüfung",
             "source_url": (
                 "https://geozocco.github.io/kicker-interactive-manager/"
@@ -2441,6 +2644,22 @@ def build_annotation(
             "checked_at": generated_at,
         },
     ]
+    if provider_id is not None:
+        evidence.insert(
+            1,
+            {
+                "claim": (
+                    "Ergänzende mehrjährige Einsatz-, Bewertungs- und "
+                    "Scorerhistorie"
+                ),
+                "source_url": (
+                    "https://v3.football.api-sports.io/players"
+                    f"?id={provider_id}"
+                ),
+                "checked_at": generated_at,
+            },
+        )
+    evidence.extend(manual_clearance["evidence"])
     profile_url = str(history_mapping.get("profile_url", ""))
     if history_confidence > 0 and profile_url.startswith("https://"):
         evidence.insert(
@@ -2593,6 +2812,9 @@ def build_annotation(
         ),
         "evidence": evidence,
         "provider_news_id": news_id,
+        "provider_mapping_status": (
+            "verified" if provider_id is not None else "missing"
+        ),
         "api_sports_history": histories,
         "api_sports_role_metrics": {
             "latest_event_score": round(latest_event_score, 2),
@@ -2601,6 +2823,9 @@ def build_annotation(
             "rating_weight_in_api_confirmation": 0.08,
         },
         "role_context": role_context,
+        "scorer_profile": scorer_profile,
+        "role_research": role_research,
+        "manual_news_clearance": manual_clearance,
         "kicker_trend": trend_summary,
         "form_summary": form_summary,
         "history_summary": history_summary,
@@ -3031,7 +3256,15 @@ def generate_snapshot(
     annotations: dict[str, dict[str, Any]] = {}
     headers = {"x-apisports-key": token}
     history_seasons = [int(value) for value in config["history_seasons"]]
-    total_requests = len(candidates) * len(history_seasons)
+    total_requests = sum(
+        optional_int(
+            news_player.get("mapping", {}).get(
+                "api_sports_player_id"
+            )
+        )
+        is not None
+        for _, _, news_player in candidates
+    ) * len(history_seasons)
     completed = 0
     reused = 0
     fetched = 0
@@ -3041,7 +3274,11 @@ def generate_snapshot(
         .get("status", "")
     ).startswith("rate_limited")
     for market_player, news_id, news_player in candidates:
-        provider_id = int(news_player["mapping"]["api_sports_player_id"])
+        provider_id = optional_int(
+            news_player.get("mapping", {}).get(
+                "api_sports_player_id"
+            )
+        )
         cached_by_season = cached_api_histories(
             previous_quality_payload,
             competition=str(market_payload["competition"]),
@@ -3059,6 +3296,16 @@ def generate_snapshot(
         )
         histories: list[dict[str, Any]] = []
         for history_season in history_seasons:
+            if provider_id is None:
+                histories.append(
+                    empty_season_stats(
+                        history_season,
+                        optional_int(
+                            news_player.get("mapping", {}).get("age")
+                        ),
+                    )
+                )
+                continue
             cached = cached_by_season.get(history_season)
             if cached is not None:
                 histories.append(cached)
@@ -3142,6 +3389,10 @@ def generate_snapshot(
                 {},
             ),
             config.get("role_evidence", {}).get(
+                str(market_player["id"]),
+                {},
+            ),
+            config.get("manual_news_clearance", {}).get(
                 str(market_player["id"]),
                 {},
             ),
