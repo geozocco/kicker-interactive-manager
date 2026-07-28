@@ -1228,7 +1228,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--market")
     parser.add_argument("--previous-quality")
     parser.add_argument("--openai-role-model", default=DEFAULT_OPENAI_ROLE_MODEL)
-    parser.add_argument("--openai-role-max-players", type=int, default=48)
+    parser.add_argument("--openai-role-max-players", type=int, default=96)
     parser.add_argument("--openai-role-batch-size", type=int, default=4)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--previous")
@@ -1415,6 +1415,20 @@ def main() -> int:
                 "requests": 0,
                 "failures": [],
             }
+        role_research_audit["target_positions"] = {
+            position: sum(
+                target.get("position") == position for target in targets
+            )
+            for position in (
+                "GOALKEEPER",
+                "DEFENDER",
+                "MIDFIELDER",
+                "FORWARD",
+            )
+        }
+        role_research_audit["target_clubs"] = len(
+            {str(target.get("club", "")) for target in targets}
+        )
 
     try:
         payload = build_snapshot(

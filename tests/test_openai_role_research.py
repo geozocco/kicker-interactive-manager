@@ -150,6 +150,47 @@ class TargetSelectionTests(unittest.TestCase):
             {item["player_id"] for item in selected},
         )
 
+    def test_target_mix_reserves_two_goalkeepers_and_offense_per_club(
+        self,
+    ) -> None:
+        players = []
+        annotations = {}
+        for club in ("A", "B", "C"):
+            for index, position in enumerate(
+                (
+                    "GOALKEEPER",
+                    "GOALKEEPER",
+                    "DEFENDER",
+                    "MIDFIELDER",
+                    "FORWARD",
+                )
+            ):
+                player_id = f"{club}-{index}"
+                players.append(
+                    {
+                        "id": player_id,
+                        "name": player_id,
+                        "club": club,
+                        "position": position,
+                        "market_value": 900_000 - index * 100_000,
+                        "available": True,
+                    }
+                )
+                if position == "DEFENDER":
+                    annotations[player_id] = {"reliable_anchor": True}
+        selected = role.select_role_targets(
+            {"players": players},
+            {"annotations": annotations},
+            max_players=12,
+        )
+        selected_ids = {item["player_id"] for item in selected}
+        for club in ("A", "B", "C"):
+            self.assertTrue({f"{club}-0", f"{club}-1"} <= selected_ids)
+            self.assertTrue(
+                {f"{club}-3", f"{club}-4"} & selected_ids,
+                f"missing offensive coverage for club {club}",
+            )
+
 
 class GroundingTests(unittest.TestCase):
     def test_ungrounded_model_url_is_rejected(self) -> None:

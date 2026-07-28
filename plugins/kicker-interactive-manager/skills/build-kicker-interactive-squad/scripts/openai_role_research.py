@@ -109,9 +109,9 @@ def select_role_targets(
     previous_quality: dict[str, Any] | None,
     *,
     explicit_player_ids: Iterable[str] = (),
-    max_players: int = 48,
+    max_players: int = 96,
 ) -> list[dict[str, Any]]:
-    """Select a broad, deterministic set of high-value role research targets."""
+    """Select a broad, deterministic and position-balanced target set."""
 
     if max_players < 1:
         return []
@@ -126,28 +126,54 @@ def select_role_targets(
         annotations = {}
 
     priority: dict[str, float] = {}
+    protected_ids: set[str] = set()
 
     def promote(player_id: str, score: float) -> None:
         if player_id in by_id:
             priority[player_id] = max(priority.get(player_id, 0.0), score)
 
     for player_id in explicit_player_ids:
-        promote(str(player_id), 1_000.0)
+        normalized_id = str(player_id)
+        promote(normalized_id, 1_000.0)
+        protected_ids.add(normalized_id)
     for player_id, annotation in annotations.items():
         if not isinstance(annotation, dict):
             continue
         if annotation.get("role_research", {}).get("required"):
             promote(str(player_id), 950.0)
+            protected_ids.add(str(player_id))
         if annotation.get("benchmark"):
-            promote(str(player_id), 850.0)
+            promote(str(player_id), 900.0)
+            protected_ids.add(str(player_id))
+        if annotation.get("offensive_premium_anchor"):
+            promote(str(player_id), 825.0)
         if annotation.get("reliable_anchor"):
             promote(str(player_id), 780.0)
+        components = annotation.get("components", {})
+        talent_profile = (
+            annotation.get("history_summary", {}).get("talent_profile", {})
+            if isinstance(annotation.get("history_summary"), dict)
+            else {}
+        )
+        if (
+            isinstance(components, dict)
+            and isinstance(talent_profile, dict)
+            and optional_float(talent_profile.get("age")) is not None
+            and float(talent_profile["age"]) <= 23
+            and optional_float(components.get("upside")) is not None
+            and float(components["upside"]) >= 72
+            and optional_float(components.get("minutes")) is not None
+            and float(components["minutes"]) >= 55
+        ):
+            promote(str(player_id), 735.0)
 
     by_club_goalkeepers: dict[str, list[dict[str, Any]]] = {}
     for player in players:
         if player["position"] == "GOALKEEPER":
             by_club_goalkeepers.setdefault(str(player["club"]), []).append(player)
-    for club_players in by_club_goalkeepers.values():
+    goalkeeper_coverage_ids: list[str] = []
+    for club in sorted(by_club_goalkeepers):
+        club_players = by_club_goalkeepers[club]
         ranked = sorted(
             club_players,
             key=lambda player: (
@@ -157,12 +183,14 @@ def select_role_targets(
             ),
         )
         for rank, player in enumerate(ranked[:2]):
-            promote(str(player["id"]), 760.0 - 10.0 * rank)
+            player_id = str(player["id"])
+            goalkeeper_coverage_ids.append(player_id)
+            promote(player_id, 760.0 - 10.0 * rank)
 
     position_limits = {
-        "DEFENDER": 5,
-        "MIDFIELDER": 10,
-        "FORWARD": 10,
+        "DEFENDER": 12,
+        "MIDFIELDER": 18,
+        "FORWARD": 18,
     }
     for position, limit in position_limits.items():
         ranked = sorted(
@@ -176,7 +204,28 @@ def select_role_targets(
         for rank, player in enumerate(ranked[:limit]):
             promote(str(player["id"]), 700.0 - rank)
 
-    ordered_ids = sorted(
+    offensive_club_coverage_ids: list[str] = []
+    clubs = sorted({str(player["club"]) for player in players})
+    for club in clubs:
+        ranked = sorted(
+            (
+                player
+                for player in players
+                if str(player["club"]) == club
+                and player["position"] in {"MIDFIELDER", "FORWARD"}
+            ),
+            key=lambda player: (
+                -float(player["market_value"]),
+                -float(player.get("points", 0) or 0),
+                str(player["id"]),
+            ),
+        )
+        if ranked:
+            player_id = str(ranked[0]["id"])
+            offensive_club_coverage_ids.append(player_id)
+            promote(player_id, 725.0)
+
+    priority_order = sorted(
         priority,
         key=lambda player_id: (
             -priority[player_id],
@@ -185,6 +234,18 @@ def select_role_targets(
             player_id,
         ),
     )
+    protected_order = [
+        player_id for player_id in priority_order if player_id in protected_ids
+    ]
+    ordered_ids: list[str] = []
+    for player_id in (
+        protected_order
+        + goalkeeper_coverage_ids
+        + offensive_club_coverage_ids
+        + priority_order
+    ):
+        if player_id not in ordered_ids:
+            ordered_ids.append(player_id)
     return [
         {
             "player_id": player_id,

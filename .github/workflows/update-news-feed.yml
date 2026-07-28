@@ -63,6 +63,7 @@ jobs:
             --role-evidence-config config/quality/2-bundesliga.json \
             --market public/v1/market/2-bundesliga.json \
             --previous-quality https://geozocco.github.io/kicker-interactive-manager/v1/quality/2-bundesliga.json \
+            --openai-role-max-players 96 \
             --output public/v1/news/2-bundesliga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/news/2-bundesliga.json \
             --provider api_sports \
@@ -82,6 +83,7 @@ jobs:
             --role-evidence-config config/quality/3-liga.json \
             --market public/v1/market/3-liga.json \
             --previous-quality https://geozocco.github.io/kicker-interactive-manager/v1/quality/3-liga.json \
+            --openai-role-max-players 96 \
             --output public/v1/news/3-liga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/news/3-liga.json \
             --provider api_sports \
