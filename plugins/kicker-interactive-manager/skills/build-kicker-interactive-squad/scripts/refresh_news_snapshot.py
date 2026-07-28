@@ -1073,6 +1073,7 @@ def build_snapshot(
     ttl_hours: int,
     role_config: dict[str, Any] | None = None,
     researched_role_profiles: dict[str, dict[str, Any]] | None = None,
+    role_research_abstentions: dict[str, dict[str, Any]] | None = None,
     role_research_audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     observed_at = iso_now()
@@ -1204,11 +1205,13 @@ def build_snapshot(
         "providers": provider_audit,
         "players": players,
         "role_profiles": role_profiles,
+        "role_research_abstentions": role_research_abstentions or {},
         "role_research": role_research_audit or {
             "status": "not_configured",
             "targets": 0,
             "cache_hits": 0,
             "researched_profiles": 0,
+            "researched_abstentions": 0,
             "requests": 0,
             "failures": [],
         },
@@ -1300,11 +1303,13 @@ def main() -> int:
             previous_news = None
 
     researched_role_profiles: dict[str, dict[str, Any]] = {}
+    role_research_abstentions: dict[str, dict[str, Any]] = {}
     role_research_audit: dict[str, Any] = {
         "status": "not_configured",
         "targets": 0,
         "cache_hits": 0,
         "researched_profiles": 0,
+        "researched_abstentions": 0,
         "requests": 0,
         "failures": [],
     }
@@ -1344,13 +1349,22 @@ def main() -> int:
         )
         api_key = os.environ.get("OPENAI_API_KEY", "").strip()
         if api_key:
-            researched_role_profiles, role_research_audit = (
+            (
+                researched_role_profiles,
+                role_research_abstentions,
+                role_research_audit,
+            ) = (
                 research_role_profiles(
                     targets,
                     competition=str(config["competition"]),
                     season=str(config["season"]),
                     previous_profiles=(
                         previous_news.get("role_profiles", {})
+                        if isinstance(previous_news, dict)
+                        else {}
+                    ),
+                    previous_abstentions=(
+                        previous_news.get("role_research_abstentions", {})
                         if isinstance(previous_news, dict)
                         else {}
                     ),
@@ -1375,12 +1389,29 @@ def main() -> int:
                 and profile.get("fresh", False)
             }
             researched_role_profiles = reusable
+            role_research_abstentions = {
+                str(player_id): dict(record)
+                for player_id, record in (
+                    previous_news.get(
+                        "role_research_abstentions",
+                        {},
+                    ).items()
+                    if isinstance(previous_news, dict)
+                    and isinstance(
+                        previous_news.get("role_research_abstentions"),
+                        dict,
+                    )
+                    else []
+                )
+                if isinstance(record, dict)
+            }
             role_research_audit = {
                 "status": "not_configured",
                 "model": args.openai_role_model,
                 "targets": len(targets),
-                "cache_hits": len(reusable),
+                "cache_hits": len(reusable) + len(role_research_abstentions),
                 "researched_profiles": 0,
+                "researched_abstentions": 0,
                 "requests": 0,
                 "failures": [],
             }
@@ -1395,6 +1426,7 @@ def main() -> int:
             ttl_hours=args.ttl_hours,
             role_config=role_config,
             researched_role_profiles=researched_role_profiles,
+            role_research_abstentions=role_research_abstentions,
             role_research_audit=role_research_audit,
         )
     except RuntimeError as error:

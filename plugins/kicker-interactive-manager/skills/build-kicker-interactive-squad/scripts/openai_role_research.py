@@ -220,6 +220,60 @@ def reusable_profile(
     )
 
 
+def reusable_abstention(
+    record: Any,
+    *,
+    now: datetime,
+    model: str,
+) -> bool:
+    if not isinstance(record, dict):
+        return False
+    if record.get("model_version") != MODEL_VERSION:
+        return False
+    if record.get("research_model") != model:
+        return False
+    refresh_after = parsed_timestamp(record.get("refresh_after"))
+    expires_at = parsed_timestamp(record.get("expires_at"))
+    return bool(
+        refresh_after
+        and expires_at
+        and now < refresh_after
+        and now < expires_at
+        and record.get("status") == "no_grounded_signal"
+    )
+
+
+def abstention_record(
+    target: dict[str, Any],
+    *,
+    now: datetime,
+    model: str,
+) -> dict[str, Any]:
+    refresh_days = 3 if target["position"] == "GOALKEEPER" else 7
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {
+                "prompt": PROMPT_VERSION,
+                "model": model,
+                "target": target,
+                "status": "no_grounded_signal",
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    return {
+        "status": "no_grounded_signal",
+        "model_version": MODEL_VERSION,
+        "prompt_version": PROMPT_VERSION,
+        "research_model": model,
+        "research_fingerprint": fingerprint,
+        "checked_at": iso_timestamp(now),
+        "refresh_after": iso_timestamp(now + timedelta(days=refresh_days)),
+        "expires_at": iso_timestamp(now + timedelta(days=14)),
+    }
+
+
 def _schema() -> dict[str, Any]:
     responsibility_properties = {
         key: {
@@ -628,27 +682,43 @@ def research_role_profiles(
     competition: str,
     season: str,
     previous_profiles: dict[str, Any] | None,
+    previous_abstentions: dict[str, Any] | None = None,
     api_key: str,
     model: str = DEFAULT_MODEL,
     now: datetime | None = None,
     batch_size: int = 4,
     requester: Callable[..., dict[str, Any]] = request_openai,
-) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+) -> tuple[
+    dict[str, dict[str, Any]],
+    dict[str, dict[str, Any]],
+    dict[str, Any],
+]:
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     previous = previous_profiles if isinstance(previous_profiles, dict) else {}
+    previous_empty = (
+        previous_abstentions if isinstance(previous_abstentions, dict) else {}
+    )
     profiles: dict[str, dict[str, Any]] = {}
+    abstentions: dict[str, dict[str, Any]] = {}
     pending: list[dict[str, Any]] = []
     for target in targets:
         player_id = str(target["player_id"])
         cached = previous.get(player_id)
         if reusable_profile(cached, now=current, model=model):
             profiles[player_id] = dict(cached)
+        elif reusable_abstention(
+            previous_empty.get(player_id),
+            now=current,
+            model=model,
+        ):
+            abstentions[player_id] = dict(previous_empty[player_id])
         else:
             pending.append(target)
 
     failures: list[str] = []
     requests = 0
     researched = 0
+    researched_abstentions = 0
     for batch in chunks(pending, max(1, min(8, batch_size))):
         completed_ids: set[str] = set()
         try:
@@ -673,8 +743,18 @@ def research_role_profiles(
             }
             for target in batch:
                 player_id = str(target["player_id"])
+                raw = by_id.get(player_id)
+                if isinstance(raw, dict) and not raw.get("has_role_signal"):
+                    abstentions[player_id] = abstention_record(
+                        target,
+                        now=current,
+                        model=model,
+                    )
+                    completed_ids.add(player_id)
+                    researched_abstentions += 1
+                    continue
                 normalized = normalize_profile(
-                    by_id.get(player_id),
+                    raw,
                     target=target,
                     grounded_urls=grounded_urls,
                     now=current,
@@ -710,8 +790,24 @@ def research_role_profiles(
                 and current < expires_at
             ):
                 profiles[player_id] = dict(cached)
+                continue
+            cached_empty = previous_empty.get(player_id)
+            expires_at = (
+                parsed_timestamp(cached_empty.get("expires_at"))
+                if isinstance(cached_empty, dict)
+                else None
+            )
+            if (
+                isinstance(cached_empty, dict)
+                and cached_empty.get("model_version") == MODEL_VERSION
+                and cached_empty.get("research_model") == model
+                and cached_empty.get("status") == "no_grounded_signal"
+                and expires_at is not None
+                and current < expires_at
+            ):
+                abstentions[player_id] = dict(cached_empty)
 
-    return profiles, {
+    return profiles, abstentions, {
         "status": (
             "ok"
             if not failures
@@ -725,6 +821,7 @@ def research_role_profiles(
         "targets": len(targets),
         "cache_hits": len(targets) - len(pending),
         "researched_profiles": researched,
+        "researched_abstentions": researched_abstentions,
         "requests": requests,
         "failures": failures[:5],
     }

@@ -219,7 +219,7 @@ class ResearchCacheTests(unittest.TestCase):
             calls.append((args, kwargs))
             raise AssertionError("requester should not be called")
 
-        profiles, audit = role.research_role_profiles(
+        profiles, abstentions, audit = role.research_role_profiles(
             [target()],
             competition="2. Bundesliga",
             season="2026/27",
@@ -232,6 +232,7 @@ class ResearchCacheTests(unittest.TestCase):
         self.assertEqual([], calls)
         self.assertEqual(1, audit["cache_hits"])
         self.assertIn("p1", profiles)
+        self.assertEqual({}, abstentions)
 
     def test_changed_or_missing_profile_is_researched_and_grounded(self) -> None:
         captured = {}
@@ -241,7 +242,7 @@ class ResearchCacheTests(unittest.TestCase):
             captured["api_key"] = api_key
             return response_for([raw_profile()])
 
-        profiles, audit = role.research_role_profiles(
+        profiles, abstentions, audit = role.research_role_profiles(
             [target()],
             competition="2. Bundesliga",
             season="2026/27",
@@ -252,6 +253,7 @@ class ResearchCacheTests(unittest.TestCase):
             requester=requester,
         )
         self.assertIn("p1", profiles)
+        self.assertEqual({}, abstentions)
         self.assertEqual(1, audit["requests"])
         self.assertEqual(1, audit["researched_profiles"])
         self.assertEqual(
@@ -264,6 +266,49 @@ class ResearchCacheTests(unittest.TestCase):
             "secret-value",
             json.dumps(captured["payload"]),
         )
+
+    def test_no_signal_is_cached_without_inventing_a_profile(self) -> None:
+        no_signal = raw_profile()
+        no_signal["has_role_signal"] = False
+        no_signal["evidence"] = []
+        calls = []
+
+        def first_requester(payload, *, api_key):
+            calls.append(payload)
+            return response_for([no_signal])
+
+        profiles, abstentions, audit = role.research_role_profiles(
+            [target()],
+            competition="2. Bundesliga",
+            season="2026/27",
+            previous_profiles={},
+            api_key="secret-value",
+            model="gpt-5.6-luna",
+            now=NOW,
+            requester=first_requester,
+        )
+        self.assertEqual({}, profiles)
+        self.assertIn("p1", abstentions)
+        self.assertEqual(1, audit["researched_abstentions"])
+
+        def forbidden_requester(*args, **kwargs):
+            raise AssertionError("negative cache should prevent a new request")
+
+        profiles, reused, audit = role.research_role_profiles(
+            [target()],
+            competition="2. Bundesliga",
+            season="2026/27",
+            previous_profiles={},
+            previous_abstentions=abstentions,
+            api_key="secret-value",
+            model="gpt-5.6-luna",
+            now=NOW + timedelta(hours=1),
+            requester=forbidden_requester,
+        )
+        self.assertEqual({}, profiles)
+        self.assertIn("p1", reused)
+        self.assertEqual(1, audit["cache_hits"])
+        self.assertEqual(0, audit["requests"])
 
 
 if __name__ == "__main__":

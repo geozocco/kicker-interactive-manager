@@ -269,6 +269,41 @@ def validate_snapshot(
                 item.get("observed_at"),
                 "role_profile.evidence.observed_at",
             )
+    role_research_abstentions = payload.get(
+        "role_research_abstentions",
+        {},
+    )
+    if not isinstance(role_research_abstentions, dict):
+        raise NewsSnapshotError(
+            "news role_research_abstentions must be an object"
+        )
+    for player_id, record in role_research_abstentions.items():
+        if (
+            not str(player_id).strip()
+            or not isinstance(record, dict)
+            or record.get("status") != "no_grounded_signal"
+            or not str(record.get("model_version", "")).strip()
+            or not str(record.get("research_model", "")).strip()
+        ):
+            raise NewsSnapshotError(
+                f"invalid role-research abstention for {player_id!r}"
+            )
+        checked_at = parse_timestamp(
+            record.get("checked_at"),
+            "role_research_abstention.checked_at",
+        )
+        refresh_after = parse_timestamp(
+            record.get("refresh_after"),
+            "role_research_abstention.refresh_after",
+        )
+        abstention_expires_at = parse_timestamp(
+            record.get("expires_at"),
+            "role_research_abstention.expires_at",
+        )
+        if not checked_at < refresh_after < abstention_expires_at:
+            raise NewsSnapshotError(
+                f"invalid role-research abstention expiry for {player_id!r}"
+            )
     role_research = payload.get("role_research", {})
     if not isinstance(role_research, dict):
         raise NewsSnapshotError("news role_research must be an object")
@@ -363,6 +398,9 @@ def snapshot_audit(payload: dict[str, Any]) -> dict[str, Any]:
         "sha256": canonical_sha256(payload),
         "providers": providers,
         "role_research": dict(payload.get("role_research", {})),
+        "role_research_abstention_count": len(
+            payload.get("role_research_abstentions", {})
+        ),
         "player_count": len(player_entries),
         "signal_count": sum(
             len(entry.get("signals", [])) for entry in player_entries.values()
