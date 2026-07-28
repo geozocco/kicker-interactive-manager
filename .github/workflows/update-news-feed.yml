@@ -59,6 +59,7 @@ jobs:
         run: |
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_news_snapshot.py \
             --mapping config/news/2-bundesliga.json \
+            --role-evidence-config config/quality/2-bundesliga.json \
             --output public/v1/news/2-bundesliga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/news/2-bundesliga.json \
             --provider api_sports \
@@ -74,6 +75,7 @@ jobs:
         run: |
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_news_snapshot.py \
             --mapping config/news/3-liga.json \
+            --role-evidence-config config/quality/3-liga.json \
             --output public/v1/news/3-liga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/news/3-liga.json \
             --provider api_sports \

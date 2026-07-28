@@ -195,6 +195,71 @@ def validate_snapshot(
             raise NewsSnapshotError(
                 f"news conflicts for player {kicker_id!r} must be a list"
             )
+    role_profiles = payload.get("role_profiles", {})
+    if not isinstance(role_profiles, dict):
+        raise NewsSnapshotError("news role_profiles must be an object")
+    for player_id, profile in role_profiles.items():
+        if not str(player_id).strip() or not isinstance(profile, dict):
+            raise NewsSnapshotError("news snapshot contains an invalid role profile")
+        if profile.get("designation") not in {
+            "confirmed_starter",
+            "key_starter",
+            "expected_starter",
+            "immediate_help",
+            "open_competition",
+            "rotation",
+            "perspective",
+        }:
+            raise NewsSnapshotError(
+                f"invalid role designation for player {player_id!r}"
+            )
+        probability = profile.get("expected_start_probability")
+        if (
+            isinstance(probability, bool)
+            or not isinstance(probability, (int, float))
+            or not 0 <= float(probability) <= 100
+        ):
+            raise NewsSnapshotError(
+                f"invalid role probability for player {player_id!r}"
+            )
+        if profile.get("confidence") not in CONFIDENCE_ORDER:
+            raise NewsSnapshotError(
+                f"invalid role confidence for player {player_id!r}"
+            )
+        observed_at = parse_timestamp(
+            profile.get("observed_at"),
+            "role_profile.observed_at",
+        )
+        role_expires_at = parse_timestamp(
+            profile.get("expires_at"),
+            "role_profile.expires_at",
+        )
+        if role_expires_at <= observed_at:
+            raise NewsSnapshotError(
+                f"role profile expiry must follow observation for {player_id!r}"
+            )
+        if not isinstance(profile.get("fresh"), bool):
+            raise NewsSnapshotError(
+                f"role profile freshness is invalid for {player_id!r}"
+            )
+        evidence = profile.get("evidence", [])
+        if not isinstance(evidence, list) or not evidence:
+            raise NewsSnapshotError(
+                f"role profile evidence is missing for {player_id!r}"
+            )
+        for item in evidence:
+            if (
+                not isinstance(item, dict)
+                or not str(item.get("claim", "")).strip()
+                or not str(item.get("source_url", "")).startswith("https://")
+            ):
+                raise NewsSnapshotError(
+                    f"invalid role evidence for player {player_id!r}"
+                )
+            parse_timestamp(
+                item.get("observed_at"),
+                "role_profile.evidence.observed_at",
+            )
     expected_hash = str(payload.get("content_sha256", "")).strip()
     if expected_hash and expected_hash != canonical_sha256(payload):
         raise NewsSnapshotError("news snapshot content_sha256 does not match its content")

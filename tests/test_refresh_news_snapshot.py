@@ -21,6 +21,95 @@ import refresh_news_snapshot as refresh
 
 
 class RefreshNewsSnapshotTests(unittest.TestCase):
+    def test_role_news_is_cached_with_source_age_not_refresh_age(self) -> None:
+        profiles = refresh.cached_role_profiles(
+            {
+                "role_evidence": {
+                    "player-1": {
+                        "continuity": "confirmed",
+                        "confidence": "high",
+                        "expected_start_probability": 92,
+                        "responsibilities": {
+                            "offensive_focal_point": "primary",
+                        },
+                        "evidence": [
+                            {
+                                "claim": "Trainer names him as a key starter.",
+                                "source_url": "https://club.example/news",
+                                "checked_at": "2026-07-27",
+                                "source_authority": "head_coach",
+                            }
+                        ],
+                    }
+                }
+            },
+            generated_at="2026-07-28T12:00:00Z",
+        )
+
+        self.assertEqual("key_starter", profiles["player-1"]["designation"])
+        self.assertTrue(profiles["player-1"]["fresh"])
+        self.assertEqual(
+            "head_coach",
+            profiles["player-1"]["evidence"][0]["source_authority"],
+        )
+
+    def test_old_role_quote_stays_expired_after_new_refresh(self) -> None:
+        profiles = refresh.cached_role_profiles(
+            {
+                "role_evidence": {
+                    "player-1": {
+                        "continuity": "confirmed",
+                        "confidence": "high",
+                        "expected_start_probability": 95,
+                        "evidence": [
+                            {
+                                "claim": "Old starter statement.",
+                                "source_url": "https://club.example/old",
+                                "checked_at": "2026-05-01",
+                            }
+                        ],
+                    }
+                }
+            },
+            generated_at="2026-07-28T12:00:00Z",
+        )
+
+        self.assertFalse(profiles["player-1"]["fresh"])
+
+    def test_goalkeeper_number_one_statement_becomes_confirmed_starter(
+        self,
+    ) -> None:
+        profiles = refresh.cached_role_profiles(
+            {
+                "goalkeeper_evidence": {
+                    "players": {
+                        "keeper-1": {
+                            "status": "confirmed_starter",
+                            "starter_probability": 97,
+                            "confidence": "high",
+                            "evidence": [
+                                {
+                                    "claim": "Coach publicly names the number one.",
+                                    "source_url": "https://club.example/keeper",
+                                    "checked_at": "2026-07-28",
+                                }
+                            ],
+                        }
+                    }
+                }
+            },
+            generated_at="2026-07-28T12:00:00Z",
+        )
+
+        self.assertEqual(
+            "confirmed_starter",
+            profiles["keeper-1"]["designation"],
+        )
+        self.assertEqual(
+            97,
+            profiles["keeper-1"]["expected_start_probability"],
+        )
+
     def test_rate_limit_detection_covers_payload_and_http_forms(self) -> None:
         self.assertTrue(
             refresh.is_api_sports_rate_limit(

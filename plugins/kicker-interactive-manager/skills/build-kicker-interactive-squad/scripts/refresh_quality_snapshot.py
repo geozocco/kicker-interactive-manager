@@ -54,7 +54,7 @@ from refresh_news_snapshot import (
 )
 
 
-MODEL_VERSION = "multi-season-v11-scorer-role-coverage"
+MODEL_VERSION = "multi-season-v12-news-role-cache"
 PRESEASON_MODEL_VERSION = "preseason-readiness-v3-role-responsibilities"
 FORM_MODEL_VERSION = "recency-context-v4-evidence-role-transfer"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
@@ -937,6 +937,60 @@ def valid_role_evidence_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
             and str(item.get("checked_at", "")).strip()
         )
     ]
+
+
+def cached_role_evidence(
+    news_payload: dict[str, Any],
+    player_id: str,
+    fallback: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Prefer a fresh central news role profile over an uncached fallback."""
+
+    profiles = news_payload.get("role_profiles", {})
+    profile = profiles.get(player_id, {}) if isinstance(profiles, dict) else {}
+    if not isinstance(profile, dict) or not profile.get("fresh", False):
+        return dict(fallback) if isinstance(fallback, dict) else {}
+    evidence = [
+        {
+            "claim": str(item.get("claim", "")).strip(),
+            "source_url": str(item.get("source_url", "")).strip(),
+            "checked_at": str(item.get("observed_at", "")).strip(),
+        }
+        for item in profile.get("evidence", [])
+        if isinstance(item, dict)
+    ]
+    if not valid_role_evidence_items({"evidence": evidence}):
+        return dict(fallback) if isinstance(fallback, dict) else {}
+    return {
+        "continuity": str(profile.get("continuity", "unknown")),
+        "confidence": str(profile.get("confidence", "medium")),
+        "expected_start_probability": profile.get(
+            "expected_start_probability",
+            0,
+        ),
+        "team_quality_delta": profile.get("team_quality_delta", 0),
+        "responsibilities": dict(profile.get("responsibilities", {})),
+        "designation": str(profile.get("designation", "")),
+        "note": str(profile.get("note", "")),
+        "evidence": evidence,
+        "source": "central_news_role_cache",
+        "cache_model_version": str(profile.get("model_version", "")),
+        "cache_expires_at": str(profile.get("expires_at", "")),
+    }
+
+
+def goalkeeper_role_cache_adjustment(profile: dict[str, Any] | None) -> float:
+    if not isinstance(profile, dict) or not profile.get("fresh", False):
+        return 0.0
+    return {
+        "confirmed_starter": 60.0,
+        "key_starter": 45.0,
+        "expected_starter": 30.0,
+        "immediate_help": 22.0,
+        "open_competition": 0.0,
+        "rotation": -25.0,
+        "perspective": -55.0,
+    }.get(str(profile.get("designation", "")), 0.0)
 
 
 def manual_news_clearance_profile(
@@ -2951,13 +3005,19 @@ def apply_goalkeeper_hierarchy(
             price = float(market_player["market_value"])
             price_share = 100.0 * price / max(1.0, total_price)
             price_percentile = percentile(price, prices)
+            role_profile = (
+                news_payload.get("role_profiles", {}).get(player_id, {})
+                if isinstance(news_payload.get("role_profiles"), dict)
+                else {}
+            )
             ranked.append(
                 (
                     goalkeeper_hierarchy_score(
                         annotations[player_id],
                         club_price_share=price_share,
                         global_price_percentile=price_percentile,
-                    ),
+                    )
+                    + goalkeeper_role_cache_adjustment(role_profile),
                     player_id,
                     price_share,
                     price_percentile,
@@ -3077,6 +3137,67 @@ def apply_goalkeeper_hierarchy(
                 if isinstance(player_overrides, dict)
                 else {}
             )
+            cached_profile = (
+                news_payload.get("role_profiles", {}).get(player_id, {})
+                if isinstance(news_payload.get("role_profiles"), dict)
+                else {}
+            )
+            if isinstance(cached_profile, dict) and cached_profile.get(
+                "fresh",
+                False,
+            ):
+                cached_probability = clamp(
+                    cached_profile.get("expected_start_probability"),
+                    0,
+                )
+                designation = str(
+                    cached_profile.get("designation", "")
+                )
+                if designation == "confirmed_starter":
+                    player_probability = max(92.0, cached_probability)
+                    status = "confirmed_starter"
+                elif designation in {
+                    "key_starter",
+                    "expected_starter",
+                    "immediate_help",
+                }:
+                    player_probability = max(
+                        player_probability,
+                        cached_probability,
+                    )
+                    status = (
+                        "clear_favourite"
+                        if player_probability >= 82
+                        else "likely_starter"
+                    )
+                elif designation == "open_competition":
+                    player_probability = min(player_probability, 69.0)
+                    status = "open_competition"
+                elif designation == "rotation":
+                    player_probability = min(player_probability, 50.0)
+                    status = "challenger"
+                elif designation == "perspective":
+                    player_probability = min(player_probability, 25.0)
+                    status = "backup"
+                cached_confidence = str(
+                    cached_profile.get("confidence", "")
+                )
+                if cached_confidence in {"low", "medium", "high"}:
+                    player_confidence = cached_confidence
+                for item in cached_profile.get("evidence", []):
+                    if not isinstance(item, dict):
+                        continue
+                    annotations[player_id]["evidence"].append(
+                        {
+                            "claim": str(item.get("claim", "")).strip(),
+                            "source_url": str(
+                                item.get("source_url", "")
+                            ).strip(),
+                            "checked_at": str(
+                                item.get("observed_at", "")
+                            ).strip(),
+                        }
+                    )
             if isinstance(player_override, dict):
                 if "starter_probability" in player_override:
                     player_probability = clamp(
@@ -3388,9 +3509,13 @@ def generate_snapshot(
                 str(market_player["id"]),
                 {},
             ),
-            config.get("role_evidence", {}).get(
+            cached_role_evidence(
+                news_payload,
                 str(market_player["id"]),
-                {},
+                config.get("role_evidence", {}).get(
+                    str(market_player["id"]),
+                    {},
+                ),
             ),
             config.get("manual_news_clearance", {}).get(
                 str(market_player["id"]),

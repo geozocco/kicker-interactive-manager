@@ -454,6 +454,72 @@ def exceptional_goalkeeper_history() -> dict:
 
 
 class RefreshQualitySnapshotTests(unittest.TestCase):
+    def test_fresh_cached_role_profile_precedes_uncached_fallback(self) -> None:
+        resolved = quality.cached_role_evidence(
+            {
+                "role_profiles": {
+                    "player-1": {
+                        "model_version": "news-role-cache-v1",
+                        "fresh": True,
+                        "designation": "immediate_help",
+                        "continuity": "confirmed",
+                        "confidence": "high",
+                        "expected_start_probability": 84,
+                        "team_quality_delta": 5,
+                        "responsibilities": {
+                            "playmaker": "shared",
+                        },
+                        "expires_at": "2026-09-11T12:00:00Z",
+                        "evidence": [
+                            {
+                                "claim": "Sporting director expects immediate help.",
+                                "source_url": "https://club.example/signing",
+                                "observed_at": "2026-07-28T12:00:00Z",
+                            }
+                        ],
+                    }
+                }
+            },
+            "player-1",
+            {
+                "continuity": "unknown",
+                "expected_start_probability": 0,
+            },
+        )
+
+        self.assertEqual("central_news_role_cache", resolved["source"])
+        self.assertEqual(84, resolved["expected_start_probability"])
+        self.assertEqual("shared", resolved["responsibilities"]["playmaker"])
+
+    def test_goalkeeper_role_cache_can_override_price_heuristic(self) -> None:
+        self.assertEqual(
+            60,
+            quality.goalkeeper_role_cache_adjustment(
+                {
+                    "fresh": True,
+                    "designation": "confirmed_starter",
+                }
+            ),
+        )
+        self.assertEqual(
+            -55,
+            quality.goalkeeper_role_cache_adjustment(
+                {
+                    "fresh": True,
+                    "designation": "perspective",
+                }
+            ),
+        )
+        self.assertEqual(
+            0,
+            quality.goalkeeper_role_cache_adjustment(
+                {
+                    "fresh": False,
+                    "designation": "confirmed_starter",
+                }
+            ),
+        )
+
     def test_recovery_preserves_healthy_quality_but_caps_readiness(self) -> None:
         histories = [
             form_season(

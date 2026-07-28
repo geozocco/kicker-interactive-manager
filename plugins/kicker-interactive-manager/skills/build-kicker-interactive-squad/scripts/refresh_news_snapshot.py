@@ -26,6 +26,17 @@ from news_snapshot import (
 
 
 USER_AGENT = "kicker-interactive-manager-news-refresh/1"
+ROLE_CACHE_MODEL_VERSION = "news-role-cache-v1"
+ROLE_CACHE_TTL_DAYS = 45
+ROLE_RESPONSIBILITIES = {
+    "penalties",
+    "direct_free_kicks",
+    "corners",
+    "playmaker",
+    "offensive_focal_point",
+    "aerial_set_piece_target",
+    "captain",
+}
 
 
 def is_api_sports_rate_limit(value: Any) -> bool:
@@ -50,6 +61,175 @@ def iso_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
     )
+
+
+def parsed_role_timestamp(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if len(text) == 10:
+        text = f"{text}T12:00:00+00:00"
+    elif text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def inferred_role_designation(profile: dict[str, Any]) -> str:
+    explicit = str(profile.get("designation", "")).strip().casefold()
+    allowed = {
+        "confirmed_starter",
+        "key_starter",
+        "expected_starter",
+        "immediate_help",
+        "open_competition",
+        "rotation",
+        "perspective",
+    }
+    if explicit in allowed:
+        return explicit
+    continuity = str(profile.get("continuity", "unknown")).casefold()
+    probability = float(profile.get("expected_start_probability", 0) or 0)
+    responsibilities = profile.get("responsibilities", {})
+    focal = (
+        isinstance(responsibilities, dict)
+        and responsibilities.get("offensive_focal_point") == "primary"
+    )
+    if continuity == "reduced" or probability < 40:
+        return "perspective"
+    if probability >= 90 and focal:
+        return "key_starter"
+    if probability >= 78:
+        return "expected_starter"
+    if probability >= 55:
+        return "rotation"
+    return "open_competition"
+
+
+def cached_role_profiles(
+    role_config: dict[str, Any] | None,
+    *,
+    generated_at: str,
+) -> dict[str, dict[str, Any]]:
+    """Normalize sourced role claims into a dated central cache.
+
+    The source observation date, not the refresh time, controls freshness so
+    repeatedly publishing an old quote cannot make it current again.
+    """
+
+    config = role_config if isinstance(role_config, dict) else {}
+    generated = parsed_role_timestamp(generated_at)
+    if generated is None:
+        raise RuntimeError("generated_at is invalid for role cache")
+    raw_profiles: dict[str, dict[str, Any]] = {}
+    for player_id, value in config.get("role_evidence", {}).items():
+        if isinstance(value, dict):
+            raw_profiles[str(player_id)] = dict(value)
+    goalkeeper_players = (
+        config.get("goalkeeper_evidence", {}).get("players", {})
+        if isinstance(config.get("goalkeeper_evidence"), dict)
+        else {}
+    )
+    for player_id, value in goalkeeper_players.items():
+        if not isinstance(value, dict):
+            continue
+        profile = dict(value)
+        status = str(profile.get("status", "")).strip().casefold()
+        profile.setdefault(
+            "designation",
+            {
+                "confirmed_starter": "confirmed_starter",
+                "clear_favourite": "expected_starter",
+                "likely_starter": "expected_starter",
+                "open_competition": "open_competition",
+                "challenger": "rotation",
+                "backup": "perspective",
+                "external_signing_risk": "open_competition",
+            }.get(status, ""),
+        )
+        profile.setdefault(
+            "expected_start_probability",
+            profile.get("starter_probability", 0),
+        )
+        raw_profiles[str(player_id)] = {
+            **raw_profiles.get(str(player_id), {}),
+            **profile,
+        }
+
+    output: dict[str, dict[str, Any]] = {}
+    for player_id, profile in raw_profiles.items():
+        evidence = []
+        observed_values: list[datetime] = []
+        for item in profile.get("evidence", []):
+            if not isinstance(item, dict):
+                continue
+            claim = str(item.get("claim", "")).strip()
+            source_url = str(item.get("source_url", "")).strip()
+            observed = parsed_role_timestamp(
+                item.get("observed_at", item.get("checked_at"))
+            )
+            if not claim or not source_url.startswith("https://") or observed is None:
+                continue
+            observed_values.append(observed)
+            evidence.append(
+                {
+                    "claim": claim,
+                    "source_url": source_url,
+                    "observed_at": observed.isoformat().replace("+00:00", "Z"),
+                    "source_authority": str(
+                        item.get(
+                            "source_authority",
+                            profile.get("source_authority", "editorial_or_club"),
+                        )
+                    ).strip(),
+                }
+            )
+        if not evidence:
+            continue
+        observed_at = max(observed_values)
+        expires_at = observed_at + timedelta(days=ROLE_CACHE_TTL_DAYS)
+        responsibilities = {
+            key: str(value).strip().casefold()
+            for key, value in (
+                profile.get("responsibilities", {}) or {}
+            ).items()
+            if key in ROLE_RESPONSIBILITIES
+            and str(value).strip().casefold() in {"none", "shared", "primary"}
+        }
+        normalized = {
+            "model_version": ROLE_CACHE_MODEL_VERSION,
+            "designation": inferred_role_designation(profile),
+            "continuity": str(
+                profile.get("continuity", "unknown")
+            ).strip().casefold(),
+            "expected_start_probability": max(
+                0.0,
+                min(
+                    100.0,
+                    float(profile.get("expected_start_probability", 0) or 0),
+                ),
+            ),
+            "team_quality_delta": max(
+                -30.0,
+                min(30.0, float(profile.get("team_quality_delta", 0) or 0)),
+            ),
+            "responsibilities": responsibilities,
+            "confidence": str(
+                profile.get("confidence", "medium")
+            ).strip().casefold(),
+            "observed_at": observed_at.isoformat().replace("+00:00", "Z"),
+            "expires_at": expires_at.isoformat().replace("+00:00", "Z"),
+            "fresh": observed_at <= generated < expires_at,
+            "evidence": evidence,
+            "note": str(profile.get("note", "")).strip(),
+        }
+        output[player_id] = normalized
+    return output
 
 
 def request_json(
@@ -884,6 +1064,7 @@ def build_snapshot(
     providers: list[str],
     optional_providers: list[str] | None = None,
     ttl_hours: int,
+    role_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     observed_at = iso_now()
     runtime_config = copy.deepcopy(config)
@@ -1006,6 +1187,10 @@ def build_snapshot(
         "season": str(config["season"]),
         "providers": provider_audit,
         "players": players,
+        "role_profiles": cached_role_profiles(
+            role_config,
+            generated_at=observed_at,
+        ),
     }
     validate_snapshot(payload)
     payload["content_sha256"] = canonical_sha256(payload)
@@ -1015,6 +1200,7 @@ def build_snapshot(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mapping", type=Path, required=True)
+    parser.add_argument("--role-evidence-config", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--previous")
     parser.add_argument(
@@ -1054,6 +1240,13 @@ def main() -> int:
     if not str(config.get("season", "")).strip():
         raise SystemExit("mapping season is required")
     players = config.get("players", {})
+    role_config: dict[str, Any] | None = None
+    if args.role_evidence_config:
+        role_config = json.loads(
+            args.role_evidence_config.read_text(encoding="utf-8")
+        )
+        if not isinstance(role_config, dict):
+            raise SystemExit("role evidence configuration must be an object")
     auto_discover = bool(
         config.get("api_sports", {}).get("auto_discover_players", False)
     )
@@ -1070,6 +1263,7 @@ def main() -> int:
                 dict.fromkeys(args.optional_providers or [])
             ),
             ttl_hours=args.ttl_hours,
+            role_config=role_config,
         )
     except RuntimeError as error:
         if not args.previous or not is_api_sports_daily_limit(error):

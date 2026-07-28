@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 
 SCHEMA_VERSION = 3
-GOALKEEPER_HIERARCHY_MODEL = "multi-season-v11-scorer-role-coverage"
+GOALKEEPER_HIERARCHY_MODEL = "multi-season-v12-news-role-cache"
 RECENCY_FORM_MODEL = "recency-context-v4-evidence-role-transfer"
 PRESEASON_READINESS_MODEL = "preseason-readiness-v3-role-responsibilities"
 EXPECTED_ROLE_MODEL = "expected-role-v2"

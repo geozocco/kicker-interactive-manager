@@ -37,7 +37,7 @@ https://geozocco.github.io/kicker-interactive-manager/v1/news/2-bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/news/3-liga.json
 ```
 
-Die Konfigurationen in `config/news/` enthalten nur Wettbewerb, Saison und öffentliche Provider-IDs. Der Lauf ermittelt alle aktuellen Teams und Spieler automatisch, verlangt die erwartete Teamzahl und bricht bei unvollständigen Ligadaten ab. Snapshots werden als Pages-Artefakt veröffentlicht und nicht in Git eingecheckt.
+Die Konfigurationen in `config/news/` enthalten nur Wettbewerb, Saison und öffentliche Provider-IDs. Der Lauf ermittelt alle aktuellen Teams und Spieler automatisch, verlangt die erwartete Teamzahl und bricht bei unvollständigen Ligadaten ab. Über `--role-evidence-config` liest er zusätzlich die belegten Rollenmeldungen aus `config/quality/` ein und veröffentlicht daraus einen separaten `role_profiles`-Cache. Trainerentscheidungen, Aussagen zur sofortigen Hilfe oder Perspektivrolle und aktuelle Standardverantwortungen bleiben dadurch zentral wiederverwendbar, ohne Provider-Risikosignale mit redaktioneller Rolleninterpretation zu vermischen. Snapshots werden als Pages-Artefakt veröffentlicht und nicht in Git eingecheckt.
 
 Für eine manuelle zentrale Ausführung gilt weiterhin:
 
@@ -80,7 +80,7 @@ Eine optionale Mapping-Datei kann einzelne Kicker-IDs ausdrücklich mit Provider
 Die Liga- und Team-IDs sind providerabhängig und müssen vor dem ersten Lauf gegen den aktuellen Wettbewerb geprüft werden. Bei `auto_discover_players: true` setzt das Skript `competition_team_ids_complete` nur nach erfolgreicher Prüfung der erwarteten Teamzahl. Ohne automatische Erkennung darf das Feld erst dann auf `true` gesetzt werden, wenn wirklich alle aktuellen Vereine enthalten sind. Nur dann darf ein Zielverein außerhalb dieser Menge als bestätigter Abgang aus dem Wettbewerb gewertet werden. Ein Wechsel innerhalb der Ligamenge erhöht dagegen lediglich Rollen- und Transferrisiko. Anschließend zentral ausführen:
 
 ```text
-SPORTMONKS_API_TOKEN=<secret> API_SPORTS_KEY=<secret> <python-3-command> scripts/refresh_news_snapshot.py --mapping <mapping-json> --output <snapshot-directory>/2-bundesliga.json --provider api_sports --optional-provider sportsmonks
+SPORTMONKS_API_TOKEN=<secret> API_SPORTS_KEY=<secret> <python-3-command> scripts/refresh_news_snapshot.py --mapping <mapping-json> --role-evidence-config <quality-config-json> --output <snapshot-directory>/2-bundesliga.json --provider api_sports --optional-provider sportsmonks
 ```
 
 Der Lauf ist für mehrere Aktualisierungen pro Tag gedacht. Er verwendet begrenzte Wiederholungen mit Backoff, vollständige Pagination, API-Sports-Batches bis 20 Spieler, vereinsweise statt spielerweise Transferabfragen, bei optionalem SportsMonks-Betrieb nur Gerüchte der letzten höchstens 31 Tage, providerseitige Aktualitätsdaten und atomaren Dateiaustausch. Nach einem fehlgeschlagenen Refresh bleibt im selbst gehosteten Modus die vorige Datei erhalten, läuft aber regulär ab und wird danach vom Optimierer abgelehnt; GitHub Pages veröffentlicht bei einem fehlgeschlagenen Workflow gar kein neues Artefakt.

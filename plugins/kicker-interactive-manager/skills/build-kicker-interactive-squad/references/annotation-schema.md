@@ -115,6 +115,8 @@ Jede zentrale Torwartannotation enthält zusätzlich `goalkeeper_outlook`. Das O
 
 `status` ist einer von `confirmed_starter`, `clear_favourite`, `likely_starter`, `open_competition`, `external_signing_risk`, `challenger` oder `backup`. Manuelle Trainer- oder Vereinsbelege dürfen die automatische Einstufung über `goalkeeper_evidence` präzisieren, müssen aber wie alle entscheidenden Rollenbehauptungen Quelle und Prüfdatum tragen.
 
+Der zentrale News-Snapshot führt solche Belege zusätzlich als zeitlich begrenzte `role_profiles`. Zulässige Einordnungen sind `confirmed_starter`, `key_starter`, `expected_starter`, `immediate_help`, `open_competition`, `rotation` und `perspective`. Gespeichert werden erwartete Startwahrscheinlichkeit, Verantwortungen, Quelle, Beobachtungszeitpunkt, Ablaufzeitpunkt und Konfidenz. Das Profil läuft 45 Tage nach der jüngsten zugrunde liegenden Meldung ab; der regelmäßige Feed-Refresh verlängert diese Frist nicht. Ein frisches Profil ersetzt für die Qualitätsberechnung den ungesicherten Rollenfallback.
+
 Beispiel für einen belegten vereinsweiten Override:
 
 ```json
@@ -128,7 +130,8 @@ Beispiel für einen belegten vereinsweiten Override:
           {
             "claim": "Der Sportdirektor kündigt die Verpflichtung eines Stammtorhüters an.",
             "source_url": "https://verein.example/aktuelle-meldung",
-            "checked_at": "2026-07-25"
+            "checked_at": "2026-07-25",
+            "source_authority": "sporting_director"
           }
         ]
       }
