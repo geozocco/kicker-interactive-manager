@@ -368,6 +368,42 @@ def abstention_record(
     }
 
 
+def inconclusive_record(
+    target: dict[str, Any],
+    *,
+    now: datetime,
+    model: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Record an unresolved target without turning it into a negative signal."""
+
+    normalized_reason = str(reason or "unclassified_output").strip()[:160]
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {
+                "prompt": PROMPT_VERSION,
+                "model": model,
+                "target": target,
+                "status": "research_inconclusive",
+                "reason": normalized_reason,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    return {
+        "status": "research_inconclusive",
+        "reason": normalized_reason,
+        "model_version": MODEL_VERSION,
+        "prompt_version": PROMPT_VERSION,
+        "research_model": model,
+        "research_fingerprint": fingerprint,
+        "checked_at": iso_timestamp(now),
+        "refresh_after": iso_timestamp(now),
+        "expires_at": iso_timestamp(now + timedelta(days=3)),
+    }
+
+
 def _schema() -> dict[str, Any]:
     responsibility_properties = {
         key: {
@@ -860,8 +896,11 @@ def research_role_profiles(
     requests = 0
     researched = 0
     researched_abstentions = 0
+    researched_inconclusive = 0
     for batch in chunks(pending, max(1, min(8, batch_size))):
         completed_ids: set[str] = set()
+        batch_failure = ""
+        raw_by_id: dict[str, Any] = {}
         try:
             response = requester(
                 build_request(
@@ -877,14 +916,14 @@ def research_role_profiles(
             grounded_urls = response_source_urls(response)
             parsed = json.loads(response_output_text(response))
             raw_profiles = parsed.get("profiles", [])
-            by_id = {
+            raw_by_id = {
                 str(item.get("player_id", "")): item
                 for item in raw_profiles
                 if isinstance(item, dict)
             }
             for target in batch:
                 player_id = str(target["player_id"])
-                raw = by_id.get(player_id)
+                raw = raw_by_id.get(player_id)
                 if isinstance(raw, dict) and not raw.get("has_role_signal"):
                     abstentions[player_id] = abstention_record(
                         target,
@@ -911,7 +950,8 @@ def research_role_profiles(
             TypeError,
             ValueError,
         ) as error:
-            failures.append(str(error)[:240])
+            batch_failure = str(error)[:240]
+            failures.append(batch_failure)
         for target in batch:
             player_id = str(target["player_id"])
             if player_id in completed_ids:
@@ -947,13 +987,28 @@ def research_role_profiles(
                 and current < expires_at
             ):
                 abstentions[player_id] = dict(cached_empty)
+                continue
+            reason = (
+                f"request_failed: {batch_failure}"
+                if batch_failure
+                else "omitted_from_model_output"
+                if player_id not in raw_by_id
+                else "invalid_or_ungrounded_output"
+            )
+            abstentions[player_id] = inconclusive_record(
+                target,
+                now=current,
+                model=model,
+                reason=reason,
+            )
+            researched_inconclusive += 1
 
     return profiles, abstentions, {
         "status": (
             "ok"
-            if not failures
+            if not failures and not researched_inconclusive
             else "partial"
-            if profiles
+            if profiles or abstentions
             else "unavailable"
         ),
         "model": model,
@@ -963,6 +1018,7 @@ def research_role_profiles(
         "cache_hits": len(targets) - len(pending),
         "researched_profiles": researched,
         "researched_abstentions": researched_abstentions,
+        "researched_inconclusive": researched_inconclusive,
         "requests": requests,
         "failures": failures[:5],
     }

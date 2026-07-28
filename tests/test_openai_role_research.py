@@ -389,6 +389,51 @@ class ResearchCacheTests(unittest.TestCase):
         self.assertEqual(1, audit["cache_hits"])
         self.assertEqual(0, audit["requests"])
 
+    def test_omitted_target_is_explicitly_inconclusive_and_retried(
+        self,
+    ) -> None:
+        calls = []
+
+        def requester(payload, *, api_key):
+            calls.append(payload)
+            return response_for([])
+
+        profiles, abstentions, audit = role.research_role_profiles(
+            [target()],
+            competition="2. Bundesliga",
+            season="2026/27",
+            previous_profiles={},
+            api_key="secret-value",
+            model="gpt-5.6-luna",
+            now=NOW,
+            requester=requester,
+        )
+
+        self.assertEqual({}, profiles)
+        self.assertEqual(
+            "research_inconclusive",
+            abstentions["p1"]["status"],
+        )
+        self.assertEqual(
+            "omitted_from_model_output",
+            abstentions["p1"]["reason"],
+        )
+        self.assertEqual(1, audit["researched_inconclusive"])
+        self.assertEqual("partial", audit["status"])
+
+        role.research_role_profiles(
+            [target()],
+            competition="2. Bundesliga",
+            season="2026/27",
+            previous_profiles={},
+            previous_abstentions=abstentions,
+            api_key="secret-value",
+            model="gpt-5.6-luna",
+            now=NOW + timedelta(minutes=1),
+            requester=requester,
+        )
+        self.assertEqual(2, len(calls))
+
 
 if __name__ == "__main__":
     unittest.main()

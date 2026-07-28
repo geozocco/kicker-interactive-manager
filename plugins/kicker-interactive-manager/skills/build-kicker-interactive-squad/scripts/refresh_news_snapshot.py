@@ -1337,6 +1337,7 @@ def main() -> int:
         "cache_hits": 0,
         "researched_profiles": 0,
         "researched_abstentions": 0,
+        "researched_inconclusive": 0,
         "requests": 0,
         "failures": [],
     }
@@ -1439,6 +1440,7 @@ def main() -> int:
                 "cache_hits": len(reusable) + len(role_research_abstentions),
                 "researched_profiles": 0,
                 "researched_abstentions": 0,
+                "researched_inconclusive": 0,
                 "requests": 0,
                 "failures": [],
             }
