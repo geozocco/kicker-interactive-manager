@@ -43,6 +43,8 @@ Jugendwettbewerbe aus Deutschland und dem Ausland werden separat nach Nachwuchsn
 
 Der Vorbereitungsbestand kombiniert erfasste API-Sports-Testspiele mit strukturierten offiziellen Vereinsbelegen. Wiederholte Einsätze, Starts, Formationsrolle, Training, Gegnerniveau und Trainerhinweise bilden ein zeitlich verfallendes Bereitschaftssignal. Es wirkt bei jungen oder historisch wenig belegten Spielern stärker, bleibt aber auf 25 Prozent begrenzt und erzeugt niemals bestätigte Seniorleistung oder Ankerstatus.
 
+Der Qualitätsbestand führt zusätzlich einen belegpflichtigen `role_context`. Er trennt einen ungeklärten Rollenreset von einer bestätigten, erweiterten oder reduzierten Rolle beim aktuellen Verein und erfasst Startwahrscheinlichkeit, Mannschaftsstärke sowie Elfmeter-, Freistoß-, Ecken-, Spielmacher-, Fokus-, Kapitäns- und Standardziel-Verantwortung. Historische Aufgaben werden nach einem Wechsel nur mit aktueller spielerbezogener Evidenz übertragen. Dadurch ist ein Transfer weder automatisch positiv noch negativ.
+
 Der Kicker-Zeitreihenbestand speichert pro Tag höchstens eine Beobachtung je Spieler. Er baut ab der ersten Veröffentlichung fortlaufend Preis-, Punkte- und Notenverläufe auf; historische Werte vor diesem Startdatum werden nicht erfunden. Mindestens zwei zeitlich getrennte Beobachtungen sind nötig, bevor daraus ein begrenztes Formsignal entsteht. API-Sports ergänzt die Bewertung positionsabhängig um wiederholbare Ereignisse wie Startelfquote, Schüsse aufs Tor, Key Passes, Duelle, Defensivaktionen und Saves. Die API-Sports-Note bleibt ein kleines Hilfssignal und wird nicht als Kicker-Note behandelt.
 
 ## Sicherheitsvertrag

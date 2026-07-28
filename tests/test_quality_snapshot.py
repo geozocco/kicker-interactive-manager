@@ -56,6 +56,21 @@ def annotation(position: str, *, anchor: bool = False) -> dict:
             "provider_rating_score": 68.0,
             "rating_weight_in_api_confirmation": 0.08,
         },
+        "role_context": {
+            "model_version": quality_snapshot.EXPECTED_ROLE_MODEL,
+            "continuity": "confirmed",
+            "expected_start_probability": 90.0,
+            "team_quality_delta": 0.0,
+            "responsibilities": {
+                "penalties": "none",
+                "direct_free_kicks": "none",
+                "corners": "none",
+                "playmaker": "none",
+                "offensive_focal_point": "none",
+                "aerial_set_piece_target": "none",
+                "captain": "none",
+            },
+        },
         "kicker_trend": {
             "observation_count": 2,
             "trend_score": 55.0,
@@ -87,6 +102,7 @@ def annotation(position: str, *, anchor: bool = False) -> dict:
             "latest_historical_clubs": ["Club A"],
             "club_changed": False,
             "context_transfer_factor": 1.0,
+            "role_continuity": "confirmed",
             "availability_ratio": 1.1,
             "recovery_status": "stable",
             "adjustments": {

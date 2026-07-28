@@ -160,6 +160,8 @@ class DistanceOptimizerTests(unittest.TestCase):
         self.assertEqual(0.80, args.target_core_budget_share)
         self.assertEqual(1.0, args.min_spend_ratio)
         self.assertEqual(1, args.min_offensive_premium_anchors)
+        self.assertEqual(1, args.min_qualified_potential_core)
+        self.assertEqual(2, args.target_qualified_potential_core)
 
     def test_final_recommendation_rejects_partial_budget_override(self) -> None:
         with mock.patch.object(
@@ -932,6 +934,106 @@ class DistanceOptimizerTests(unittest.TestCase):
             )
             self.assertIn(premium.player_id, squad.ids)
 
+    def test_strategic_pool_keeps_anchors_benchmarks_and_prospects(
+        self,
+    ) -> None:
+        players = [
+            player(
+                f"pool-g{index}",
+                "Pool Goalkeeper Club",
+                "GOALKEEPER",
+                100,
+            )
+            for index in range(3)
+        ]
+        for position, prefix in (
+            ("DEFENDER", "pool-d"),
+            ("MIDFIELDER", "pool-m"),
+            ("FORWARD", "pool-f"),
+        ):
+            players.extend(
+                player(
+                    f"{prefix}{index}",
+                    f"Pool Club {prefix}{index % 18}",
+                    position,
+                    100 + 100 * (index % 8),
+                )
+                for index in range(60)
+            )
+        benchmark = optimizer.replace(
+            players[10],
+            benchmark=True,
+        )
+        anchor = optimizer.replace(
+            players[70],
+            reliable_anchor=True,
+        )
+        prospect_base = players[135]
+        prospect = optimizer.replace(
+            prospect_base,
+            cost=max(200, prospect_base.cost),
+            components={
+                **prospect_base.components,
+                "minutes": 80,
+                "role": 75,
+                "fitness": 85,
+            },
+            risks={
+                "injury": 10,
+                "transfer": 10,
+                "rotation": 15,
+                "outlier": 10,
+                "unknown_role": 15,
+            },
+            history_summary={
+                "talent_profile": {
+                    "age": 20,
+                    "talent_score": 85,
+                    "readiness_score": 82,
+                }
+            },
+        )
+        players = [
+            (
+                benchmark
+                if item.player_id == benchmark.player_id
+                else anchor
+                if item.player_id == anchor.player_id
+                else prospect
+                if item.player_id == prospect.player_id
+                else item
+            )
+            for item in players
+        ]
+        scores = {
+            item.player_id: float(index % 40)
+            for index, item in enumerate(players)
+        }
+
+        bounded = optimizer.strategic_optimization_pool(
+            players,
+            scores,
+            {
+                "GOALKEEPER": 3,
+                "DEFENDER": 7,
+                "MIDFIELDER": 7,
+                "FORWARD": 5,
+            },
+        )
+        bounded_ids = {item.player_id for item in bounded}
+
+        self.assertLess(len(bounded), len(players))
+        self.assertIn(benchmark.player_id, bounded_ids)
+        self.assertIn(anchor.player_id, bounded_ids)
+        self.assertIn(prospect.player_id, bounded_ids)
+        self.assertTrue(
+            all(
+                item.player_id in bounded_ids
+                for item in players
+                if item.position == "GOALKEEPER"
+            )
+        )
+
     def test_five_member_portfolio_is_reproducible_and_balances_exposure(
         self,
     ) -> None:
@@ -1551,6 +1653,64 @@ class ReliableCorePolicyTests(unittest.TestCase):
         self.assertEqual(frozenset({elite.player_id}), protected)
         self.assertEqual(frozenset(), benchmark_only)
 
+    def test_equivalent_premium_anchor_is_exchangeable(self) -> None:
+        original = player(
+            "premium-original",
+            "Original Club",
+            "MIDFIELDER",
+            1000,
+            reliable_anchor=True,
+        )
+        equivalent = optimizer.replace(
+            original,
+            player_id="premium-equivalent",
+            name="Equivalent",
+            short_name="Equivalent",
+            club="Equivalent Club",
+        )
+        players = [
+            optimizer.replace(
+                original,
+                components={
+                    **original.components,
+                    "confirmed_performance": 99.0,
+                    "minutes": 92.0,
+                    "role": 95.0,
+                    "stability": 86.0,
+                    "fitness": 90.0,
+                },
+                proven_seasons=7,
+                anchor_basis="explicit",
+                anchor_reason="Stable elite role",
+            ),
+            optimizer.replace(
+                equivalent,
+                components={
+                    **equivalent.components,
+                    "confirmed_performance": 97.0,
+                    "minutes": 90.0,
+                    "role": 93.0,
+                    "stability": 84.0,
+                    "fitness": 88.0,
+                },
+                proven_seasons=6,
+                anchor_basis="explicit",
+                anchor_reason="Equivalent stable elite role",
+            ),
+        ]
+        scores = {
+            "premium-original": 100.0,
+            "premium-equivalent": 98.0,
+        }
+
+        protected = optimizer.protected_reliable_premium_anchor_ids(
+            players,
+            scores,
+            {"premium-original"},
+        )
+
+        self.assertEqual(frozenset(), protected)
+
     def test_finalized_objective_uses_joint_architecture_scale(self) -> None:
         item = player("objective", "Objective Club", "MIDFIELDER", 100)
         squad = optimizer.Squad(
@@ -2041,12 +2201,113 @@ class ReliableCorePolicyTests(unittest.TestCase):
             after["bench_usage_weights"]["FORWARD"],
         )
         self.assertEqual(
-            "joint-xi-bench-v4-protected-final-objective",
+            "joint-xi-bench-v5-role-potential-multiswap",
             optimized.architecture_diagnostics["model_version"],
         )
         self.assertGreater(
             optimized.architecture_diagnostics["evaluated_rosters"],
             1,
+        )
+        self.assertIn(
+            "triple_swap_rosters_evaluated",
+            optimized.architecture_diagnostics,
+        )
+        self.assertIn(
+            "four_swap_rosters_evaluated",
+            optimized.architecture_diagnostics,
+        )
+
+    def test_joint_architecture_places_qualified_potential_in_extended_core(
+        self,
+    ) -> None:
+        squad_players: list[optimizer.Player] = []
+        scores: dict[str, float] = {}
+        for position, prefix, count in (
+            ("GOALKEEPER", "pg", 3),
+            ("DEFENDER", "pd", 7),
+            ("MIDFIELDER", "pm", 7),
+            ("FORWARD", "pf", 5),
+        ):
+            for index in range(count):
+                cost = (
+                    200
+                    if position == "MIDFIELDER" and index == 0
+                    else 100
+                )
+                item = player(
+                    f"{prefix}{index}",
+                    (
+                        "Potential Goalkeeper Club"
+                        if position == "GOALKEEPER"
+                        else f"Potential Club {prefix}{index}"
+                    ),
+                    position,
+                    cost,
+                )
+                squad_players.append(item)
+                scores[item.player_id] = 80.0 - index
+        prospect_base = player(
+            "qualified-prospect",
+            "Prospect Club",
+            "MIDFIELDER",
+            200,
+        )
+        prospect = optimizer.replace(
+            prospect_base,
+            components={
+                **prospect_base.components,
+                "minutes": 82.0,
+                "role": 78.0,
+                "fitness": 84.0,
+            },
+            risks={
+                "injury": 10.0,
+                "transfer": 10.0,
+                "rotation": 15.0,
+                "outlier": 10.0,
+                "unknown_role": 12.0,
+            },
+            history_summary={
+                "talent_profile": {
+                    "age": 20,
+                    "talent_score": 86.0,
+                    "readiness_score": 84.0,
+                }
+            },
+        )
+        scores[prospect.player_id] = 90.0
+        squad = optimizer.Squad(
+            squad_players,
+            sum(scores[item.player_id] for item in squad_players),
+        )
+
+        optimized = optimizer.optimize_joint_squad_architecture(
+            squad,
+            [*squad_players, prospect],
+            scores,
+            scores,
+            budget=squad.cost,
+            club_cap=4,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.0,
+            target_core_budget_share=0.0,
+            min_qualified_potential_core=1,
+            target_qualified_potential_core=1,
+        )
+
+        self.assertIn(prospect.player_id, optimized.ids)
+        self.assertTrue(
+            optimized.architecture_diagnostics[
+                "qualified_potential_core_minimum_met"
+            ]
+        )
+        self.assertEqual(
+            [prospect.player_id],
+            optimized.architecture_diagnostics[
+                "qualified_potential_core_ids"
+            ],
         )
 
     def test_forward_budget_prefers_top_three_over_equal_five(self) -> None:

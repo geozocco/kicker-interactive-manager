@@ -16,9 +16,10 @@ from urllib.parse import urlparse
 
 
 SCHEMA_VERSION = 3
-GOALKEEPER_HIERARCHY_MODEL = "multi-season-v8-readiness-rebound"
-RECENCY_FORM_MODEL = "recency-context-v2-rebound"
+GOALKEEPER_HIERARCHY_MODEL = "multi-season-v9-role-potential"
+RECENCY_FORM_MODEL = "recency-context-v3-role-transfer"
 PRESEASON_READINESS_MODEL = "preseason-readiness-v2-provider-stats"
+EXPECTED_ROLE_MODEL = "expected-role-v1"
 COMPONENTS = {
     "confirmed_performance",
     "minutes",
@@ -398,6 +399,15 @@ def validate_snapshot(
                 raise QualitySnapshotError(
                     f"quality form recovery status is invalid for {player_id}"
                 )
+            if str(form_summary.get("role_continuity", "")) not in {
+                "unknown",
+                "confirmed",
+                "expanded",
+                "reduced",
+            }:
+                raise QualitySnapshotError(
+                    f"quality form role continuity is invalid for {player_id}"
+                )
             adjustments = form_summary.get("adjustments")
             if not isinstance(adjustments, dict):
                 raise QualitySnapshotError(
@@ -450,6 +460,56 @@ def validate_snapshot(
             raise QualitySnapshotError(
                 f"quality provider rating weight is invalid for {player_id}"
             )
+        if hierarchy_model:
+            role_context = annotation.get("role_context")
+            if (
+                not isinstance(role_context, dict)
+                or role_context.get("model_version") != EXPECTED_ROLE_MODEL
+                or role_context.get("continuity")
+                not in {"unknown", "confirmed", "expanded", "reduced"}
+            ):
+                raise QualitySnapshotError(
+                    f"quality expected role context is invalid for {player_id}"
+                )
+            responsibilities = role_context.get("responsibilities")
+            if (
+                not isinstance(responsibilities, dict)
+                or set(responsibilities)
+                != {
+                    "penalties",
+                    "direct_free_kicks",
+                    "corners",
+                    "playmaker",
+                    "offensive_focal_point",
+                    "aerial_set_piece_target",
+                    "captain",
+                }
+                or any(
+                    level not in {"none", "shared", "primary"}
+                    for level in responsibilities.values()
+                )
+            ):
+                raise QualitySnapshotError(
+                    f"quality role responsibilities are invalid for {player_id}"
+                )
+            for field_name in (
+                "expected_start_probability",
+                "team_quality_delta",
+            ):
+                value = role_context.get(field_name)
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or (
+                        not 0 <= float(value) <= 100
+                        if field_name == "expected_start_probability"
+                        else not -30 <= float(value) <= 30
+                    )
+                ):
+                    raise QualitySnapshotError(
+                        f"quality expected role {field_name} is invalid "
+                        f"for {player_id}"
+                    )
         preseason_summary = annotation.get("preseason_summary")
         if not isinstance(preseason_summary, dict):
             raise QualitySnapshotError(

@@ -709,6 +709,146 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             stable["adjustments"]["unknown_role_risk"],
         )
 
+    def test_confirmed_new_club_role_removes_blanket_transfer_malus(
+        self,
+    ) -> None:
+        history = [
+            form_season(
+                2025,
+                minutes=2300,
+                lineups=25,
+                rating=7.0,
+                goals=10,
+                assists=5,
+                club="Old Club",
+            )
+        ]
+        role_evidence = {
+            "continuity": "confirmed",
+            "confidence": "high",
+            "expected_start_probability": 92,
+            "team_quality_delta": 14,
+            "responsibilities": {
+                "direct_free_kicks": "shared",
+                "corners": "shared",
+                "playmaker": "shared",
+                "offensive_focal_point": "primary",
+            },
+            "evidence": [
+                {
+                    "claim": "Signed for the same leading attacking role",
+                    "source_url": "https://example.com/role",
+                    "checked_at": "2026-07-28T10:00:00Z",
+                }
+            ],
+        }
+
+        unconfirmed = quality.historical_form_profile(
+            position="FORWARD",
+            histories=history,
+            history_player={"seasons": []},
+            market_club="New Club",
+            news_player=news_player(),
+            age=25,
+        )
+        confirmed = quality.historical_form_profile(
+            position="FORWARD",
+            histories=history,
+            history_player={"seasons": []},
+            market_club="New Club",
+            news_player=news_player(),
+            age=25,
+            role_evidence=role_evidence,
+        )
+        role = quality.expected_role_profile(
+            position="FORWARD",
+            histories=history,
+            role_evidence=role_evidence,
+            club_changed=True,
+        )
+
+        self.assertEqual(0.58, unconfirmed["context_transfer_factor"])
+        self.assertEqual(1.0, confirmed["context_transfer_factor"])
+        self.assertEqual("confirmed", confirmed["role_continuity"])
+        self.assertLess(
+            confirmed["adjustments"]["unknown_role_risk"],
+            unconfirmed["adjustments"]["unknown_role_risk"],
+        )
+        self.assertGreater(role["adjustments"]["context"], 0)
+        self.assertEqual(
+            "primary",
+            role["responsibilities"]["offensive_focal_point"],
+        )
+
+    def test_defender_set_piece_target_receives_role_credit(self) -> None:
+        role = quality.expected_role_profile(
+            position="DEFENDER",
+            histories=[],
+            club_changed=False,
+            role_evidence={
+                "continuity": "confirmed",
+                "confidence": "high",
+                "expected_start_probability": 96,
+                "team_quality_delta": 5,
+                "responsibilities": {
+                    "aerial_set_piece_target": "primary",
+                    "captain": "primary",
+                },
+                "evidence": [
+                    {
+                        "claim": "Captain and primary aerial target",
+                        "source_url": "https://example.com/set-piece-role",
+                        "checked_at": "2026-07-28T10:00:00Z",
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(
+            "primary",
+            role["responsibilities"]["aerial_set_piece_target"],
+        )
+        self.assertGreater(role["adjustments"]["role"], 0)
+        self.assertLessEqual(role["adjustments"]["rotation_risk_cap"], 4)
+
+    def test_unknown_training_status_does_not_reduce_fitness(self) -> None:
+        adjustment = quality.preseason_adjustment(
+            {
+                "summary": {
+                    "appearances": 2,
+                    "starts": 2,
+                    "minutes": 150,
+                    "goals": 1,
+                    "assists": 1,
+                    "official_source_count": 2,
+                    "availability_score": 90,
+                    "role_score": 88,
+                    "performance_score": 82,
+                    "opponent_score": 70,
+                    "training_score": 50,
+                    "latest_training_status": "unknown",
+                    "signal_score": 84,
+                    "effective_factor": 100,
+                    "confidence": "high",
+                    "classification": "positive",
+                }
+            },
+            age=22,
+            proven_seasons=1,
+            comparable_minutes=1500,
+            youth_score=70,
+            talent_score=75,
+            minutes=80,
+            role=78,
+            upside=72,
+            value=74,
+            unknown_role=22,
+            fitness=92,
+            injury_risk=5,
+        )
+
+        self.assertEqual(92, adjustment["components"]["fitness"])
+
     def test_availability_drop_and_current_injury_are_visible(self) -> None:
         histories = [
             form_season(
@@ -1172,6 +1312,58 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             transferred["risks"]["unknown_role"],
             stable["risks"]["unknown_role"],
         )
+
+    def test_confirmed_transfer_role_keeps_quality_but_not_news_rotation(
+        self,
+    ) -> None:
+        changed_history = api_history()
+        for season in changed_history:
+            season["clubs"] = [
+                {
+                    "name": "Previous Club",
+                    "appearances": season["appearances"],
+                    "minutes": season["minutes"],
+                }
+            ]
+        current_news = news_player()
+        current_news["consensus"]["rotation"] = 55
+        annotation = quality.build_annotation(
+            market_player(),
+            "news-1",
+            current_news,
+            changed_history,
+            transfermarkt_history(proven_seasons=3),
+            role_evidence={
+                "continuity": "confirmed",
+                "confidence": "high",
+                "expected_start_probability": 92,
+                "team_quality_delta": 12,
+                "responsibilities": {
+                    "offensive_focal_point": "primary",
+                },
+                "evidence": [
+                    {
+                        "claim": "Current club confirms a leading role",
+                        "source_url": "https://example.com/current-role",
+                        "checked_at": "2026-07-28",
+                    }
+                ],
+            },
+            competition="2. Bundesliga",
+            points_pct=90,
+            price_pct=70,
+            generated_at="2026-07-28T12:00:00Z",
+        )
+
+        self.assertEqual(
+            1.0,
+            annotation["form_summary"]["context_transfer_factor"],
+        )
+        self.assertEqual(
+            "confirmed",
+            annotation["role_context"]["continuity"],
+        )
+        self.assertGreaterEqual(annotation["risks"]["rotation"], 55)
 
     def test_candidate_rank_uses_history_not_only_previous_kicker_points(self) -> None:
         points = {"FORWARD": [0, 50, 100, 150]}

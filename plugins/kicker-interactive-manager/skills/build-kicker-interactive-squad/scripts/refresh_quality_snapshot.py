@@ -54,10 +54,21 @@ from refresh_news_snapshot import (
 )
 
 
-MODEL_VERSION = "multi-season-v8-readiness-rebound"
+MODEL_VERSION = "multi-season-v9-role-potential"
 PRESEASON_MODEL_VERSION = "preseason-readiness-v2-provider-stats"
-FORM_MODEL_VERSION = "recency-context-v2-rebound"
+FORM_MODEL_VERSION = "recency-context-v3-role-transfer"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
+ROLE_CONTINUITY = {"unknown", "confirmed", "expanded", "reduced"}
+ROLE_RESPONSIBILITIES = {
+    "penalties",
+    "direct_free_kicks",
+    "corners",
+    "playmaker",
+    "offensive_focal_point",
+    "aerial_set_piece_target",
+    "captain",
+}
+ROLE_LEVELS = {"none", "shared", "primary"}
 
 
 def utc_now() -> datetime:
@@ -851,6 +862,190 @@ def event_role_score(position: str, stats: dict[str, Any]) -> float:
     )
 
 
+def role_level(value: Any) -> str:
+    normalized = str(value or "none").strip().casefold()
+    return normalized if normalized in ROLE_LEVELS else "none"
+
+
+def expected_role_profile(
+    *,
+    position: str,
+    histories: list[dict[str, Any]],
+    role_evidence: dict[str, Any] | None,
+    club_changed: bool | None,
+) -> dict[str, Any]:
+    """Model the expected new-club role instead of penalizing every transfer."""
+
+    evidence = role_evidence if isinstance(role_evidence, dict) else {}
+    evidence_items = [
+        item
+        for item in evidence.get("evidence", [])
+        if (
+            isinstance(item, dict)
+            and str(item.get("claim", "")).strip()
+            and str(item.get("source_url", "")).startswith("https://")
+            and str(item.get("checked_at", "")).strip()
+        )
+    ]
+    continuity = str(evidence.get("continuity", "unknown")).strip().casefold()
+    if continuity not in ROLE_CONTINUITY or not evidence_items:
+        continuity = "unknown"
+    responsibilities = {
+        key: role_level(
+            (evidence.get("responsibilities", {}) or {}).get(key)
+        )
+        for key in ROLE_RESPONSIBILITIES
+    }
+    if not evidence_items:
+        responsibilities = {
+            key: "none" for key in ROLE_RESPONSIBILITIES
+        }
+
+    recent = [
+        season
+        for season in histories[:3]
+        if numeric(season.get("minutes")) >= 180
+    ]
+    recent_minutes = sum(numeric(season.get("minutes")) for season in recent)
+    recent_penalties = sum(
+        numeric(season.get("penalties_scored")) for season in recent
+    )
+    key_passes_per_90 = (
+        90.0
+        * sum(numeric(season.get("key_passes")) for season in recent)
+        / max(1.0, recent_minutes)
+    )
+    contributions_per_90 = (
+        90.0
+        * sum(
+            numeric(season.get("goals"))
+            + numeric(season.get("assists"))
+            for season in recent
+        )
+        / max(1.0, recent_minutes)
+    )
+    goal_threat_per_90 = (
+        90.0
+        * sum(
+            numeric(season.get("goals"))
+            + 0.35 * numeric(season.get("shots_on"))
+            for season in recent
+        )
+        / max(1.0, recent_minutes)
+    )
+
+    # Historical responsibilities remain useful at the same club. After a
+    # transfer they are portable only when current evidence confirms them.
+    historical_role_is_portable = club_changed is not True
+    if historical_role_is_portable:
+        if recent_penalties >= 2 and responsibilities["penalties"] == "none":
+            responsibilities["penalties"] = "shared"
+        if (
+            position in {"MIDFIELDER", "FORWARD"}
+            and key_passes_per_90 >= 1.25
+            and responsibilities["playmaker"] == "none"
+        ):
+            responsibilities["playmaker"] = "shared"
+        if (
+            position in {"MIDFIELDER", "FORWARD"}
+            and contributions_per_90 >= 0.42
+            and responsibilities["offensive_focal_point"] == "none"
+        ):
+            responsibilities["offensive_focal_point"] = "shared"
+        if (
+            position == "DEFENDER"
+            and goal_threat_per_90 >= 0.16
+            and responsibilities["aerial_set_piece_target"] == "none"
+        ):
+            responsibilities["aerial_set_piece_target"] = "shared"
+
+    responsibility_weights = {
+        "penalties": (4.0, 8.0),
+        "direct_free_kicks": (3.0, 6.0),
+        "corners": (2.5, 5.0),
+        "playmaker": (4.0, 8.0),
+        "offensive_focal_point": (4.0, 8.0),
+        "aerial_set_piece_target": (3.5, 7.0),
+        "captain": (1.5, 2.5),
+    }
+    responsibility_score = sum(
+        responsibility_weights[key][0 if level == "shared" else 1]
+        for key, level in responsibilities.items()
+        if level in {"shared", "primary"}
+    )
+    continuity_adjustment = {
+        "expanded": 4.0,
+        "confirmed": 2.0,
+        "reduced": -10.0,
+        "unknown": 0.0,
+    }[continuity]
+    expected_start_probability = clamp(
+        evidence.get("expected_start_probability"),
+        0,
+    )
+    if not evidence_items:
+        expected_start_probability = 0.0
+    team_quality_delta = max(
+        -30.0,
+        min(30.0, numeric(evidence.get("team_quality_delta"))),
+    )
+    if not evidence_items:
+        team_quality_delta = 0.0
+    return {
+        "model_version": "expected-role-v1",
+        "continuity": continuity,
+        "evidence_confidence": (
+            str(evidence.get("confidence", "medium"))
+            if evidence_items
+            else "none"
+        ),
+        "expected_start_probability": round(expected_start_probability, 2),
+        "team_quality_delta": round(team_quality_delta, 2),
+        "responsibilities": responsibilities,
+        "historical_metrics": {
+            "penalties_scored": round(recent_penalties, 2),
+            "key_passes_per_90": round(key_passes_per_90, 3),
+            "contributions_per_90": round(contributions_per_90, 3),
+            "defender_goal_threat_per_90": round(goal_threat_per_90, 3),
+        },
+        "adjustments": {
+            "minutes_floor": round(
+                40.0 + 0.55 * expected_start_probability
+                if expected_start_probability > 0
+                else 0.0,
+                2,
+            ),
+            "role_floor": round(
+                45.0 + 0.50 * expected_start_probability
+                if expected_start_probability > 0
+                else 0.0,
+                2,
+            ),
+            "role": round(
+                max(-12.0, min(12.0, continuity_adjustment + responsibility_score)),
+                2,
+            ),
+            "context": round(
+                max(-8.0, min(8.0, 0.25 * team_quality_delta)),
+                2,
+            ),
+            "unknown_role_risk": {
+                "expanded": -12.0,
+                "confirmed": -10.0,
+                "reduced": 8.0,
+                "unknown": 0.0,
+            }[continuity],
+            "rotation_risk_cap": round(
+                max(0.0, 100.0 - expected_start_probability)
+                if expected_start_probability > 0
+                else 100.0,
+                2,
+            ),
+        },
+        "evidence": evidence_items,
+    }
+
+
 def provider_season_form_score(
     position: str,
     stats: dict[str, Any],
@@ -943,6 +1138,7 @@ def historical_form_profile(
     market_club: str,
     news_player: dict[str, Any],
     age: int,
+    role_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a recency-weighted form curve with context uncertainty."""
 
@@ -1089,8 +1285,31 @@ def historical_form_profile(
         if historical_clubs
         else None
     )
+    explicit_role_evidence = (
+        role_evidence if isinstance(role_evidence, dict) else {}
+    )
+    evidence_items = explicit_role_evidence.get("evidence", [])
+    continuity = str(
+        explicit_role_evidence.get("continuity", "unknown")
+    ).strip().casefold()
+    role_is_currently_evidenced = (
+        continuity in ROLE_CONTINUITY - {"unknown"}
+        and isinstance(evidence_items, list)
+        and any(
+            isinstance(item, dict)
+            and str(item.get("source_url", "")).startswith("https://")
+            and str(item.get("claim", "")).strip()
+            and str(item.get("checked_at", "")).strip()
+            for item in evidence_items
+        )
+    )
     context_transfer_factor = (
-        0.58
+        1.0
+        if role_is_currently_evidenced
+        and continuity in {"confirmed", "expanded"}
+        else 0.52
+        if role_is_currently_evidenced and continuity == "reduced"
+        else 0.58
         if club_changed is True
         else 1.0
         if club_changed is False
@@ -1148,7 +1367,12 @@ def historical_form_profile(
         else portable_delta
     )
     context_uncertainty = (
-        6.0
+        0.0
+        if role_is_currently_evidenced
+        and continuity in {"confirmed", "expanded"}
+        else 8.0
+        if role_is_currently_evidenced and continuity == "reduced"
+        else 6.0
         if club_changed is True
         else 2.0
         if club_changed is None
@@ -1184,6 +1408,9 @@ def historical_form_profile(
         "latest_historical_clubs": historical_clubs,
         "club_changed": club_changed,
         "context_transfer_factor": context_transfer_factor,
+        "role_continuity": (
+            continuity if role_is_currently_evidenced else "unknown"
+        ),
         "availability_ratio": (
             round(availability_ratio, 3)
             if availability_ratio is not None
@@ -1389,10 +1616,14 @@ def preseason_adjustment(
         35.0 if training_status == "absent" else 68.0
         if training_status == "partial" else 100.0
     )
-    adjusted_fitness = min(
-        fitness,
-        fitness_cap,
-        clamp(0.65 * fitness + 0.35 * training_score),
+    adjusted_fitness = (
+        min(
+            fitness,
+            fitness_cap,
+            clamp(0.65 * fitness + 0.35 * training_score),
+        )
+        if training_status in {"full", "partial", "absent"}
+        else min(fitness, fitness_cap)
     )
     adjusted_injury_risk = max(injury_risk, recovery_risk_floor)
     high_upside = (
@@ -1538,6 +1769,7 @@ def build_annotation(
     history_player: dict[str, Any],
     kicker_history_player: dict[str, Any] | None = None,
     talent_evidence: dict[str, Any] | None = None,
+    role_evidence: dict[str, Any] | None = None,
     preseason_player: dict[str, Any] | None = None,
     *,
     competition: str,
@@ -1677,6 +1909,7 @@ def build_annotation(
         market_club=str(market_player["club"]),
         news_player=news_player,
         age=age,
+        role_evidence=role_evidence,
     )
     form_adjustments = form_summary["adjustments"]
     confirmed = clamp(
@@ -1793,14 +2026,36 @@ def build_annotation(
     value = float(preseason_summary["components"]["value"])
     fitness = float(preseason_summary["components"]["fitness"])
     injury_risk = float(preseason_summary["injury_risk"])
+    role_context = expected_role_profile(
+        position=position,
+        histories=histories,
+        role_evidence=role_evidence,
+        club_changed=form_summary["club_changed"],
+    )
+    role_adjustments = role_context["adjustments"]
+    minutes = max(
+        minutes,
+        float(role_adjustments["minutes_floor"]),
+    )
+    role = max(
+        float(role_adjustments["role_floor"]),
+        clamp(role + float(role_adjustments["role"])),
+    )
     risks = {
         "transfer": transfer_risk,
         "injury": injury_risk,
-        "rotation": max(rotation_risk, clamp(82 - minutes)),
+        "rotation": max(
+            rotation_risk,
+            min(
+                float(role_adjustments["rotation_risk_cap"]),
+                clamp(82 - minutes),
+            ),
+        ),
         "outlier": clamp(42 - 15 * proven_seasons + max(0, points_pct - 88) * 1.2),
         "unknown_role": clamp(
             float(preseason_summary["unknown_role"])
             + float(form_adjustments["unknown_role_risk"])
+            + float(role_adjustments["unknown_role_risk"])
         ),
     }
     components = {
@@ -1812,6 +2067,7 @@ def build_annotation(
             65
             + 0.18 * (trend_score - 50)
             + float(form_adjustments["context"])
+            + float(role_adjustments["context"])
         ),
         "fitness": fitness,
         "upside": upside,
@@ -1887,6 +2143,14 @@ def build_annotation(
                     "checked_at": str(item["checked_at"]),
                 }
             )
+    for item in role_context["evidence"]:
+        evidence.append(
+            {
+                "claim": str(item["claim"]),
+                "source_url": str(item["source_url"]),
+                "checked_at": str(item["checked_at"]),
+            }
+        )
     for item in (preseason_player or {}).get("observations", []):
         if (
             isinstance(item, dict)
@@ -1989,6 +2253,15 @@ def build_annotation(
                     if form_summary["season_count"] > 0
                     else ""
                 ),
+                (
+                    "Erwartete Rolle: "
+                    f"{role_context['continuity']}, "
+                    f"Startwahrscheinlichkeit "
+                    f"{role_context['expected_start_probability']:.0f}%, "
+                    f"Teamkontext {role_context['team_quality_delta']:+.0f}."
+                    if role_context["evidence"]
+                    else ""
+                ),
                 str(talent_evidence.get("note", "")).strip(),
             )
             if part
@@ -2002,6 +2275,7 @@ def build_annotation(
             "provider_rating_score": round(rating_score, 2),
             "rating_weight_in_api_confirmation": 0.08,
         },
+        "role_context": role_context,
         "kicker_trend": trend_summary,
         "form_summary": form_summary,
         "history_summary": history_summary,
@@ -2539,6 +2813,10 @@ def generate_snapshot(
                 str(market_player["id"])
             ),
             config.get("talent_evidence", {}).get(
+                str(market_player["id"]),
+                {},
+            ),
+            config.get("role_evidence", {}).get(
                 str(market_player["id"]),
                 {},
             ),

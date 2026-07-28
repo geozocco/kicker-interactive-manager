@@ -417,6 +417,14 @@ class Player:
         default_factory=dict,
         compare=False,
     )
+    history_summary: dict[str, Any] = field(
+        default_factory=dict,
+        compare=False,
+    )
+    role_context: dict[str, Any] = field(
+        default_factory=dict,
+        compare=False,
+    )
 
 
 @dataclass
@@ -765,6 +773,19 @@ def load_players_from_rows(
                         annotation.get("form_summary"),
                         dict,
                     )
+                    else {}
+                ),
+                history_summary=(
+                    dict(annotation.get("history_summary", {}))
+                    if isinstance(
+                        annotation.get("history_summary"),
+                        dict,
+                    )
+                    else {}
+                ),
+                role_context=(
+                    dict(annotation.get("role_context", {}))
+                    if isinstance(annotation.get("role_context"), dict)
                     else {}
                 ),
             )
@@ -1204,8 +1225,84 @@ def protected_reliable_premium_anchor_ids(
                 or player.risks["unknown_role"] > 15
             ):
                 continue
-            protected.add(player.player_id)
+            exchangeable = any(
+                candidate.player_id not in reference_ids
+                and candidate.position == player.position
+                and is_offensive_premium_anchor(candidate)
+                and candidate.proven_seasons >= 4
+                and raw_scores[candidate.player_id]
+                >= 0.97 * raw_scores[player.player_id]
+                and candidate.components["minutes"] >= 80
+                and candidate.components["role"] >= 80
+                and candidate.components["fitness"] >= 70
+                and candidate.risks["transfer"] <= 20
+                and candidate.risks["injury"] <= 30
+                and candidate.risks["rotation"] <= 20
+                and candidate.risks["unknown_role"] <= 20
+                for candidate in players
+            )
+            if not exchangeable:
+                protected.add(player.player_id)
     return frozenset(protected)
+
+
+def qualified_potential_player_ids(
+    players: list[Player],
+) -> frozenset[str]:
+    """Find meaningful U23 upside investments, excluding minimum-price fillers."""
+
+    minimum_cost_by_position = {
+        position: min(
+            (
+                player.cost
+                for player in players
+                if player.position == position
+            ),
+            default=0,
+        )
+        for position in ("DEFENDER", "MIDFIELDER", "FORWARD")
+    }
+    qualified: set[str] = set()
+    for player in players:
+        if player.position == "GOALKEEPER":
+            continue
+        talent_profile = player.history_summary.get("talent_profile", {})
+        age = talent_profile.get("age")
+        talent_score = talent_profile.get("talent_score")
+        readiness_score = talent_profile.get("readiness_score")
+        if (
+            isinstance(age, bool)
+            or not isinstance(age, (int, float))
+            or isinstance(talent_score, bool)
+            or not isinstance(talent_score, (int, float))
+            or isinstance(readiness_score, bool)
+            or not isinstance(readiness_score, (int, float))
+        ):
+            continue
+        if (
+            float(age) <= 22
+            and float(talent_score) >= 68
+            and float(readiness_score) >= 72
+            and player.cost > minimum_cost_by_position[player.position]
+            and player.components["minutes"] >= 70
+            and player.components["role"] >= 65
+            and player.components["fitness"] >= 65
+            and player.risks["transfer"] <= 45
+            and player.risks["injury"] <= 45
+            and player.risks["rotation"] <= 45
+            and player.risks["unknown_role"] <= 45
+        ):
+            qualified.add(player.player_id)
+    return frozenset(qualified)
+
+
+def player_age(player: Player) -> int | None:
+    age = player.history_summary.get("talent_profile", {}).get("age")
+    return (
+        int(age)
+        if isinstance(age, (int, float)) and not isinstance(age, bool)
+        else None
+    )
 
 
 def effective_weights(profile: str, maintenance: str) -> dict[str, float]:
@@ -1214,8 +1311,8 @@ def effective_weights(profile: str, maintenance: str) -> dict[str, float]:
         weights["minutes"] += 5
         weights["role"] += 2
         weights["stability"] += 4
-        weights["upside"] -= 7
-        weights["value"] -= 4
+        weights["upside"] = max(2.0, weights["upside"] - 4)
+        weights["value"] = max(2.0, weights["value"] - 2)
     elif maintenance == "active":
         weights["upside"] += 4
         weights["value"] += 3
@@ -1703,6 +1800,9 @@ def squad_architecture_metrics(
     target_core_budget_share: float,
     min_offensive_premium_anchors: int = 0,
     premium_starter_ids: frozenset[str] = frozenset(),
+    qualified_potential_ids: frozenset[str] = frozenset(),
+    min_qualified_potential_core: int = 0,
+    target_qualified_potential_core: int = 0,
 ) -> dict[str, Any]:
     """Value starters at full use and reserves at expected positional use."""
 
@@ -1721,6 +1821,57 @@ def squad_architecture_metrics(
         raw_scores,
         maintenance,
     )
+    extended_core_ids = set(core_ids)
+    for position in ("DEFENDER", "MIDFIELDER", "FORWARD"):
+        reserves = sorted(
+            (
+                player
+                for player in squad.players
+                if (
+                    player.position == position
+                    and player.player_id not in core_ids
+                )
+            ),
+            key=lambda player: (
+                -player_usage_weights[player.player_id],
+                -raw_scores[player.player_id],
+                player.player_id,
+            ),
+        )
+        if reserves:
+            extended_core_ids.add(reserves[0].player_id)
+    selected_potential_core_ids = sorted(
+        extended_core_ids.intersection(qualified_potential_ids)
+    )
+    available_potential_count = len(qualified_potential_ids)
+    effective_potential_minimum = min(
+        min_qualified_potential_core,
+        available_potential_count,
+    )
+    effective_potential_target = min(
+        max(
+            effective_potential_minimum,
+            target_qualified_potential_core,
+        ),
+        available_potential_count,
+    )
+    potential_core_adjustment = -8.0 * max(
+        0,
+        effective_potential_target - len(selected_potential_core_ids),
+    )
+    squad_ages = [
+        age
+        for player in squad.players
+        if (age := player_age(player)) is not None
+    ]
+    starting_ages = [
+        age
+        for player in squad.players
+        if (
+            player.player_id in core_ids
+            and (age := player_age(player)) is not None
+        )
+    ]
     player_contributions: dict[str, float] = {}
     for player in squad.players:
         player_contributions[player.player_id] = (
@@ -1779,6 +1930,11 @@ def squad_architecture_metrics(
     midfield_budget = position_core_budget["MIDFIELDER"]
     return {
         **audit,
+        "passes": (
+            bool(audit["passes"])
+            and len(selected_potential_core_ids)
+            >= effective_potential_minimum
+        ),
         "expected_contribution": expected_contribution,
         "concentration_adjustment": concentration_adjustment,
         "position_concentration_adjustment": (
@@ -1802,11 +1958,44 @@ def squad_architecture_metrics(
             len(premium_starters) >= premium_starter_target
         ),
         "premium_starter_adjustment": premium_starter_adjustment,
+        "qualified_potential_candidate_ids": sorted(
+            qualified_potential_ids
+        ),
+        "qualified_potential_core_ids": selected_potential_core_ids,
+        "qualified_potential_available": available_potential_count,
+        "qualified_potential_core_count": len(
+            selected_potential_core_ids
+        ),
+        "qualified_potential_core_minimum": effective_potential_minimum,
+        "qualified_potential_core_target": effective_potential_target,
+        "qualified_potential_core_minimum_met": (
+            len(selected_potential_core_ids)
+            >= effective_potential_minimum
+        ),
+        "qualified_potential_core_target_met": (
+            len(selected_potential_core_ids)
+            >= effective_potential_target
+        ),
+        "potential_core_adjustment": potential_core_adjustment,
+        "squad_average_age": (
+            sum(squad_ages) / len(squad_ages) if squad_ages else None
+        ),
+        "starting_xi_average_age": (
+            sum(starting_ages) / len(starting_ages)
+            if starting_ages
+            else None
+        ),
+        "starting_u23_count": sum(
+            player.player_id in core_ids
+            and (player_age(player) or 99) <= 22
+            for player in squad.players
+        ),
         "architecture_objective": (
             expected_contribution
             + concentration_adjustment
             + position_concentration_adjustment
             + premium_starter_adjustment
+            + potential_core_adjustment
         ),
         "player_contributions": player_contributions,
         "player_usage_weights": player_usage_weights,
@@ -1861,6 +2050,15 @@ def finalized_squad_objective(
         premium_starter_ids=premium_starter_candidate_ids(
             candidates,
             raw_scores,
+        ),
+        qualified_potential_ids=qualified_potential_player_ids(
+            candidates
+        ),
+        min_qualified_potential_core=int(
+            getattr(args, "min_qualified_potential_core", 0)
+        ),
+        target_qualified_potential_core=int(
+            getattr(args, "target_qualified_potential_core", 0)
         ),
     )
     return float(metrics["architecture_objective"]), bool(metrics["passes"])
@@ -2086,6 +2284,8 @@ def optimize_joint_squad_architecture(
     min_core_budget_share: float,
     target_core_budget_share: float,
     min_offensive_premium_anchors: int = 0,
+    min_qualified_potential_core: int = 0,
+    target_qualified_potential_core: int = 0,
     quality_loss_limit: float = 0.05,
     max_iterations: int = 10,
     same_club_goalkeepers: bool = True,
@@ -2118,6 +2318,7 @@ def optimize_joint_squad_architecture(
         candidates,
         raw_scores,
     )
+    qualified_potential_ids = qualified_potential_player_ids(candidates)
     single_packages: dict[tuple[str, int], list[Player]] = {}
     for position in positions:
         for player in candidate_by_position[position]:
@@ -2171,6 +2372,126 @@ def optimize_joint_squad_architecture(
             ),
         )[:300]
 
+    # Four-player reallocations use one targeted premium/potential incoming
+    # player plus a compact three-player balancing package. Keep the package
+    # pool deliberately narrow so this broader search remains fast.
+    compact_by_position: dict[str, list[Player]] = {}
+    focus_ids = premium_starter_ids.union(qualified_potential_ids)
+    for position in positions:
+        position_players = candidate_by_position[position]
+        compact_ids = {
+            player.player_id
+            for player in sorted(
+                position_players,
+                key=lambda player: (
+                    -raw_scores[player.player_id],
+                    player.cost,
+                    player.player_id,
+                ),
+            )[:14]
+        }
+        compact_ids.update(
+            player.player_id
+            for player in sorted(
+                position_players,
+                key=lambda player: (
+                    player.cost,
+                    -raw_scores[player.player_id],
+                    player.player_id,
+                ),
+            )[:6]
+        )
+        compact_ids.update(
+            player.player_id
+            for player in sorted(
+                (
+                    candidate
+                    for candidate in position_players
+                    if candidate.player_id in focus_ids
+                ),
+                key=lambda player: (
+                    -raw_scores[player.player_id],
+                    player.player_id,
+                ),
+            )[:8]
+        )
+        compact_by_position[position] = [
+            player
+            for player in position_players
+            if player.player_id in compact_ids
+        ]
+
+    triple_package_heaps: dict[
+        tuple[str, str, str, int],
+        list[
+            tuple[
+                float,
+                tuple[str, str, str],
+                tuple[Player, Player, Player],
+            ]
+        ],
+    ] = {}
+    for first_index, first_position in enumerate(positions):
+        for second_index in range(first_index, len(positions)):
+            second_position = positions[second_index]
+            for third_position in positions[second_index:]:
+                position_pattern = (
+                    first_position,
+                    second_position,
+                    third_position,
+                )
+                pools = [
+                    compact_by_position[position]
+                    for position in position_pattern
+                ]
+                for package in itertools.product(*pools):
+                    if len({player.player_id for player in package}) < 3:
+                        continue
+                    if any(
+                        package[index].player_id
+                        >= package[index + 1].player_id
+                        for index in range(2)
+                        if (
+                            position_pattern[index]
+                            == position_pattern[index + 1]
+                        )
+                    ):
+                        continue
+                    package_key = (
+                        *position_pattern,
+                        sum(player.cost for player in package),
+                    )
+                    item = (
+                        sum(
+                            raw_scores[player.player_id]
+                            for player in package
+                        ),
+                        tuple(player.player_id for player in package),
+                        package,
+                    )
+                    heap = triple_package_heaps.setdefault(
+                        package_key,
+                        [],
+                    )
+                    if len(heap) < 160:
+                        heapq.heappush(heap, item)
+                    elif item[:2] > heap[0][:2]:
+                        heapq.heapreplace(heap, item)
+    triple_packages: dict[
+        tuple[str, str, str, int],
+        list[tuple[Player, Player, Player]],
+    ] = {
+        key: [
+            item[2]
+            for item in sorted(
+                heap,
+                key=lambda item: (item[0], item[1]),
+                reverse=True,
+            )
+        ]
+        for key, heap in triple_package_heaps.items()
+    }
+
     goalkeeper_blocks: list[tuple[Player, ...]] = []
     if same_club_goalkeepers:
         goalkeeper_count = sum(
@@ -2208,9 +2529,14 @@ def optimize_joint_squad_architecture(
         target_core_budget_share=target_core_budget_share,
         min_offensive_premium_anchors=min_offensive_premium_anchors,
         premium_starter_ids=premium_starter_ids,
+        qualified_potential_ids=qualified_potential_ids,
+        min_qualified_potential_core=min_qualified_potential_core,
+        target_qualified_potential_core=target_qualified_potential_core,
     )
     maximum_reachable_core_share = current_metrics["core_budget_share"]
     evaluated_rosters = 1
+    triple_swap_rosters_evaluated = 0
+    four_swap_rosters_evaluated = 0
     completed_iterations = 0
     position_packages_by_cost: dict[
         tuple[str, int, int], list[tuple[Player, ...]]
@@ -2221,6 +2547,8 @@ def optimize_joint_squad_architecture(
             tuple[float, float, float, Squad, dict[str, Any]]
         ] = []
         seen_rosters: set[frozenset[str]] = set()
+        iteration_triple_attempts = 0
+        iteration_four_attempts = 0
 
         def consider(replacement_players: list[Player]) -> None:
             nonlocal maximum_reachable_core_share, evaluated_rosters
@@ -2260,6 +2588,13 @@ def optimize_joint_squad_architecture(
                     min_offensive_premium_anchors
                 ),
                 premium_starter_ids=premium_starter_ids,
+                qualified_potential_ids=qualified_potential_ids,
+                min_qualified_potential_core=(
+                    min_qualified_potential_core
+                ),
+                target_qualified_potential_core=(
+                    target_qualified_potential_core
+                ),
             )
             evaluated_rosters += 1
             if not metrics["passes"]:
@@ -2276,6 +2611,70 @@ def optimize_joint_squad_architecture(
                     replacement,
                     metrics,
                 )
+            )
+
+        def consider_package(
+            outgoing: tuple[Player, ...],
+            incoming: tuple[Player, ...],
+            *,
+            package_size: int,
+        ) -> None:
+            nonlocal triple_swap_rosters_evaluated
+            nonlocal four_swap_rosters_evaluated
+            nonlocal iteration_triple_attempts
+            nonlocal iteration_four_attempts
+            if package_size == 3 and iteration_triple_attempts >= 120:
+                return
+            if package_size == 4 and iteration_four_attempts >= 60:
+                return
+            outgoing_ids = {player.player_id for player in outgoing}
+            incoming_ids = {player.player_id for player in incoming}
+            if len(outgoing_ids) != len(outgoing):
+                return
+            if len(incoming_ids) != len(incoming):
+                return
+            if incoming_ids.intersection(selected_ids - outgoing_ids):
+                return
+            outgoing_by_position: dict[str, list[Player]] = {
+                position: [] for position in positions
+            }
+            incoming_by_position: dict[str, list[Player]] = {
+                position: [] for position in positions
+            }
+            for player in outgoing:
+                outgoing_by_position[player.position].append(player)
+            for player in incoming:
+                incoming_by_position[player.position].append(player)
+            if any(
+                len(outgoing_by_position[position])
+                != len(incoming_by_position[position])
+                for position in positions
+            ):
+                return
+            replacement_map: dict[str, Player] = {}
+            for position in positions:
+                for displaced, added in zip(
+                    sorted(
+                        outgoing_by_position[position],
+                        key=lambda player: player.player_id,
+                    ),
+                    sorted(
+                        incoming_by_position[position],
+                        key=lambda player: player.player_id,
+                    ),
+                ):
+                    replacement_map[displaced.player_id] = added
+            if package_size == 3:
+                iteration_triple_attempts += 1
+                triple_swap_rosters_evaluated += 1
+            elif package_size == 4:
+                iteration_four_attempts += 1
+                four_swap_rosters_evaluated += 1
+            consider(
+                [
+                    replacement_map.get(player.player_id, player)
+                    for player in current.players
+                ]
             )
 
         field_players = [
@@ -2417,6 +2816,129 @@ def optimize_joint_squad_architecture(
                     ]
                 )
 
+        # Search targeted cross-position reallocations. This finds structures
+        # such as "premium attacker plus two cheap reserves" that no sequence
+        # of exact-cost one-for-one swaps can reach.
+        if iteration < 3:
+            current_contributions = current_metrics[
+                "player_contributions"
+            ]
+            top_raw_ids = {
+                candidate.player_id
+                for position in positions
+                for candidate in sorted(
+                    candidate_by_position[position],
+                    key=lambda player: (
+                        -raw_scores[player.player_id],
+                        player.player_id,
+                    ),
+                )[:3]
+            }
+            balancing_pool = sorted(
+                field_players,
+                key=lambda player: (
+                    current_contributions[player.player_id]
+                    / max(player.cost / 100_000, 1.0),
+                    raw_scores[player.player_id],
+                    -player.cost,
+                    player.player_id,
+                ),
+            )[:10]
+            targeted_incoming = sorted(
+                (
+                    player
+                    for player in candidates
+                    if (
+                        player.position != "GOALKEEPER"
+                        and player.player_id not in selected_ids
+                        and (
+                            player.player_id in focus_ids
+                            or player.player_id in top_raw_ids
+                        )
+                    )
+                ),
+                key=lambda player: (
+                    -raw_scores[player.player_id],
+                    player.player_id,
+                ),
+            )[:18]
+            for incoming_focus in targeted_incoming:
+                primary_outgoing = sorted(
+                    (
+                        player
+                        for player in field_players
+                        if player.position == incoming_focus.position
+                    ),
+                    key=lambda player: (
+                        raw_scores[player.player_id],
+                        -player.cost,
+                        player.player_id,
+                    ),
+                )[:3]
+                for primary in primary_outgoing:
+                    other_pool = [
+                        player
+                        for player in balancing_pool
+                        if player.player_id != primary.player_id
+                    ]
+                    for balancing in itertools.combinations(other_pool, 2):
+                        ordered_balancing = tuple(
+                            sorted(
+                                balancing,
+                                key=lambda player: (
+                                    positions.index(player.position),
+                                    player.player_id,
+                                ),
+                            )
+                        )
+                        replacement_cost = (
+                            primary.cost
+                            + sum(player.cost for player in balancing)
+                            - incoming_focus.cost
+                        )
+                        package_key = (
+                            ordered_balancing[0].position,
+                            ordered_balancing[1].position,
+                            replacement_cost,
+                        )
+                        for package in pair_packages.get(
+                            package_key,
+                            [],
+                        )[:6]:
+                            consider_package(
+                                (primary, *balancing),
+                                (incoming_focus, *package),
+                                package_size=3,
+                            )
+                    for balancing in itertools.combinations(other_pool, 3):
+                        ordered_balancing = tuple(
+                            sorted(
+                                balancing,
+                                key=lambda player: (
+                                    positions.index(player.position),
+                                    player.player_id,
+                                ),
+                            )
+                        )
+                        replacement_cost = (
+                            primary.cost
+                            + sum(player.cost for player in balancing)
+                            - incoming_focus.cost
+                        )
+                        package_key = (
+                            *(player.position for player in ordered_balancing),
+                            replacement_cost,
+                        )
+                        for package in triple_packages.get(
+                            package_key,
+                            [],
+                        )[:4]:
+                            consider_package(
+                                (primary, *balancing),
+                                (incoming_focus, *package),
+                                package_size=4,
+                            )
+
         for position in PACKAGE_STARTER_LIMITS:
             current_position_players = [
                 player
@@ -2481,7 +3003,7 @@ def optimize_joint_squad_architecture(
         maximum_reachable_core_share,
     )
     current.architecture_diagnostics = {
-        "model_version": "joint-xi-bench-v4-protected-final-objective",
+        "model_version": "joint-xi-bench-v5-role-potential-multiswap",
         "expected_contribution": round(
             current_metrics["expected_contribution"],
             6,
@@ -2548,11 +3070,47 @@ def optimize_joint_squad_architecture(
         "premium_starter_target_met": current_metrics[
             "premium_starter_target_met"
         ],
+        "qualified_potential_candidate_ids": current_metrics[
+            "qualified_potential_candidate_ids"
+        ],
+        "qualified_potential_core_ids": current_metrics[
+            "qualified_potential_core_ids"
+        ],
+        "qualified_potential_available": current_metrics[
+            "qualified_potential_available"
+        ],
+        "qualified_potential_core_count": current_metrics[
+            "qualified_potential_core_count"
+        ],
+        "qualified_potential_core_minimum": current_metrics[
+            "qualified_potential_core_minimum"
+        ],
+        "qualified_potential_core_target": current_metrics[
+            "qualified_potential_core_target"
+        ],
+        "qualified_potential_core_minimum_met": current_metrics[
+            "qualified_potential_core_minimum_met"
+        ],
+        "qualified_potential_core_target_met": current_metrics[
+            "qualified_potential_core_target_met"
+        ],
+        "potential_core_adjustment": current_metrics[
+            "potential_core_adjustment"
+        ],
+        "squad_average_age": current_metrics["squad_average_age"],
+        "starting_xi_average_age": current_metrics[
+            "starting_xi_average_age"
+        ],
+        "starting_u23_count": current_metrics["starting_u23_count"],
         "player_contributions": current_metrics[
             "player_contributions"
         ],
         "player_usage_weights": current_metrics["player_usage_weights"],
         "evaluated_rosters": evaluated_rosters,
+        "triple_swap_rosters_evaluated": (
+            triple_swap_rosters_evaluated
+        ),
+        "four_swap_rosters_evaluated": four_swap_rosters_evaluated,
         "improvement_iterations": completed_iterations,
     }
     return current
@@ -2980,6 +3538,8 @@ def finalize_reliable_core_architecture(
     target_core_budget_share: float = 0.0,
     minimum_spend: int = 0,
     min_offensive_premium_anchors: int = 0,
+    min_qualified_potential_core: int = 0,
+    target_qualified_potential_core: int = 0,
     maintenance: str = "low",
     same_club_goalkeepers: bool = True,
     protected_player_ids: AbstractSet[str] = frozenset(),
@@ -2987,6 +3547,28 @@ def finalize_reliable_core_architecture(
     """Apply the same core-first architecture to a squad and its reference."""
 
     current = squad
+    roster_slots = Counter(player.position for player in current.players)
+    bounded_candidates = strategic_optimization_pool(
+        candidates,
+        core_scores,
+        roster_slots,
+    )
+    bounded_ids = {
+        player.player_id for player in bounded_candidates
+    }
+    required_candidate_ids = set(current.ids).union(protected_player_ids)
+    if not required_candidate_ids.issubset(bounded_ids):
+        bounded_candidates = [
+            *bounded_candidates,
+            *(
+                player
+                for player in candidates
+                if (
+                    player.player_id in required_candidate_ids
+                    and player.player_id not in bounded_ids
+                )
+            ),
+        ]
     audit = reliable_core_audit(
         current,
         core_scores,
@@ -2998,7 +3580,7 @@ def finalize_reliable_core_architecture(
     if not audit["passes"]:
         repaired = repair_core_budget_share(
             current,
-            candidates,
+            bounded_candidates,
             quality_scores,
             core_scores,
             club_cap=club_cap,
@@ -3014,7 +3596,7 @@ def finalize_reliable_core_architecture(
             current = repaired
     current = upgrade_core_with_remaining_budget(
         current,
-        candidates,
+        bounded_candidates,
         quality_scores,
         core_scores,
         budget=budget,
@@ -3027,7 +3609,7 @@ def finalize_reliable_core_architecture(
     )
     return optimize_joint_squad_architecture(
         current,
-        candidates,
+        bounded_candidates,
         quality_scores,
         core_scores,
         budget=budget,
@@ -3038,6 +3620,8 @@ def finalize_reliable_core_architecture(
         min_core_budget_share=min_core_budget_share,
         target_core_budget_share=target_core_budget_share,
         min_offensive_premium_anchors=min_offensive_premium_anchors,
+        min_qualified_potential_core=min_qualified_potential_core,
+        target_qualified_potential_core=target_qualified_potential_core,
         same_club_goalkeepers=same_club_goalkeepers,
         protected_player_ids=protected_player_ids,
     )
@@ -4180,6 +4764,95 @@ def technical_variation_pool(
     ]
 
 
+def strategic_optimization_pool(
+    players: list[Player],
+    scores: Mapping[str, float],
+    slots: Mapping[str, int],
+) -> list[Player]:
+    """Bound the exact base search without dropping meaningful archetypes.
+
+    The central quality feed deliberately covers far more players than an
+    exact 22-player dynamic program needs. Preserve every goalkeeper block,
+    anchor, benchmark and qualified prospect, then retain the strongest,
+    cheapest and best candidates in every price tier. The later joint
+    architecture search still receives the complete researched pool.
+    """
+
+    if len(players) <= 160:
+        return players
+    retained_ids = {
+        player.player_id
+        for player in players
+        if (
+            player.position == "GOALKEEPER"
+            or player.benchmark
+        )
+    }
+    retained_ids.update(qualified_potential_player_ids(players))
+    for position, slot_count in slots.items():
+        if position == "GOALKEEPER":
+            continue
+        position_players = [
+            player for player in players if player.position == position
+        ]
+        retained_ids.update(
+            player.player_id
+            for player in sorted(
+                (
+                    candidate
+                    for candidate in position_players
+                    if candidate.reliable_anchor
+                ),
+                key=lambda player: (
+                    -scores[player.player_id],
+                    player.cost,
+                    player.player_id,
+                ),
+            )[: max(slot_count + 3, 8)]
+        )
+        retained_ids.update(
+            player.player_id
+            for player in sorted(
+                position_players,
+                key=lambda player: (
+                    -scores[player.player_id],
+                    player.cost,
+                    player.player_id,
+                ),
+            )[: max(slot_count * 2, 12)]
+        )
+        retained_ids.update(
+            player.player_id
+            for player in sorted(
+                position_players,
+                key=lambda player: (
+                    player.cost,
+                    -scores[player.player_id],
+                    player.player_id,
+                ),
+            )[: max(slot_count + 3, 10)]
+        )
+        by_cost: dict[int, list[Player]] = {}
+        for player in position_players:
+            by_cost.setdefault(player.cost, []).append(player)
+        for tier in by_cost.values():
+            retained_ids.update(
+                player.player_id
+                for player in sorted(
+                    tier,
+                    key=lambda player: (
+                        -scores[player.player_id],
+                        -player.components["minutes"],
+                        -player.components["role"],
+                        player.player_id,
+                    ),
+                )[:1]
+            )
+    return [
+        player for player in players if player.player_id in retained_ids
+    ]
+
+
 def prepare_variation_context(
     players: list[Player],
     budget: int,
@@ -4196,8 +4869,13 @@ def prepare_variation_context(
 ) -> dict[str, Any]:
     """Calculate the seed-independent portfolio search state once."""
 
-    optimum = optimize(
+    optimization_players = strategic_optimization_pool(
         players,
+        base_scores,
+        slots,
+    )
+    optimum = optimize(
+        optimization_players,
         budget,
         base_scores,
         club_cap,
@@ -4219,9 +4897,14 @@ def prepare_variation_context(
     allowed_gap = config["gap"] * profile_factor
     target_distance = int(config["distance"])
     variation_players = (
-        technical_variation_pool(players, base_scores, optimum, slots)
+        technical_variation_pool(
+            optimization_players,
+            base_scores,
+            optimum,
+            slots,
+        )
         if technical_smoke
-        else players
+        else optimization_players
     )
     optimum_score = sum(base_scores[player.player_id] for player in optimum.players)
     score_denominator = max(abs(optimum_score), 1e-9)
@@ -4272,6 +4955,8 @@ def prepare_variation_context(
         "config": config,
         "target_distance": target_distance,
         "variation_players": variation_players,
+        "optimization_pool_size": len(optimization_players),
+        "researched_pool_size": len(players),
         "quality_floor": quality_floor,
         "chosen_bucket": chosen_bucket,
         "variation_target_met": variation_target_met,
@@ -4504,6 +5189,8 @@ def varied_portfolio(
     min_core_budget_share: float = 0.0,
     target_core_budget_share: float = 0.0,
     min_offensive_premium_anchors: int = 0,
+    min_qualified_potential_core: int = 0,
+    target_qualified_potential_core: int = 0,
     core_scores: Mapping[str, float] | None = None,
     technical_smoke: bool = False,
     max_reliable_anchor_exposure: int = 1,
@@ -4786,6 +5473,12 @@ def varied_portfolio(
                     min_offensive_premium_anchors=(
                         min_offensive_premium_anchors
                     ),
+                    min_qualified_potential_core=(
+                        min_qualified_potential_core
+                    ),
+                    target_qualified_potential_core=(
+                        target_qualified_potential_core
+                    ),
                     maintenance=maintenance,
                     same_club_goalkeepers=same_club_goalkeepers,
                 )
@@ -4803,6 +5496,12 @@ def varied_portfolio(
                     minimum_spend=minimum_spend,
                     min_offensive_premium_anchors=(
                         min_offensive_premium_anchors
+                    ),
+                    min_qualified_potential_core=(
+                        min_qualified_potential_core
+                    ),
+                    target_qualified_potential_core=(
+                        target_qualified_potential_core
                     ),
                     maintenance=maintenance,
                     same_club_goalkeepers=same_club_goalkeepers,
@@ -5161,6 +5860,10 @@ def output_payload(
             )
         if player.form_summary:
             payload["form_summary"] = dict(player.form_summary)
+        if player.history_summary:
+            payload["history_summary"] = dict(player.history_summary)
+        if player.role_context:
+            payload["role_context"] = dict(player.role_context)
         if selection_role is not None:
             payload["selection_role"] = selection_role
         architecture_contributions = squad.architecture_diagnostics.get(
@@ -5293,6 +5996,20 @@ def output_payload(
                             0,
                         )
                     ),
+                    min_qualified_potential_core=int(
+                        getattr(
+                            args,
+                            "min_qualified_potential_core",
+                            0,
+                        )
+                    ),
+                    target_qualified_potential_core=int(
+                        getattr(
+                            args,
+                            "target_qualified_potential_core",
+                            0,
+                        )
+                    ),
                     maintenance=getattr(args, "maintenance", "normal"),
                     same_club_goalkeepers=not args.mixed_goalkeepers,
                     protected_player_ids=frozenset(
@@ -5357,6 +6074,62 @@ def output_payload(
                 direct_replacements,
                 key=lambda candidate: candidate.objective_score,
             )
+            if float(
+                getattr(args, "min_core_budget_share", 0.0)
+            ) > 0:
+                forced = finalize_reliable_core_architecture(
+                    forced,
+                    players,
+                    utility_scores,
+                    raw_scores,
+                    budget=args.budget,
+                    club_cap=args.max_outfield_per_club,
+                    min_reliable_anchors=args.min_reliable_anchors,
+                    min_attacking_anchors=getattr(
+                        args,
+                        "min_attacking_anchors",
+                        0,
+                    ),
+                    min_core_budget_share=getattr(
+                        args,
+                        "min_core_budget_share",
+                        0.0,
+                    ),
+                    target_core_budget_share=getattr(
+                        args,
+                        "effective_core_budget_share_target",
+                        0.0,
+                    ),
+                    minimum_spend=minimum_spend,
+                    min_offensive_premium_anchors=getattr(
+                        args,
+                        "min_offensive_premium_anchors",
+                        0,
+                    ),
+                    min_qualified_potential_core=int(
+                        getattr(
+                            args,
+                            "min_qualified_potential_core",
+                            0,
+                        )
+                    ),
+                    target_qualified_potential_core=int(
+                        getattr(
+                            args,
+                            "target_qualified_potential_core",
+                            0,
+                        )
+                    ),
+                    maintenance=getattr(
+                        args,
+                        "maintenance",
+                        "normal",
+                    ),
+                    same_club_goalkeepers=not args.mixed_goalkeepers,
+                    protected_player_ids=frozenset(
+                        {player.player_id}
+                    ),
+                )
             counterfactual_scope = "best_feasible_direct_replacement"
         forced_utility, forced_objective_valid = finalized_squad_objective(
             forced,
@@ -5619,6 +6392,38 @@ def output_payload(
             warnings.append(
                 "No quality-qualified player from the highest offensive "
                 "price tier reached the starting eleven."
+            )
+        if not architecture_audit.get(
+            "qualified_potential_core_minimum_met",
+            True,
+        ):
+            warnings.append(
+                "The extended sporting core contains no qualified U23 "
+                "potential investment despite suitable candidates."
+            )
+        elif not architecture_audit.get(
+            "qualified_potential_core_target_met",
+            True,
+        ):
+            warnings.append(
+                "The extended sporting core meets its minimum youth floor, "
+                "but remains below the evidence-qualified U23 target."
+            )
+        if float(
+            architecture_audit.get("starting_xi_average_age") or 0.0
+        ) > 28.0:
+            warnings.append(
+                "The projected starting eleven averages above 28 years; "
+                "verify that the experience premium is worth the missing "
+                "development upside."
+            )
+        if int(
+            architecture_audit.get("starting_u23_count") or 0
+        ) == 0:
+            warnings.append(
+                "No U23 player projects into the starting eleven. This can "
+                "be valid, but the squad should still carry a qualified "
+                "potential player in its extended core."
             )
     architecture_contributions = squad.architecture_diagnostics.get(
         "player_contributions",
@@ -6280,6 +7085,24 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--min-qualified-potential-core",
+        type=int,
+        help=(
+            "Minimum qualified U23 potential players in the starting eleven "
+            "plus the first reserve per outfield position; default 1 for a "
+            "final reliable low-maintenance squad"
+        ),
+    )
+    parser.add_argument(
+        "--target-qualified-potential-core",
+        type=int,
+        help=(
+            "Desired number of qualified U23 potential players in the same "
+            "extended core; default 2 for a final reliable low-maintenance "
+            "squad"
+        ),
+    )
+    parser.add_argument(
         "--max-outfield-per-club",
         type=int,
         help="Maximum outfield players from one club",
@@ -6445,12 +7268,44 @@ def parse_args() -> argparse.Namespace:
             )
             else 0
         )
+    if args.min_qualified_potential_core is None:
+        args.min_qualified_potential_core = (
+            1
+            if (
+                args.profile == "reliable"
+                and args.maintenance == "low"
+                and not args.allow_unannotated
+            )
+            else 0
+        )
+    if args.target_qualified_potential_core is None:
+        args.target_qualified_potential_core = (
+            2
+            if (
+                args.profile == "reliable"
+                and args.maintenance == "low"
+                and not args.allow_unannotated
+            )
+            else args.min_qualified_potential_core
+        )
     if args.min_reliable_anchors < 0:
         parser.error("--min-reliable-anchors cannot be negative")
     if args.min_attacking_anchors < 0:
         parser.error("--min-attacking-anchors cannot be negative")
     if args.min_offensive_premium_anchors < 0:
         parser.error("--min-offensive-premium-anchors cannot be negative")
+    if args.min_qualified_potential_core < 0:
+        parser.error("--min-qualified-potential-core cannot be negative")
+    if args.target_qualified_potential_core < 0:
+        parser.error("--target-qualified-potential-core cannot be negative")
+    if (
+        args.target_qualified_potential_core
+        < args.min_qualified_potential_core
+    ):
+        parser.error(
+            "--target-qualified-potential-core cannot be below "
+            "--min-qualified-potential-core"
+        )
     if not 0.0 <= args.min_core_budget_share <= 1.0:
         parser.error("--min-core-budget-share must be between 0 and 1")
     if not 0.0 <= args.target_core_budget_share <= 1.0:
@@ -6954,6 +7809,12 @@ def main() -> int:
                 min_offensive_premium_anchors=(
                     args.min_offensive_premium_anchors
                 ),
+                min_qualified_potential_core=(
+                    args.min_qualified_potential_core
+                ),
+                target_qualified_potential_core=(
+                    args.target_qualified_potential_core
+                ),
                 core_scores=eligible_raw_scores,
                 technical_smoke=args.allow_unannotated,
                 max_reliable_anchor_exposure=args.max_anchor_exposure,
@@ -7023,6 +7884,12 @@ def main() -> int:
                     min_offensive_premium_anchors=(
                         args.min_offensive_premium_anchors
                     ),
+                    min_qualified_potential_core=(
+                        args.min_qualified_potential_core
+                    ),
+                    target_qualified_potential_core=(
+                        args.target_qualified_potential_core
+                    ),
                     maintenance=args.maintenance,
                     same_club_goalkeepers=not args.mixed_goalkeepers,
                     protected_player_ids=protected_premium_ids,
@@ -7043,6 +7910,12 @@ def main() -> int:
                     minimum_spend=minimum_spend,
                     min_offensive_premium_anchors=(
                         args.min_offensive_premium_anchors
+                    ),
+                    min_qualified_potential_core=(
+                        args.min_qualified_potential_core
+                    ),
+                    target_qualified_potential_core=(
+                        args.target_qualified_potential_core
                     ),
                     maintenance=args.maintenance,
                     same_club_goalkeepers=not args.mixed_goalkeepers,

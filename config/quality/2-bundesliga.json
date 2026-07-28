@@ -35,5 +35,54 @@
         }
       ]
     }
+  },
+  "role_evidence": {
+    "pl-k00079554": {
+      "continuity": "confirmed",
+      "confidence": "high",
+      "expected_start_probability": 92,
+      "team_quality_delta": 14,
+      "responsibilities": {
+        "direct_free_kicks": "shared",
+        "playmaker": "shared",
+        "offensive_focal_point": "primary"
+      },
+      "note": "Wolfsburg plant Reese trotz Vereinswechsel erneut als tragenden Offensivspieler ein; der stärkere Mannschaftskontext ist ein begrenztes positives Signal statt eines pauschalen Transfermalus.",
+      "evidence": [
+        {
+          "claim": "Wolfsburg bezeichnet Reese bei der Verpflichtung ausdrücklich als Leistungsträger mit herausragender Offensivqualität und bindet ihn bis 2030.",
+          "source_url": "https://www.vfl-wolfsburg.de/newsdetails/news-detail/detail/news/fabian-reese-wird-ein-wolf",
+          "checked_at": "2026-07-28"
+        },
+        {
+          "claim": "Reese berichtet nach dem Trainingslager, bereits vollständig in die Mannschaft integriert zu sein.",
+          "source_url": "https://www.vfl-wolfsburg.de/newsdetails/news-detail/detail/news/von-anfaengen-und-zielen",
+          "checked_at": "2026-07-28"
+        },
+        {
+          "claim": "Reese startete gegen Lyon, erzeugte mehrere Torchancen und führte auch einen direkten Freistoß aus.",
+          "source_url": "https://www.vfl-wolfsburg.de/newsdetails/news-detail/detail/news/erste-niederlage-der-vorbereitung-1",
+          "checked_at": "2026-07-28"
+        }
+      ]
+    },
+    "pl-k00073704": {
+      "continuity": "confirmed",
+      "confidence": "high",
+      "expected_start_probability": 96,
+      "team_quality_delta": 8,
+      "responsibilities": {
+        "aerial_set_piece_target": "primary",
+        "captain": "primary"
+      },
+      "note": "Mainkas Kapitäns- und Stammspielerrolle bleibt bestehen; seine wiederholte Torgefahr nach ruhenden Bällen wird als eigener Abwehr-Offensivwert geführt.",
+      "evidence": [
+        {
+          "claim": "Heidenheim dokumentiert Mainka als Kapitän und mehrfachen Kopfball-Abnehmer; sein Treffer in Mönchengladbach entstand nach einem Freistoß.",
+          "source_url": "https://www.fc-heidenheim.de/news/detail/22-auch-am-niederrhein-fehlt-nicht-viel-zum-sieg",
+          "checked_at": "2026-07-28"
+        }
+      ]
+    }
   }
 }
