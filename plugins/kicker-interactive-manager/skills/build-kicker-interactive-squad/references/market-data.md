@@ -45,6 +45,13 @@ Der Vorbereitungsbestand kombiniert erfasste API-Sports-Testspiele mit strukturi
 
 Der Qualitätsbestand führt zusätzlich einen belegpflichtigen `role_context`. Er trennt einen ungeklärten Rollenreset von einer bestätigten, erweiterten oder reduzierten Rolle beim aktuellen Verein und erfasst Startwahrscheinlichkeit, Mannschaftsstärke sowie Elfmeter-, Freistoß-, Ecken-, Spielmacher-, Fokus-, Kapitäns- und Standardziel-Verantwortung. Historische Aufgaben werden nach einem Wechsel nur mit aktueller spielerbezogener Evidenz übertragen. Dadurch ist ein Transfer weder automatisch positiv noch negativ.
 
+Kann die API-Historie den letzten Verein nicht liefern, gilt ein im Newsbestand
+bestätigter Zugang zum aktuellen Kicker-Verein trotzdem als erkannter
+Vereinswechsel. Wiederholte aktuelle offizielle Starts in der ersten Formation
+können dann gemeinsam mit starker historischer Start- und Scorerstruktur eine
+vorsichtige Rollenfortsetzung bestätigen. Reine Provider-Aufstellungen oder
+ein einzelner Vorbereitungsscorrer reichen dafür nicht.
+
 Der Kicker-Zeitreihenbestand speichert pro Tag höchstens eine Beobachtung je Spieler. Er baut ab der ersten Veröffentlichung fortlaufend Preis-, Punkte- und Notenverläufe auf; historische Werte vor diesem Startdatum werden nicht erfunden. Mindestens zwei zeitlich getrennte Beobachtungen sind nötig, bevor daraus ein begrenztes Formsignal entsteht. API-Sports ergänzt die Bewertung positionsabhängig um wiederholbare Ereignisse wie Startelfquote, Schüsse aufs Tor, Key Passes, Duelle, Defensivaktionen und Saves. Die API-Sports-Note bleibt ein kleines Hilfssignal und wird nicht als Kicker-Note behandelt.
 
 ## Sicherheitsvertrag

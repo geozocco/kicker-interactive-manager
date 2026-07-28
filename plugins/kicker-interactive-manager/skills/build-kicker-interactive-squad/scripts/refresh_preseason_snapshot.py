@@ -47,6 +47,16 @@ TRAINING_STATUS = {
     "unknown": 50.0,
 }
 CONFIDENCE_WEIGHT = {"low": 0.55, "medium": 0.78, "high": 1.0}
+ROLE_RESPONSIBILITIES = {
+    "penalties",
+    "direct_free_kicks",
+    "corners",
+    "playmaker",
+    "offensive_focal_point",
+    "aerial_set_piece_target",
+    "captain",
+}
+ROLE_LEVELS = {"none", "shared", "primary"}
 
 
 def utc_now() -> datetime:
@@ -304,6 +314,26 @@ def manual_observation(player_id: str, item: dict[str, Any], index: int) -> dict
             f"official preseason evidence needs HTTPS for {player_id}"
         )
     event_date = parse_date(item.get("date")).isoformat()
+    raw_responsibilities = item.get("responsibilities", {})
+    if not isinstance(raw_responsibilities, dict):
+        raise RuntimeError(
+            f"preseason responsibilities must be an object for {player_id}"
+        )
+    unknown_responsibilities = set(raw_responsibilities) - ROLE_RESPONSIBILITIES
+    if unknown_responsibilities:
+        raise RuntimeError(
+            "unknown preseason responsibilities for "
+            f"{player_id}: {sorted(unknown_responsibilities)}"
+        )
+    responsibilities = {}
+    for responsibility, value in raw_responsibilities.items():
+        level = str(value).strip().casefold()
+        if level not in ROLE_LEVELS:
+            raise RuntimeError(
+                "invalid preseason responsibility level for "
+                f"{player_id}: {responsibility}={value}"
+            )
+        responsibilities[responsibility] = level
     return {
         "event_key": str(
             item.get(
@@ -328,6 +358,7 @@ def manual_observation(player_id: str, item: dict[str, Any], index: int) -> dict
         "opponent_score": clamp(item.get("opponent_score"), 50),
         "confidence": confidence,
         "claim": str(item.get("claim", "")).strip(),
+        "responsibilities": responsibilities,
         "source_provider": str(item.get("source_provider", "official_club")),
         "source_url": source_url,
     }

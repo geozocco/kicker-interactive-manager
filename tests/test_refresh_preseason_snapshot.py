@@ -112,6 +112,9 @@ def config() -> dict:
                         "opponent_score": 72,
                         "confidence": "high",
                         "claim": "Scored in an official club friendly.",
+                        "responsibilities": {
+                            "direct_free_kicks": "shared",
+                        },
                         "source_provider": "official_club",
                         "source_url": "https://club.example/friendly",
                     }
@@ -228,7 +231,40 @@ class RefreshPreseasonSnapshotTests(unittest.TestCase):
         self.assertEqual("medium", summary["confidence"])
         self.assertIn(summary["classification"], {"positive", "strong"})
         self.assertLessEqual(summary["signal_score"], 100)
+        official = next(
+            item
+            for item in player["observations"]
+            if item["source_provider"] == "official_club"
+        )
+        self.assertEqual(
+            {"direct_free_kicks": "shared"},
+            official["responsibilities"],
+        )
         self.assertEqual(2, result["providers"]["api_sports"]["requests"])
+
+    def test_manual_responsibility_needs_known_role_and_level(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "unknown preseason"):
+            refresh.manual_observation(
+                "p1",
+                {
+                    "date": "2026-07-18",
+                    "claim": "Started.",
+                    "source_url": "https://club.example/report",
+                    "responsibilities": {"invented_role": "primary"},
+                },
+                0,
+            )
+        with self.assertRaisesRegex(RuntimeError, "invalid preseason"):
+            refresh.manual_observation(
+                "p1",
+                {
+                    "date": "2026-07-18",
+                    "claim": "Started.",
+                    "source_url": "https://club.example/report",
+                    "responsibilities": {"playmaker": "certain"},
+                },
+                0,
+            )
 
     def test_official_evidence_builds_without_provider_after_rate_limit(
         self,

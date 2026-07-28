@@ -16,10 +16,10 @@ from urllib.parse import urlparse
 
 
 SCHEMA_VERSION = 3
-GOALKEEPER_HIERARCHY_MODEL = "multi-season-v9-role-potential"
-RECENCY_FORM_MODEL = "recency-context-v3-role-transfer"
-PRESEASON_READINESS_MODEL = "preseason-readiness-v2-provider-stats"
-EXPECTED_ROLE_MODEL = "expected-role-v1"
+GOALKEEPER_HIERARCHY_MODEL = "multi-season-v10-evidence-role-transfer"
+RECENCY_FORM_MODEL = "recency-context-v4-evidence-role-transfer"
+PRESEASON_READINESS_MODEL = "preseason-readiness-v3-role-responsibilities"
+EXPECTED_ROLE_MODEL = "expected-role-v2"
 COMPONENTS = {
     "confirmed_performance",
     "minutes",

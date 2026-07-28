@@ -18,6 +18,16 @@ from urllib.parse import urlparse
 SCHEMA_VERSION = 1
 CONFIDENCE_LEVELS = {"low", "medium", "high"}
 SIGNAL_CLASSES = {"insufficient", "negative", "neutral", "positive", "strong"}
+ROLE_RESPONSIBILITIES = {
+    "penalties",
+    "direct_free_kicks",
+    "corners",
+    "playmaker",
+    "offensive_focal_point",
+    "aerial_set_piece_target",
+    "captain",
+}
+ROLE_LEVELS = {"none", "shared", "primary"}
 SUMMARY_SCORES = {
     "availability_score",
     "role_score",
@@ -158,6 +168,25 @@ def validate_snapshot(
             if source_url and not source_url.startswith("https://"):
                 raise PreseasonSnapshotError(
                     f"preseason observation source is invalid for {player_id}"
+                )
+            responsibilities = observation.get("responsibilities", {})
+            if not isinstance(responsibilities, dict):
+                raise PreseasonSnapshotError(
+                    "preseason observation responsibilities are invalid "
+                    f"for {player_id}"
+                )
+            if set(responsibilities) - ROLE_RESPONSIBILITIES:
+                raise PreseasonSnapshotError(
+                    "preseason observation contains unknown responsibilities "
+                    f"for {player_id}"
+                )
+            if any(
+                str(level) not in ROLE_LEVELS
+                for level in responsibilities.values()
+            ):
+                raise PreseasonSnapshotError(
+                    "preseason observation responsibility level is invalid "
+                    f"for {player_id}"
                 )
         summary = player.get("summary")
         if not isinstance(summary, dict):

@@ -60,6 +60,16 @@ Offizielle Ergänzungen in `config/preseason/<liga>.json` nur mit direktem HTTPS
 
 API- und offizielle Beobachtungen desselben Spiels anhand von Datum und Gegner zusammenführen. Die offizielle Quelle darf fehlende Formations- oder Rolleninformationen ergänzen, aber keine belegten API-Minuten verdoppeln.
 
+Aktuell ausdrücklich beobachtete Verantwortungen optional strukturiert als
+`responsibilities` mit `none`, `shared` oder `primary` erfassen. Zulässig sind
+Elfmeter, direkte Freistöße, Ecken, Spielmacher-, offensive Fokus-,
+Kapitäns- und torgefährliche Standardzielrolle. Eine bloße frühere
+Verantwortung oder allgemeine Bekanntheit genügt dafür nicht. Wiederholte
+offizielle Starts in der ersten Formation dürfen zusammen mit einer starken
+historischen Start- und Scorerstruktur eine geteilte Spielmacher- oder
+offensive Fokusrolle am neuen Verein stützen; reine Provider-Aufstellungen
+ohne aktuellen Vereinsbeleg dürfen diese Rollenübertragung nicht auslösen.
+
 ## Ergebnisinterpretation
 
 - `strong`: wiederholtes, belastbares positives Rollen- und Einsatzsignal

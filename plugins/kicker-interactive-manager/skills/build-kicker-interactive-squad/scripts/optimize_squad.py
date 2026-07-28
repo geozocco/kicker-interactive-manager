@@ -6928,6 +6928,34 @@ def shortlist_payload(
         ):
             for player in ranked[:premium_count]:
                 premium_review_pool[player.player_id] = player
+        # Surface evidence-backed role winners even when their old Kicker
+        # points do not place them in the generic top-price/top-score buckets.
+        # This is intentionally name-free and does not force selection; it
+        # ensures that promoted creators, set-piece takers and focal attackers
+        # receive an explicit review before optimization.
+        for player in candidates:
+            role = player.role_context
+            responsibilities = role.get("responsibilities", {})
+            has_attacking_responsibility = (
+                isinstance(responsibilities, dict)
+                and any(
+                    responsibilities.get(key) in {"shared", "primary"}
+                    for key in (
+                        "penalties",
+                        "direct_free_kicks",
+                        "corners",
+                        "playmaker",
+                        "offensive_focal_point",
+                        "aerial_set_piece_target",
+                    )
+                )
+            )
+            if (
+                role.get("continuity") in {"confirmed", "expanded"}
+                and float(role.get("expected_start_probability", 0)) >= 75
+                and has_attacking_responsibility
+            ):
+                premium_review_pool[player.player_id] = player
         premium_review = sorted(
             premium_review_pool.values(),
             key=lambda player: (

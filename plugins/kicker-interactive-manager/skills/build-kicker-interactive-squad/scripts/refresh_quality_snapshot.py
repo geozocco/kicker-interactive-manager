@@ -54,9 +54,9 @@ from refresh_news_snapshot import (
 )
 
 
-MODEL_VERSION = "multi-season-v9-role-potential"
-PRESEASON_MODEL_VERSION = "preseason-readiness-v2-provider-stats"
-FORM_MODEL_VERSION = "recency-context-v3-role-transfer"
+MODEL_VERSION = "multi-season-v10-evidence-role-transfer"
+PRESEASON_MODEL_VERSION = "preseason-readiness-v3-role-responsibilities"
+FORM_MODEL_VERSION = "recency-context-v4-evidence-role-transfer"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
 ROLE_CONTINUITY = {"unknown", "confirmed", "expanded", "reduced"}
 ROLE_RESPONSIBILITIES = {
@@ -867,19 +867,14 @@ def role_level(value: Any) -> str:
     return normalized if normalized in ROLE_LEVELS else "none"
 
 
-def expected_role_profile(
-    *,
-    position: str,
-    histories: list[dict[str, Any]],
-    role_evidence: dict[str, Any] | None,
-    club_changed: bool | None,
-) -> dict[str, Any]:
-    """Model the expected new-club role instead of penalizing every transfer."""
-
-    evidence = role_evidence if isinstance(role_evidence, dict) else {}
-    evidence_items = [
-        item
-        for item in evidence.get("evidence", [])
+def valid_role_evidence_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "claim": str(item["claim"]).strip(),
+            "source_url": str(item["source_url"]).strip(),
+            "checked_at": str(item["checked_at"]).strip(),
+        }
+        for item in payload.get("evidence", [])
         if (
             isinstance(item, dict)
             and str(item.get("claim", "")).strip()
@@ -887,6 +882,280 @@ def expected_role_profile(
             and str(item.get("checked_at", "")).strip()
         )
     ]
+
+
+def confirmed_inbound_transfer(news_player: dict[str, Any]) -> bool:
+    return any(
+        isinstance(signal, dict)
+        and str(signal.get("kind")) == "transfer_confirmed"
+        and str(signal.get("status")) == "confirmed"
+        and str(signal.get("availability_impact")) == "in"
+        for signal in news_player.get("signals", [])
+    )
+
+
+def historical_club_context(
+    histories: list[dict[str, Any]],
+    *,
+    market_club: str,
+    news_player: dict[str, Any],
+) -> tuple[list[str], bool | None, str]:
+    provider_by_season = {
+        int(item["season"]): item
+        for item in histories
+        if optional_int(item.get("season")) is not None
+    }
+    latest_provider = next(
+        (
+            provider_by_season[season]
+            for season in sorted(provider_by_season, reverse=True)
+            if provider_by_season[season].get("clubs")
+        ),
+        {},
+    )
+    historical_clubs = [
+        str(club.get("name", "")).strip()
+        for club in latest_provider.get("clubs", [])
+        if str(club.get("name", "")).strip()
+    ]
+    if historical_clubs:
+        return (
+            historical_clubs,
+            all(
+                not club_match(market_club, club)
+                for club in historical_clubs
+            ),
+            "provider_history",
+        )
+    if confirmed_inbound_transfer(news_player):
+        return historical_clubs, True, "confirmed_inbound_transfer"
+    return historical_clubs, None, "unknown"
+
+
+def transfermarkt_role_metrics(
+    history_player: dict[str, Any],
+) -> dict[str, float]:
+    recent_competitions: list[dict[str, Any]] = []
+    for season in history_player.get("seasons", [])[:2]:
+        domestic = [
+            competition
+            for competition in season.get("competitions", [])
+            if (
+                str(competition.get("kind", "")) == "domestic_league"
+                and numeric(competition.get("minutes")) >= 180
+            )
+        ]
+        if domestic:
+            recent_competitions.extend(domestic)
+    minutes = sum(
+        numeric(competition.get("minutes"))
+        for competition in recent_competitions
+    )
+    appearances = sum(
+        numeric(competition.get("appearances"))
+        for competition in recent_competitions
+    )
+    starts = sum(
+        numeric(competition.get("starts"))
+        for competition in recent_competitions
+    )
+    goals = sum(
+        numeric(competition.get("goals"))
+        for competition in recent_competitions
+    )
+    assists = sum(
+        numeric(competition.get("assists"))
+        for competition in recent_competitions
+    )
+    return {
+        "minutes": minutes,
+        "start_rate": starts / max(1.0, appearances),
+        "goals_per_90": 90.0 * goals / max(1.0, minutes),
+        "assists_per_90": 90.0 * assists / max(1.0, minutes),
+        "contributions_per_90": (
+            90.0 * (goals + assists) / max(1.0, minutes)
+        ),
+    }
+
+
+def stronger_role_level(current: str, candidate: str) -> str:
+    rank = {"none": 0, "shared": 1, "primary": 2}
+    return candidate if rank[candidate] > rank[current] else current
+
+
+def resolve_role_evidence(
+    *,
+    position: str,
+    history_player: dict[str, Any],
+    preseason_player: dict[str, Any] | None,
+    explicit_role_evidence: dict[str, Any] | None,
+    club_changed: bool | None,
+) -> dict[str, Any]:
+    """Combine explicit role facts with conservative current-club inference.
+
+    Historical production is translated only after current official evidence
+    repeatedly places the player in the first group. This avoids carrying an
+    old-club role across a transfer merely because it once existed.
+    """
+
+    explicit = (
+        dict(explicit_role_evidence)
+        if isinstance(explicit_role_evidence, dict)
+        else {}
+    )
+    explicit_items = valid_role_evidence_items(explicit)
+    preseason = (
+        preseason_player if isinstance(preseason_player, dict) else {}
+    )
+    summary = (
+        preseason.get("summary", {})
+        if isinstance(preseason.get("summary"), dict)
+        else {}
+    )
+    current_observations = [
+        item
+        for item in preseason.get("observations", [])
+        if (
+            isinstance(item, dict)
+            and item.get("source_provider") != "api_sports"
+            and str(item.get("source_url", "")).startswith("https://")
+            and str(item.get("claim", "")).strip()
+            and str(item.get("date", "")).strip()
+            and (
+                bool(item.get("started"))
+                or str(item.get("lineup_role")) == "first_group"
+                or bool(item.get("responsibilities"))
+            )
+        )
+    ]
+    current_items = [
+        {
+            "claim": str(item["claim"]).strip(),
+            "source_url": str(item["source_url"]).strip(),
+            "checked_at": str(item["date"]).strip(),
+        }
+        for item in current_observations
+    ]
+    current_responsibilities = {
+        key: "none" for key in ROLE_RESPONSIBILITIES
+    }
+    for item in current_observations:
+        responsibilities = item.get("responsibilities", {})
+        if not isinstance(responsibilities, dict):
+            continue
+        for key, value in responsibilities.items():
+            if key not in ROLE_RESPONSIBILITIES:
+                continue
+            level = role_level(value)
+            current_responsibilities[key] = stronger_role_level(
+                current_responsibilities[key],
+                level,
+            )
+
+    if explicit_items:
+        resolved = dict(explicit)
+        responsibilities = {
+            key: role_level(
+                (explicit.get("responsibilities", {}) or {}).get(key)
+            )
+            for key in ROLE_RESPONSIBILITIES
+        }
+        for key, level in current_responsibilities.items():
+            responsibilities[key] = stronger_role_level(
+                responsibilities[key],
+                level,
+            )
+        resolved["responsibilities"] = responsibilities
+        resolved["evidence"] = explicit_items + [
+            item for item in current_items if item not in explicit_items
+        ]
+        resolved["source"] = "explicit_with_current_preseason"
+        return resolved
+
+    classification = str(summary.get("classification", "insufficient"))
+    effective_factor = numeric(summary.get("effective_factor"))
+    appearances = max(0.0, numeric(summary.get("appearances")))
+    starts = max(0.0, numeric(summary.get("starts")))
+    team_matches = max(1.0, numeric(summary.get("team_match_count")))
+    official_first_group_starts = sum(
+        bool(item.get("started"))
+        and str(item.get("lineup_role")) == "first_group"
+        for item in current_observations
+    )
+    repeated_current_role = (
+        classification in {"positive", "strong"}
+        and effective_factor > 0
+        and len(current_items) >= 2
+        and official_first_group_starts >= 2
+        and starts >= 2
+        and starts / max(1.0, appearances) >= 0.60
+    )
+    has_current_responsibility = any(
+        level != "none" for level in current_responsibilities.values()
+    )
+    if not repeated_current_role and not has_current_responsibility:
+        return {}
+
+    historical = transfermarkt_role_metrics(history_player)
+    responsibilities = dict(current_responsibilities)
+    if (
+        repeated_current_role
+        and position in {"MIDFIELDER", "FORWARD"}
+        and historical["minutes"] >= 1_200
+        and historical["start_rate"] >= 0.65
+    ):
+        if historical["assists_per_90"] >= 0.25:
+            responsibilities["playmaker"] = stronger_role_level(
+                responsibilities["playmaker"],
+                "shared",
+            )
+        if historical["contributions_per_90"] >= 0.55:
+            responsibilities["offensive_focal_point"] = stronger_role_level(
+                responsibilities["offensive_focal_point"],
+                "shared",
+            )
+
+    expected_start_probability = 0.0
+    continuity = "unknown"
+    if repeated_current_role:
+        start_rate = starts / max(1.0, appearances)
+        coverage = min(1.0, appearances / team_matches)
+        expected_start_probability = min(
+            85.0,
+            55.0 + 20.0 * start_rate + 10.0 * coverage,
+        )
+        continuity = "confirmed"
+    return {
+        "continuity": continuity,
+        "confidence": "medium",
+        "expected_start_probability": round(
+            expected_start_probability,
+            2,
+        ),
+        "team_quality_delta": 0.0,
+        "responsibilities": responsibilities,
+        "evidence": current_items,
+        "source": (
+            "current_preseason_plus_historical_role"
+            if repeated_current_role
+            else "current_preseason_responsibility"
+        ),
+        "club_changed": club_changed,
+    }
+
+
+def expected_role_profile(
+    *,
+    position: str,
+    histories: list[dict[str, Any]],
+    history_player: dict[str, Any] | None = None,
+    role_evidence: dict[str, Any] | None = None,
+    club_changed: bool | None = None,
+) -> dict[str, Any]:
+    """Model the expected new-club role instead of penalizing every transfer."""
+
+    evidence = role_evidence if isinstance(role_evidence, dict) else {}
+    evidence_items = valid_role_evidence_items(evidence)
     continuity = str(evidence.get("continuity", "unknown")).strip().casefold()
     if continuity not in ROLE_CONTINUITY or not evidence_items:
         continuity = "unknown"
@@ -933,6 +1202,16 @@ def expected_role_profile(
         )
         / max(1.0, recent_minutes)
     )
+    transfermarkt_metrics = transfermarkt_role_metrics(
+        history_player or {}
+    )
+    if recent_minutes < 180 and transfermarkt_metrics["minutes"] >= 180:
+        recent_minutes = transfermarkt_metrics["minutes"]
+        key_passes_per_90 = 0.0
+        contributions_per_90 = transfermarkt_metrics[
+            "contributions_per_90"
+        ]
+        goal_threat_per_90 = transfermarkt_metrics["goals_per_90"]
 
     # Historical responsibilities remain useful when no newer structured role
     # statement exists. Once current evidence is supplied, only explicitly
@@ -995,7 +1274,8 @@ def expected_role_profile(
     if not evidence_items:
         team_quality_delta = 0.0
     return {
-        "model_version": "expected-role-v1",
+        "model_version": "expected-role-v2",
+        "evidence_source": str(evidence.get("source", "explicit")),
         "continuity": continuity,
         "evidence_confidence": (
             str(evidence.get("confidence", "medium"))
@@ -1008,6 +1288,14 @@ def expected_role_profile(
         "historical_metrics": {
             "penalties_scored": round(recent_penalties, 2),
             "key_passes_per_90": round(key_passes_per_90, 3),
+            "assists_per_90": round(
+                transfermarkt_metrics["assists_per_90"],
+                3,
+            ),
+            "historical_start_rate": round(
+                transfermarkt_metrics["start_rate"],
+                3,
+            ),
             "contributions_per_90": round(contributions_per_90, 3),
             "defender_goal_threat_per_90": round(goal_threat_per_90, 3),
         },
@@ -1273,20 +1561,12 @@ def historical_form_profile(
         ),
     )
 
-    latest_provider = (
-        provider_by_season[max(provider_by_season)]
-        if provider_by_season
-        else {}
-    )
-    historical_clubs = [
-        str(club.get("name", "")).strip()
-        for club in latest_provider.get("clubs", [])
-        if str(club.get("name", "")).strip()
-    ]
-    club_changed: bool | None = (
-        all(not club_match(market_club, club) for club in historical_clubs)
-        if historical_clubs
-        else None
+    historical_clubs, club_changed, club_change_source = (
+        historical_club_context(
+            histories,
+            market_club=market_club,
+            news_player=news_player,
+        )
     )
     explicit_role_evidence = (
         role_evidence if isinstance(role_evidence, dict) else {}
@@ -1410,6 +1690,7 @@ def historical_form_profile(
         "current_club": market_club,
         "latest_historical_clubs": historical_clubs,
         "club_changed": club_changed,
+        "club_change_source": club_change_source,
         "context_transfer_factor": context_transfer_factor,
         "role_continuity": (
             continuity if role_is_currently_evidenced else "unknown"
@@ -1423,7 +1704,15 @@ def historical_form_profile(
         "adjustments": {
             "confirmed_performance": round(
                 confirmed_delta
-                * (0.85 if club_changed is True else 1.0),
+                * (
+                    0.85
+                    if club_changed is True
+                    and not (
+                        role_is_currently_evidenced
+                        and continuity in {"confirmed", "expanded"}
+                    )
+                    else 1.0
+                ),
                 2,
             ),
             "role": round(portable_delta * context_transfer_factor, 2),
@@ -1925,6 +2214,18 @@ def build_annotation(
         (int(stats["age"]) for stats in histories if stats.get("age") is not None),
         27,
     )
+    _, club_changed_hint, _ = historical_club_context(
+        histories,
+        market_club=str(market_player["club"]),
+        news_player=news_player,
+    )
+    resolved_role_evidence = resolve_role_evidence(
+        position=position,
+        history_player=history_player,
+        preseason_player=preseason_player,
+        explicit_role_evidence=role_evidence,
+        club_changed=club_changed_hint,
+    )
     form_summary = historical_form_profile(
         position=position,
         histories=histories,
@@ -1932,7 +2233,7 @@ def build_annotation(
         market_club=str(market_player["club"]),
         news_player=news_player,
         age=age,
-        role_evidence=role_evidence,
+        role_evidence=resolved_role_evidence,
     )
     form_adjustments = form_summary["adjustments"]
     confirmed = clamp(
@@ -2052,7 +2353,8 @@ def build_annotation(
     role_context = expected_role_profile(
         position=position,
         histories=histories,
-        role_evidence=role_evidence,
+        history_player=history_player,
+        role_evidence=resolved_role_evidence,
         club_changed=form_summary["club_changed"],
     )
     role_adjustments = role_context["adjustments"]

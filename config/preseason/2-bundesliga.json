@@ -34,6 +34,9 @@
           "opponent_score": 78,
           "confidence": "high",
           "claim": "Taz begann gegen Royal Antwerpen in der ersten Bochumer Gruppe, übernahm einen Freistoß und erzielte den Siegtreffer.",
+          "responsibilities": {
+            "direct_free_kicks": "shared"
+          },
           "source_provider": "official_club",
           "source_url": "https://www.vfl-bochum.de/aktuelles/2026/07/taz-trifft-zum-dritten-testspielsieg/"
         },

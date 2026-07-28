@@ -771,6 +771,10 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
         self.assertEqual(0.58, unconfirmed["context_transfer_factor"])
         self.assertEqual(1.0, confirmed["context_transfer_factor"])
         self.assertEqual("confirmed", confirmed["role_continuity"])
+        self.assertGreater(
+            confirmed["adjustments"]["confirmed_performance"],
+            unconfirmed["adjustments"]["confirmed_performance"],
+        )
         self.assertLess(
             confirmed["adjustments"]["unknown_role_risk"],
             unconfirmed["adjustments"]["unknown_role_risk"],
@@ -781,6 +785,188 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             role["responsibilities"]["offensive_focal_point"],
         )
         self.assertEqual("none", role["responsibilities"]["penalties"])
+
+    def test_repeated_current_first_group_evidence_translates_historical_role(
+        self,
+    ) -> None:
+        history_player = transfermarkt_history(proven_seasons=0)
+        history_player["seasons"] = [
+            {
+                "season": 2025,
+                "competitions": [
+                    {
+                        "kind": "domestic_league",
+                        "minutes": 3240,
+                        "appearances": 38,
+                        "starts": 38,
+                        "goals": 17,
+                        "assists": 21,
+                    }
+                ],
+            },
+            {
+                "season": 2024,
+                "competitions": [
+                    {
+                        "kind": "domestic_league",
+                        "minutes": 2949,
+                        "appearances": 37,
+                        "starts": 34,
+                        "goals": 13,
+                        "assists": 14,
+                    }
+                ],
+            },
+        ]
+        preseason_player = {
+            "summary": {
+                "classification": "positive",
+                "effective_factor": 100,
+                "team_match_count": 5,
+                "appearances": 5,
+                "starts": 5,
+            },
+            "observations": [
+                {
+                    "date": "2026-07-11",
+                    "started": True,
+                    "lineup_role": "first_group",
+                    "claim": "Started in the first group and took a free kick.",
+                    "responsibilities": {
+                        "direct_free_kicks": "shared",
+                    },
+                    "source_provider": "official_club",
+                    "source_url": "https://club.example/first-friendly",
+                },
+                {
+                    "date": "2026-07-21",
+                    "started": True,
+                    "lineup_role": "first_group",
+                    "claim": "Started again in the first group.",
+                    "source_provider": "official_club",
+                    "source_url": "https://club.example/second-friendly",
+                },
+            ],
+        }
+        resolved = quality.resolve_role_evidence(
+            position="MIDFIELDER",
+            history_player=history_player,
+            preseason_player=preseason_player,
+            explicit_role_evidence=None,
+            club_changed=True,
+        )
+        role = quality.expected_role_profile(
+            position="MIDFIELDER",
+            histories=[],
+            history_player=history_player,
+            role_evidence=resolved,
+            club_changed=True,
+        )
+
+        self.assertEqual("confirmed", resolved["continuity"])
+        self.assertEqual(85.0, resolved["expected_start_probability"])
+        self.assertEqual(
+            "shared",
+            role["responsibilities"]["direct_free_kicks"],
+        )
+        self.assertEqual("shared", role["responsibilities"]["playmaker"])
+        self.assertEqual(
+            "shared",
+            role["responsibilities"]["offensive_focal_point"],
+        )
+        self.assertGreater(
+            role["historical_metrics"]["assists_per_90"],
+            0.25,
+        )
+
+    def test_provider_starts_alone_do_not_transfer_historical_role(
+        self,
+    ) -> None:
+        resolved = quality.resolve_role_evidence(
+            position="MIDFIELDER",
+            history_player=transfermarkt_history(proven_seasons=0),
+            preseason_player={
+                "summary": {
+                    "classification": "strong",
+                    "effective_factor": 100,
+                    "team_match_count": 5,
+                    "appearances": 5,
+                    "starts": 5,
+                },
+                "observations": [
+                    {
+                        "date": "2026-07-20",
+                        "started": True,
+                        "lineup_role": "unknown",
+                        "claim": "API-Sports Testspiel-Startaufstellung",
+                        "source_provider": "api_sports",
+                        "source_url": "https://www.api-football.com/documentation",
+                    }
+                ],
+            },
+            explicit_role_evidence=None,
+            club_changed=True,
+        )
+
+        self.assertEqual({}, resolved)
+
+    def test_confirmed_inbound_transfer_fills_missing_club_history(
+        self,
+    ) -> None:
+        current_news = news_player()
+        current_news["signals"] = [
+            {
+                "kind": "transfer_confirmed",
+                "status": "confirmed",
+                "availability_impact": "in",
+            }
+        ]
+        profile = quality.historical_form_profile(
+            position="MIDFIELDER",
+            histories=[],
+            history_player={"seasons": []},
+            market_club="New Club",
+            news_player=current_news,
+            age=27,
+        )
+
+        self.assertTrue(profile["club_changed"])
+        self.assertEqual(
+            "confirmed_inbound_transfer",
+            profile["club_change_source"],
+        )
+        self.assertEqual(0.58, profile["context_transfer_factor"])
+
+    def test_club_change_uses_latest_nonempty_provider_club_season(
+        self,
+    ) -> None:
+        histories = [
+            {
+                "season": 2026,
+                "clubs": [],
+            },
+            form_season(
+                2025,
+                minutes=2200,
+                lineups=25,
+                rating=6.9,
+                goals=8,
+                assists=7,
+                club="Old Club",
+            ),
+        ]
+        profile = quality.historical_form_profile(
+            position="MIDFIELDER",
+            histories=histories,
+            history_player={"seasons": []},
+            market_club="New Club",
+            news_player=news_player(),
+            age=25,
+        )
+
+        self.assertTrue(profile["club_changed"])
+        self.assertEqual(["Old Club"], profile["latest_historical_clubs"])
+        self.assertEqual("provider_history", profile["club_change_source"])
 
     def test_defender_set_piece_target_receives_role_credit(self) -> None:
         role = quality.expected_role_profile(

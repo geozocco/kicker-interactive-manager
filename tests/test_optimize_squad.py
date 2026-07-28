@@ -40,6 +40,7 @@ def player(
     cost: int,
     *,
     reliable_anchor: bool = False,
+    role_context: dict[str, object] | None = None,
 ) -> optimizer.Player:
     return optimizer.Player(
         player_id=player_id,
@@ -64,6 +65,7 @@ def player(
             },
         ),
         proven_seasons=3 if reliable_anchor else 0,
+        role_context=role_context or {},
     )
 
 
@@ -95,6 +97,54 @@ def varied_pool() -> tuple[list[optimizer.Player], dict[str, float]]:
 
 
 class DistanceOptimizerTests(unittest.TestCase):
+    def test_shortlist_surfaces_evidence_backed_attacking_role_winner(
+        self,
+    ) -> None:
+        candidates = [
+            player(
+                f"M{index}",
+                f"Club {index}",
+                "MIDFIELDER",
+                100 + index,
+            )
+            for index in range(10)
+        ]
+        role_winner = player(
+            "ROLE",
+            "New Club",
+            "MIDFIELDER",
+            95,
+            role_context={
+                "continuity": "confirmed",
+                "expected_start_probability": 85,
+                "responsibilities": {
+                    "direct_free_kicks": "shared",
+                    "playmaker": "shared",
+                },
+            },
+        )
+        candidates.append(role_winner)
+        scores = {
+            candidate.player_id: 100.0 - index
+            for index, candidate in enumerate(candidates)
+        }
+        scores["ROLE"] = 20.0
+
+        payload = optimizer.shortlist_payload(
+            candidates,
+            scores,
+            "reliable",
+            {"MIDFIELDER": 7},
+        )
+
+        premium_ids = {
+            item["id"]
+            for item in payload["shortlist"]["MIDFIELDER"][
+                "premium_review"
+            ]
+        }
+        self.assertIn("ROLE", premium_ids)
+
     def test_competition_budgets_default_to_fixed_kicker_limits(self) -> None:
         for competition, expected_budget in (
             ("Bundesliga", 42_500_000),
