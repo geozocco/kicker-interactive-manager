@@ -98,7 +98,7 @@ Teilannotationen dürfen als vorläufige Arbeitsnotiz in einem Recherche- oder S
 - Jeden vom Nutzer genannten Spieler vollständig und mit `benchmark: true` annotieren. Ist er nicht auswählbar, ihn mit `exclude: true` und passender `evidence` dokumentieren, statt ihn wegzulassen.
 - `provider_mapping_status: missing` ist kein sportlicher Ausschluss. Der Spieler bleibt im Qualitäts- und Vergleichspool; eine Endauswahl erfordert eine frische `manual_news_clearance` mit den vier Abdeckungen `availability`, `fitness`, `role` und `transfer` oder eine nachgezogene verifizierte Provider-Zuordnung.
 - `scorer_profile` führt ligagewichtete Tore und Vorlagen pro 90 Minuten, Stichprobenminuten, bestätigte Spielzeiten und die aktuell belegten Verantwortungen. Daraus darf nur in Verbindung mit Einsatzreife, Rolle und Wiederholbarkeit der begrenzte Startelf-Scorerhebel entstehen.
-- `role_research.required: true` verwenden, wenn ein mehrjährig bestätigter offensiver Scorer nach Vereinswechsel noch keine belastbar belegte Startwahrscheinlichkeit und aktuelle Rolle besitzt. Hochprioritäre offene Fälle blockieren die finale Empfehlung, bleiben aber im Recherchepool sichtbar.
+- `role_research.required: true` verwenden, wenn ein mehrjährig bestätigter offensiver Scorer nach Vereinswechsel noch keine belastbar belegte Startwahrscheinlichkeit und aktuelle Rolle besitzt. Hochprioritäre Fälle erzwingen beim nächsten zentralen Lauf eine erneute Recherche. Bleibt diese ohne Beleg, den betreffenden Spieler vorübergehend und sichtbar aus dem finalen Suchraum ausschließen; niemals wegen eines Einzelfalls die gesamte Liga blockieren.
 
 ## Mindestabdeckung
 

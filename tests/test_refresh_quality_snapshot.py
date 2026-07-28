@@ -1875,6 +1875,46 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
         )
         self.assertGreaterEqual(annotation["risks"]["rotation"], 55)
         self.assertEqual(0, annotation["risks"]["transfer"])
+        self.assertFalse(annotation["role_research"]["required"])
+
+    def test_evidenced_reduced_transfer_role_is_resolved(self) -> None:
+        changed_history = api_history()
+        for season in changed_history:
+            season["clubs"] = [
+                {
+                    "name": "Previous Club",
+                    "appearances": season["appearances"],
+                    "minutes": season["minutes"],
+                }
+            ]
+        annotation = quality.build_annotation(
+            market_player(),
+            "news-1",
+            news_player(),
+            changed_history,
+            transfermarkt_history(proven_seasons=3),
+            role_evidence={
+                "continuity": "reduced",
+                "confidence": "medium",
+                "expected_start_probability": 35,
+                "team_quality_delta": 0,
+                "responsibilities": {},
+                "evidence": [
+                    {
+                        "claim": "Current club describes a rotation role",
+                        "source_url": "https://example.com/current-role",
+                        "checked_at": "2026-07-28",
+                    }
+                ],
+            },
+            competition="2. Bundesliga",
+            points_pct=90,
+            price_pct=70,
+            generated_at="2026-07-28T12:00:00Z",
+        )
+
+        self.assertEqual("reduced", annotation["role_context"]["continuity"])
+        self.assertFalse(annotation["role_research"]["required"])
 
     def test_candidate_rank_uses_history_not_only_previous_kicker_points(self) -> None:
         points = {"FORWARD": [0, 50, 100, 150]}

@@ -389,6 +389,70 @@ class ResearchCacheTests(unittest.TestCase):
         self.assertEqual(1, audit["cache_hits"])
         self.assertEqual(0, audit["requests"])
 
+    def test_required_role_forces_retry_despite_fresh_abstention(
+        self,
+    ) -> None:
+        forced_target = target()
+        forced_target["force_refresh"] = True
+        cached_abstention = role.abstention_record(
+            target(),
+            now=NOW,
+            model="gpt-5.6-luna",
+        )
+        calls = []
+
+        def requester(payload, *, api_key):
+            calls.append(payload)
+            return response_for([raw_profile()])
+
+        profiles, abstentions, audit = role.research_role_profiles(
+            [forced_target],
+            competition="2. Bundesliga",
+            season="2026/27",
+            previous_profiles={},
+            previous_abstentions={"p1": cached_abstention},
+            api_key="secret-value",
+            model="gpt-5.6-luna",
+            now=NOW + timedelta(hours=1),
+            requester=requester,
+        )
+
+        self.assertEqual(1, len(calls))
+        self.assertIn("p1", profiles)
+        self.assertEqual({}, abstentions)
+        self.assertEqual(0, audit["cache_hits"])
+        self.assertEqual(1, audit["forced_refreshes"])
+
+    def test_forced_abstention_is_not_retried_until_refresh_window(
+        self,
+    ) -> None:
+        forced_target = target()
+        forced_target["force_refresh"] = True
+        forced_abstention = role.abstention_record(
+            forced_target,
+            now=NOW,
+            model="gpt-5.6-luna",
+        )
+
+        profiles, abstentions, audit = role.research_role_profiles(
+            [forced_target],
+            competition="2. Bundesliga",
+            season="2026/27",
+            previous_profiles={},
+            previous_abstentions={"p1": forced_abstention},
+            api_key="secret-value",
+            model="gpt-5.6-luna",
+            now=NOW + timedelta(hours=1),
+            requester=lambda *args, **kwargs: self.fail(
+                "forced negative cache should be reused"
+            ),
+        )
+
+        self.assertEqual({}, profiles)
+        self.assertIn("p1", abstentions)
+        self.assertEqual(1, audit["cache_hits"])
+        self.assertEqual(0, audit["forced_refreshes"])
+
     def test_omitted_target_is_explicitly_inconclusive_and_retried(
         self,
     ) -> None:

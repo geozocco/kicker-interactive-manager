@@ -149,6 +149,7 @@ def select_role_targets(
 
     priority: dict[str, float] = {}
     protected_ids: set[str] = set()
+    forced_refresh_ids: set[str] = set()
 
     def promote(player_id: str, score: float) -> None:
         if player_id in by_id:
@@ -164,6 +165,7 @@ def select_role_targets(
         if annotation.get("role_research", {}).get("required"):
             promote(str(player_id), 950.0)
             protected_ids.add(str(player_id))
+            forced_refresh_ids.add(str(player_id))
         if annotation.get("benchmark"):
             promote(str(player_id), 900.0)
             protected_ids.add(str(player_id))
@@ -286,6 +288,7 @@ def select_role_targets(
             "club": str(by_id[player_id]["club"]).strip(),
             "position": str(by_id[player_id]["position"]),
             "market_value": int(float(by_id[player_id]["market_value"])),
+            "force_refresh": player_id in forced_refresh_ids,
         }
         for player_id in selected_ids
     ]
@@ -362,6 +365,7 @@ def abstention_record(
         "prompt_version": PROMPT_VERSION,
         "research_model": model,
         "research_fingerprint": fingerprint,
+        "forced_refresh": bool(target.get("force_refresh")),
         "checked_at": iso_timestamp(now),
         "refresh_after": iso_timestamp(now + timedelta(days=refresh_days)),
         "expires_at": iso_timestamp(now + timedelta(days=14)),
@@ -537,6 +541,10 @@ def build_request(
         "status, tactical fit in the coach's likely system, positional competition, "
         "an expected league-minutes band, and role stability. Use unknown whenever "
         "the evidence does not support one of those environment fields. Do not infer "
+        "a role after a transfer from the old club. For players marked force_refresh, "
+        "explicitly search the official transfer announcement, current coach or "
+        "sporting-director statements and latest preparation or lineup reports before "
+        "abstaining. Do not weaken the evidence standard for these players. Do not infer "
         "fitness from role reporting; injuries and training readiness are handled by "
         "separate feeds. Evidence must be current, player-specific, "
         "and use a URL actually found by web search. Use has_role_signal=false and "
@@ -881,12 +889,30 @@ def research_role_profiles(
     for target in targets:
         player_id = str(target["player_id"])
         cached = previous.get(player_id)
-        if reusable_profile(cached, now=current, model=model):
+        cached_abstention = previous_empty.get(player_id)
+        already_forced = (
+            bool(target.get("force_refresh"))
+            and isinstance(cached_abstention, dict)
+            and cached_abstention.get("forced_refresh") is True
+            and reusable_abstention(
+                cached_abstention,
+                now=current,
+                model=model,
+            )
+        )
+        force_refresh = bool(target.get("force_refresh")) and not already_forced
+        if (
+            not force_refresh
+            and reusable_profile(cached, now=current, model=model)
+        ):
             profiles[player_id] = dict(cached)
-        elif reusable_abstention(
-            previous_empty.get(player_id),
-            now=current,
-            model=model,
+        elif (
+            not force_refresh
+            and reusable_abstention(
+                cached_abstention,
+                now=current,
+                model=model,
+            )
         ):
             abstentions[player_id] = dict(previous_empty[player_id])
         else:
@@ -1016,6 +1042,9 @@ def research_role_profiles(
         "prompt_version": PROMPT_VERSION,
         "targets": len(targets),
         "cache_hits": len(targets) - len(pending),
+        "forced_refreshes": sum(
+            bool(target.get("force_refresh")) for target in pending
+        ),
         "researched_profiles": researched,
         "researched_abstentions": researched_abstentions,
         "researched_inconclusive": researched_inconclusive,

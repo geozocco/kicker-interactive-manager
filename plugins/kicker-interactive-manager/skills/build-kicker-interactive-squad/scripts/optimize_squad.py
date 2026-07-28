@@ -7812,6 +7812,47 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def exclude_unresolved_role_research(
+    players: list[Player],
+) -> tuple[list[Player], list[dict[str, Any]]]:
+    """Keep one unresolved transfer role from blocking the entire league."""
+
+    unresolved = [
+        player
+        for player in players
+        if (
+            player.role_research.get("required") is True
+            and str(player.role_research.get("priority", "")).casefold()
+            == "high"
+        )
+    ]
+    unresolved_ids = {player.player_id for player in unresolved}
+    exclusions = [
+        {
+            "annotation_key": player.player_id,
+            "reason": (
+                "Vorübergehend nicht auswählbar: Nach dem Vereinswechsel "
+                "fehlen belastbare aktuelle Belege für Startwahrscheinlichkeit "
+                "und Verantwortlichkeiten."
+            ),
+            "benchmark": player.benchmark,
+            "evidence": list(player.evidence),
+            "temporary_role_research_exclusion": True,
+            "player_name": player.name,
+            "club": player.club,
+        }
+        for player in unresolved
+    ]
+    return (
+        [
+            player
+            for player in players
+            if player.player_id not in unresolved_ids
+        ],
+        exclusions,
+    )
+
+
 def main() -> int:
     args = parse_args()
     variation_source = "explicit"
@@ -8031,30 +8072,27 @@ def main() -> int:
             for player in players
             if player.player_id in coverage_cleared_ids
         ]
-    unresolved_role_research = sorted(
-        player.player_id
-        for player in players
-        if (
-            player.role_research.get("required") is True
-            and str(player.role_research.get("priority", "")).casefold()
-            == "high"
-            and player.benchmark
+    if not args.shortlist_only and not args.allow_unannotated:
+        players, role_research_exclusions = (
+            exclude_unresolved_role_research(players)
         )
-    )
-    if (
-        unresolved_role_research
-        and not args.shortlist_only
-        and not args.allow_unannotated
-    ):
+        hard_exclusions.extend(role_research_exclusions)
+        unresolved_role_research = sorted(
+            exclusion["annotation_key"]
+            for exclusion in role_research_exclusions
+        )
+        news_audit["role_research_excluded_player_ids"] = (
+            unresolved_role_research
+        )
+    else:
+        unresolved_role_research = []
+    if unresolved_role_research:
         print(
-            "Role research stopped optimization: proven attacking scorers "
-            "changed clubs without current evidence for their starting "
-            "probability and responsibilities: "
-            f"{unresolved_role_research}. Complete the central role evidence "
-            "before issuing a final recommendation.",
+            "Role research temporarily excluded unresolved transfer-role "
+            "candidates while continuing with the fully cleared pool: "
+            f"{unresolved_role_research}.",
             file=sys.stderr,
         )
-        return 2
     raw_scores = score_players(players, args.profile, args.maintenance)
     if args.shortlist_only:
         payload = shortlist_payload(

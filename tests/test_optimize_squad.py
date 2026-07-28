@@ -40,7 +40,9 @@ def player(
     cost: int,
     *,
     reliable_anchor: bool = False,
+    benchmark: bool = False,
     role_context: dict[str, object] | None = None,
+    role_research: dict[str, object] | None = None,
 ) -> optimizer.Player:
     return optimizer.Player(
         player_id=player_id,
@@ -57,6 +59,7 @@ def player(
         reliable_anchor=reliable_anchor,
         anchor_basis="explicit" if reliable_anchor else "none",
         anchor_reason="Repeated performance and stable role" if reliable_anchor else "",
+        benchmark=benchmark,
         evidence=(
             {
                 "claim": "Current role checked",
@@ -66,6 +69,7 @@ def player(
         ),
         proven_seasons=3 if reliable_anchor else 0,
         role_context=role_context or {},
+        role_research=role_research or {},
     )
 
 
@@ -97,6 +101,35 @@ def varied_pool() -> tuple[list[optimizer.Player], dict[str, float]]:
 
 
 class DistanceOptimizerTests(unittest.TestCase):
+    def test_unresolved_transfer_role_excludes_only_affected_player(
+        self,
+    ) -> None:
+        open_role = player(
+            "OPEN",
+            "New Club",
+            "FORWARD",
+            700_000,
+            benchmark=True,
+            role_research={
+                "required": True,
+                "priority": "high",
+            },
+        )
+        cleared = player("CLEAR", "Other Club", "FORWARD", 600_000)
+
+        filtered, exclusions = (
+            optimizer.exclude_unresolved_role_research(
+                [open_role, cleared]
+            )
+        )
+
+        self.assertEqual(["CLEAR"], [item.player_id for item in filtered])
+        self.assertEqual("OPEN", exclusions[0]["annotation_key"])
+        self.assertTrue(
+            exclusions[0]["temporary_role_research_exclusion"]
+        )
+        self.assertTrue(exclusions[0]["benchmark"])
+
     def test_shortlist_surfaces_evidence_backed_attacking_role_winner(
         self,
     ) -> None:

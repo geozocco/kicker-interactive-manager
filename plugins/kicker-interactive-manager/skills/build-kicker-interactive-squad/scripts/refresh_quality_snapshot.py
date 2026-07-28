@@ -2688,9 +2688,9 @@ def build_annotation(
         )
     )
     current_role_is_resolved = (
-        role_context["continuity"] in {"confirmed", "expanded"}
+        role_context["continuity"] in {"confirmed", "expanded", "reduced"}
         and bool(role_context["evidence"])
-        and float(role_context["expected_start_probability"]) >= 55
+        and role_context["evidence_confidence"] in {"low", "medium", "high"}
     )
     role_research_required = (
         form_summary["club_changed"] is True
