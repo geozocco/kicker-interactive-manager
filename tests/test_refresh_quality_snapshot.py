@@ -723,6 +723,7 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
                 club="Old Club",
             )
         ]
+        history[0]["penalties_scored"] = 3
         role_evidence = {
             "continuity": "confirmed",
             "confidence": "high",
@@ -779,6 +780,7 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             "primary",
             role["responsibilities"]["offensive_focal_point"],
         )
+        self.assertEqual("none", role["responsibilities"]["penalties"])
 
     def test_defender_set_piece_target_receives_role_credit(self) -> None:
         role = quality.expected_role_profile(
@@ -1327,6 +1329,14 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             ]
         current_news = news_player()
         current_news["consensus"]["rotation"] = 55
+        current_news["consensus"]["transfer"] = 10
+        current_news["signals"] = [
+            {
+                "kind": "transfer_confirmed",
+                "status": "confirmed",
+                "availability_impact": "in",
+            }
+        ]
         annotation = quality.build_annotation(
             market_player(),
             "news-1",
@@ -1364,6 +1374,7 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             annotation["role_context"]["continuity"],
         )
         self.assertGreaterEqual(annotation["risks"]["rotation"], 55)
+        self.assertEqual(0, annotation["risks"]["transfer"])
 
     def test_candidate_rank_uses_history_not_only_previous_kicker_points(self) -> None:
         points = {"FORWARD": [0, 50, 100, 150]}

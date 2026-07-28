@@ -934,9 +934,12 @@ def expected_role_profile(
         / max(1.0, recent_minutes)
     )
 
-    # Historical responsibilities remain useful at the same club. After a
-    # transfer they are portable only when current evidence confirms them.
-    historical_role_is_portable = club_changed is not True
+    # Historical responsibilities remain useful when no newer structured role
+    # statement exists. Once current evidence is supplied, only explicitly
+    # confirmed responsibilities are used.
+    historical_role_is_portable = (
+        club_changed is not True and not evidence_items
+    )
     if historical_role_is_portable:
         if recent_penalties >= 2 and responsibilities["penalties"] == "none":
             responsibilities["penalties"] = "shared"
@@ -1892,6 +1895,26 @@ def build_annotation(
     confirmed = clamp(confirmed + 0.08 * (trend_score - 50))
     role = clamp(role + 0.10 * (trend_score - 50))
     transfer_risk = clamp(consensus.get("transfer", 0), 0)
+    transfer_signals = [
+        signal
+        for signal in news_player.get("signals", [])
+        if (
+            isinstance(signal, dict)
+            and str(signal.get("kind", "")).startswith("transfer")
+        )
+    ]
+    if (
+        transfer_signals
+        and all(
+            str(signal.get("kind")) == "transfer_confirmed"
+            and str(signal.get("status")) == "confirmed"
+            and str(signal.get("availability_impact")) == "in"
+            for signal in transfer_signals
+        )
+    ):
+        # A completed incoming move is a club-context event, not an ongoing
+        # risk that the player will leave the newly listed Kicker club.
+        transfer_risk = 0.0
     injury_risk = clamp(consensus.get("injury", 0), 0)
     rotation_risk = clamp(consensus.get("rotation", 0), 0)
     fitness_cap = clamp(consensus.get("fitness_cap", 100), 100)
