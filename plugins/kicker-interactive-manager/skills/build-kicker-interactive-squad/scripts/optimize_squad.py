@@ -3003,7 +3003,9 @@ def optimize_joint_squad_architecture(
         maximum_reachable_core_share,
     )
     current.architecture_diagnostics = {
-        "model_version": "joint-xi-bench-v5-role-potential-multiswap",
+        "model_version": (
+            "joint-xi-bench-v6-role-potential-premium-restarts"
+        ),
         "expected_contribution": round(
             current_metrics["expected_contribution"],
             6,
@@ -3543,6 +3545,7 @@ def finalize_reliable_core_architecture(
     maintenance: str = "low",
     same_club_goalkeepers: bool = True,
     protected_player_ids: AbstractSet[str] = frozenset(),
+    search_premium_restarts: bool = False,
 ) -> Squad:
     """Apply the same core-first architecture to a squad and its reference."""
 
@@ -3607,7 +3610,7 @@ def finalize_reliable_core_architecture(
         min_offensive_premium_anchors=min_offensive_premium_anchors,
         protected_player_ids=protected_player_ids,
     )
-    return optimize_joint_squad_architecture(
+    optimized = optimize_joint_squad_architecture(
         current,
         bounded_candidates,
         quality_scores,
@@ -3625,6 +3628,111 @@ def finalize_reliable_core_architecture(
         same_club_goalkeepers=same_club_goalkeepers,
         protected_player_ids=protected_player_ids,
     )
+    if not search_premium_restarts:
+        return optimized
+
+    selected_ids = optimized.ids
+    restart_seeds: list[tuple[float, Squad]] = []
+    for incumbent in optimized.players:
+        if (
+            incumbent.position not in {"MIDFIELDER", "FORWARD"}
+            or incumbent.player_id in protected_player_ids
+            or not is_offensive_premium_anchor(incumbent)
+        ):
+            continue
+        for candidate in bounded_candidates:
+            if (
+                candidate.player_id in selected_ids
+                or candidate.position != incumbent.position
+                or candidate.cost != incumbent.cost
+                or not is_offensive_premium_anchor(candidate)
+                or core_scores[candidate.player_id]
+                < 0.94 * core_scores[incumbent.player_id]
+            ):
+                continue
+            replacement_players = [
+                (
+                    candidate
+                    if player.player_id == incumbent.player_id
+                    else player
+                )
+                for player in optimized.players
+            ]
+            if not _architecture_candidate_is_legal(
+                replacement_players,
+                budget=budget,
+                club_cap=club_cap,
+                min_reliable_anchors=min_reliable_anchors,
+                required_player_ids=protected_player_ids,
+            ):
+                continue
+            restart_seeds.append(
+                (
+                    core_scores[candidate.player_id]
+                    - core_scores[incumbent.player_id],
+                    Squad(
+                        replacement_players,
+                        sum(
+                            quality_scores[player.player_id]
+                            for player in replacement_players
+                        ),
+                    ),
+                )
+            )
+
+    best = optimized
+    best_objective = float(
+        optimized.architecture_diagnostics.get(
+            "architecture_objective",
+            float("-inf"),
+        )
+    )
+    evaluated_restarts = 0
+    seen_restart_ids: set[frozenset[str]] = set()
+    for _, seed in sorted(
+        restart_seeds,
+        key=lambda item: (
+            -item[0],
+            tuple(sorted(item[1].ids)),
+        ),
+    ):
+        if seed.ids in seen_restart_ids:
+            continue
+        seen_restart_ids.add(seed.ids)
+        evaluated_restarts += 1
+        restarted = optimize_joint_squad_architecture(
+            seed,
+            bounded_candidates,
+            quality_scores,
+            core_scores,
+            budget=budget,
+            club_cap=club_cap,
+            maintenance=maintenance,
+            min_reliable_anchors=min_reliable_anchors,
+            min_attacking_anchors=min_attacking_anchors,
+            min_core_budget_share=min_core_budget_share,
+            target_core_budget_share=target_core_budget_share,
+            min_offensive_premium_anchors=min_offensive_premium_anchors,
+            min_qualified_potential_core=min_qualified_potential_core,
+            target_qualified_potential_core=target_qualified_potential_core,
+            same_club_goalkeepers=same_club_goalkeepers,
+            protected_player_ids=protected_player_ids,
+        )
+        restarted_objective = float(
+            restarted.architecture_diagnostics.get(
+                "architecture_objective",
+                float("-inf"),
+            )
+        )
+        if restarted_objective > best_objective + 1e-9:
+            best = restarted
+            best_objective = restarted_objective
+        if evaluated_restarts >= 4:
+            break
+    best.architecture_diagnostics["premium_restarts_evaluated"] = (
+        evaluated_restarts
+    )
+    return best
 
 
 def expected_primary_goalkeeper(
@@ -7835,7 +7943,7 @@ def main() -> int:
                 technical_smoke=args.allow_unannotated,
                 optimizer_cache=args.optimizer_cache,
             )
-            protected_premium_ids = (
+            initial_protected_premium_ids = (
                 protected_reliable_premium_anchor_ids(
                     eligible_players,
                     eligible_raw_scores,
@@ -7863,7 +7971,7 @@ def main() -> int:
                 min_reliable_anchors=args.min_reliable_anchors,
                 technical_smoke=args.allow_unannotated,
                 prepared_context=prepared_context,
-                protected_ids=protected_premium_ids,
+                protected_ids=initial_protected_premium_ids,
                 optimizer_cache=args.optimizer_cache,
             )
             if args.min_core_budget_share > 0:
@@ -7892,7 +8000,21 @@ def main() -> int:
                     ),
                     maintenance=args.maintenance,
                     same_club_goalkeepers=not args.mixed_goalkeepers,
-                    protected_player_ids=protected_premium_ids,
+                    protected_player_ids=frozenset(),
+                    search_premium_restarts=True,
+                )
+                protected_premium_ids = (
+                    protected_reliable_premium_anchor_ids(
+                        eligible_players,
+                        eligible_raw_scores,
+                        optimum.ids,
+                    )
+                    if (
+                        args.profile == "reliable"
+                        and args.maintenance == "low"
+                        and not args.allow_unannotated
+                    )
+                    else frozenset()
                 )
                 squad = finalize_reliable_core_architecture(
                     squad,
@@ -7939,6 +8061,30 @@ def main() -> int:
                         args,
                     )
                 )
+                if (
+                    squad_final_valid
+                    and (
+                        not optimum_final_valid
+                        or squad_final_objective
+                        > optimum_final_objective + 1e-9
+                    )
+                ):
+                    optimum = squad
+                    optimum_final_objective = squad_final_objective
+                    optimum_final_valid = True
+                    protected_premium_ids = (
+                        protected_reliable_premium_anchor_ids(
+                            eligible_players,
+                            eligible_raw_scores,
+                            optimum.ids,
+                        )
+                        if (
+                            args.profile == "reliable"
+                            and args.maintenance == "low"
+                            and not args.allow_unannotated
+                        )
+                        else frozenset()
+                    )
                 profile_factor = (
                     0.75
                     if args.profile == "reliable"

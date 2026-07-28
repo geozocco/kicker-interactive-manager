@@ -2201,7 +2201,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             after["bench_usage_weights"]["FORWARD"],
         )
         self.assertEqual(
-            "joint-xi-bench-v5-role-potential-multiswap",
+            "joint-xi-bench-v6-role-potential-premium-restarts",
             optimized.architecture_diagnostics["model_version"],
         )
         self.assertGreater(
@@ -2215,6 +2215,81 @@ class ReliableCorePolicyTests(unittest.TestCase):
         self.assertIn(
             "four_swap_rosters_evaluated",
             optimized.architecture_diagnostics,
+        )
+
+    def test_reference_architecture_restarts_from_equivalent_premium_anchor(
+        self,
+    ) -> None:
+        incumbent = optimizer.replace(
+            player(
+                "premium-incumbent",
+                "Incumbent Club",
+                "FORWARD",
+                1000,
+                reliable_anchor=True,
+            ),
+            proven_seasons=7,
+            components={
+                key: 95.0 for key in optimizer.COMPONENTS
+            },
+        )
+        challenger = optimizer.replace(
+            incumbent,
+            player_id="premium-challenger",
+            name="Premium Challenger",
+            short_name="Challenger",
+            club="Challenger Club",
+        )
+        scores = {
+            incumbent.player_id: 100.0,
+            challenger.player_id: 98.0,
+        }
+        initial = optimizer.Squad([incumbent], 100.0)
+
+        def local_optimum(
+            seed: optimizer.Squad,
+            *_: object,
+            **__: object,
+        ) -> optimizer.Squad:
+            objective = (
+                120.0
+                if challenger.player_id in seed.ids
+                else 110.0
+            )
+            return optimizer.Squad(
+                list(seed.players),
+                seed.objective_score,
+                architecture_diagnostics={
+                    "architecture_objective": objective,
+                },
+            )
+
+        with mock.patch.object(
+            optimizer,
+            "optimize_joint_squad_architecture",
+            side_effect=local_optimum,
+        ) as joint_optimizer:
+            result = optimizer.finalize_reliable_core_architecture(
+                initial,
+                [incumbent, challenger],
+                scores,
+                scores,
+                budget=1000,
+                club_cap=1,
+                min_reliable_anchors=1,
+                min_attacking_anchors=1,
+                min_core_budget_share=0.0,
+                target_core_budget_share=0.0,
+                search_premium_restarts=True,
+            )
+
+        self.assertIn(challenger.player_id, result.ids)
+        self.assertEqual(2, joint_optimizer.call_count)
+        self.assertEqual(
+            1,
+            result.architecture_diagnostics[
+                "premium_restarts_evaluated"
+            ],
         )
 
     def test_joint_architecture_places_qualified_potential_in_extended_core(
