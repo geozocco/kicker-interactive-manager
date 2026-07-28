@@ -137,6 +137,44 @@ class RefreshNewsSnapshotTests(unittest.TestCase):
             )
         )
 
+    def test_daily_limit_fallback_keeps_provider_age_and_refreshes_roles(
+        self,
+    ) -> None:
+        previous = {
+            "generated_at": "2026-07-28T12:00:00Z",
+            "expires_at": "2026-07-29T06:00:00Z",
+            "players": {"old-player": {"signals": []}},
+            "role_profiles": {"old-player": {"designation": "rotation"}},
+            "role_research_abstentions": {},
+            "role_research": {"targets": 48},
+            "content_sha256": "old-checksum",
+        }
+        roles = {"new-player": {"designation": "key_starter"}}
+        abstentions = {"empty-player": {"status": "no_grounded_signal"}}
+        audit = {"targets": 96, "target_clubs": 18}
+
+        merged = refresh.merge_role_research_into_previous_snapshot(
+            previous,
+            role_profiles=roles,
+            role_research_abstentions=abstentions,
+            role_research_audit=audit,
+        )
+
+        self.assertEqual(previous["generated_at"], merged["generated_at"])
+        self.assertEqual(previous["expires_at"], merged["expires_at"])
+        self.assertEqual(previous["players"], merged["players"])
+        self.assertEqual(roles, merged["role_profiles"])
+        self.assertEqual(
+            abstentions,
+            merged["role_research_abstentions"],
+        )
+        self.assertEqual(audit, merged["role_research"])
+        self.assertEqual(
+            refresh.canonical_sha256(merged),
+            merged["content_sha256"],
+        )
+        self.assertEqual("old-checksum", previous["content_sha256"])
+
     @patch.object(refresh.time, "sleep")
     @patch.object(refresh, "request_json")
     def test_api_sports_rate_limit_payload_is_retried(

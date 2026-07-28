@@ -64,6 +64,26 @@ def is_api_sports_daily_limit(value: Any) -> bool:
     )
 
 
+def merge_role_research_into_previous_snapshot(
+    previous: dict[str, Any],
+    *,
+    role_profiles: dict[str, dict[str, Any]],
+    role_research_abstentions: dict[str, dict[str, Any]],
+    role_research_audit: dict[str, Any],
+) -> dict[str, Any]:
+    """Refresh grounded roles without extending stale provider timestamps."""
+
+    merged = copy.deepcopy(previous)
+    merged["role_profiles"] = copy.deepcopy(role_profiles)
+    merged["role_research_abstentions"] = copy.deepcopy(
+        role_research_abstentions
+    )
+    merged["role_research"] = copy.deepcopy(role_research_audit)
+    merged.pop("content_sha256", None)
+    merged["content_sha256"] = canonical_sha256(merged)
+    return merged
+
+
 def iso_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
@@ -1454,9 +1474,17 @@ def main() -> int:
             raise RuntimeError(
                 "previous news snapshot belongs to another competition"
             ) from error
+        payload = merge_role_research_into_previous_snapshot(
+            payload,
+            role_profiles=researched_role_profiles,
+            role_research_abstentions=role_research_abstentions,
+            role_research_audit=role_research_audit,
+        )
+        validate_snapshot(payload)
         print(
             "API-Sports daily limit reached; reusing the previous fresh "
-            "news snapshot without extending its expiry.",
+            "provider snapshot without extending its expiry while publishing "
+            "the refreshed grounded role research.",
             file=sys.stderr,
         )
     args.output.parent.mkdir(parents=True, exist_ok=True)
