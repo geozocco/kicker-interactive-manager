@@ -864,6 +864,74 @@ class DistanceOptimizerTests(unittest.TestCase):
         }
         self.assertGreater(len(squads), 1)
 
+    def test_reliable_variation_retains_protected_premium_anchor(self) -> None:
+        players, scores = varied_pool()
+        incumbent = next(
+            item for item in players if item.player_id == "M0"
+        )
+        premium = optimizer.replace(
+            incumbent,
+            reliable_anchor=True,
+            anchor_basis="explicit",
+            anchor_reason="Seven stable seasons and a repeatable key role",
+            proven_seasons=7,
+            components={
+                **incumbent.components,
+                "confirmed_performance": 99.0,
+                "minutes": 92.0,
+                "role": 95.0,
+                "stability": 86.0,
+                "fitness": 90.0,
+            },
+        )
+        players = [
+            premium if item.player_id == premium.player_id else item
+            for item in players
+        ]
+        scores[premium.player_id] = 20.0
+        slots = {
+            "GOALKEEPER": 3,
+            "DEFENDER": 2,
+            "MIDFIELDER": 2,
+            "FORWARD": 2,
+        }
+        context = optimizer.prepare_variation_context(
+            players=players,
+            budget=900,
+            base_scores=scores,
+            profile="reliable",
+            variation="medium",
+            club_cap=1,
+            minimum_spend=900,
+            slots=slots,
+            same_club_goalkeepers=True,
+            min_reliable_anchors=0,
+            technical_smoke=False,
+        )
+        protected = optimizer.protected_reliable_premium_anchor_ids(
+            players,
+            scores,
+            context["optimum"].ids,
+        )
+
+        self.assertEqual(frozenset({premium.player_id}), protected)
+        for seed in range(8):
+            squad, _, _, _ = optimizer.varied_squad(
+                players,
+                900,
+                scores,
+                "reliable",
+                "medium",
+                seed,
+                1,
+                900,
+                slots,
+                set(),
+                prepared_context=context,
+                protected_ids=protected,
+            )
+            self.assertIn(premium.player_id, squad.ids)
+
     def test_five_member_portfolio_is_reproducible_and_balances_exposure(
         self,
     ) -> None:
@@ -1426,6 +1494,105 @@ class CentralNewsIdentityTests(unittest.TestCase):
 
 
 class ReliableCorePolicyTests(unittest.TestCase):
+    def test_protected_premium_anchor_is_evidence_and_percentile_based(
+        self,
+    ) -> None:
+        candidates = [
+            player(
+                f"candidate-{index}",
+                f"Candidate Club {index}",
+                "MIDFIELDER",
+                500,
+            )
+            for index in range(10)
+        ]
+        elite = optimizer.replace(
+            candidates[0],
+            player_id="elite",
+            name="Elite",
+            short_name="Elite",
+            reliable_anchor=True,
+            anchor_basis="explicit",
+            anchor_reason="Repeatable elite role",
+            proven_seasons=7,
+            components={
+                **candidates[0].components,
+                "confirmed_performance": 99.0,
+                "minutes": 92.0,
+                "role": 95.0,
+                "stability": 86.0,
+                "fitness": 90.0,
+            },
+        )
+        candidates[0] = elite
+        scores = {
+            candidate.player_id: 80.0 + index
+            for index, candidate in enumerate(candidates)
+        }
+        scores[elite.player_id] = 100.0
+
+        protected = optimizer.protected_reliable_premium_anchor_ids(
+            candidates,
+            scores,
+            {elite.player_id},
+        )
+        benchmark_clone = optimizer.replace(
+            elite,
+            player_id="benchmark-only",
+            benchmark=True,
+            proven_seasons=3,
+        )
+        benchmark_only = optimizer.protected_reliable_premium_anchor_ids(
+            [*candidates, benchmark_clone],
+            {**scores, benchmark_clone.player_id: 100.0},
+            {benchmark_clone.player_id},
+        )
+
+        self.assertEqual(frozenset({elite.player_id}), protected)
+        self.assertEqual(frozenset(), benchmark_only)
+
+    def test_finalized_objective_uses_joint_architecture_scale(self) -> None:
+        item = player("objective", "Objective Club", "MIDFIELDER", 100)
+        squad = optimizer.Squad(
+            [item],
+            0.0,
+            architecture_diagnostics={"architecture_objective": 123.5},
+        )
+
+        objective, valid = optimizer.finalized_squad_objective(
+            squad,
+            [item],
+            {item.player_id: 999.0},
+            {item.player_id: 50.0},
+            SimpleNamespace(min_core_budget_share=0.0),
+        )
+
+        self.assertTrue(valid)
+        self.assertEqual(123.5, objective)
+
+    def test_architecture_legality_preserves_required_player(self) -> None:
+        required = player("required", "Required Club", "MIDFIELDER", 100)
+        other = player("other", "Other Club", "FORWARD", 100)
+
+        self.assertTrue(
+            optimizer._architecture_candidate_is_legal(
+                [required, other],
+                budget=200,
+                club_cap=1,
+                min_reliable_anchors=0,
+                required_player_ids={required.player_id},
+            )
+        )
+        self.assertFalse(
+            optimizer._architecture_candidate_is_legal(
+                [other],
+                budget=100,
+                club_cap=1,
+                min_reliable_anchors=0,
+                required_player_ids={required.player_id},
+            )
+        )
+
     def test_core_weighting_uses_evidence_not_benchmark_flag(self) -> None:
         regular_anchor = player(
             "anchor",
@@ -1874,7 +2041,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             after["bench_usage_weights"]["FORWARD"],
         )
         self.assertEqual(
-            "joint-xi-bench-v3",
+            "joint-xi-bench-v4-protected-final-objective",
             optimized.architecture_diagnostics["model_version"],
         )
         self.assertGreater(
@@ -2772,7 +2939,10 @@ class ReliableCorePolicyTests(unittest.TestCase):
             payload["score"],
             sum(item["score"] for item in payload["squad"]),
         )
-        self.assertEqual("model_utility", payload["quality_gap_metric"])
+        self.assertEqual(
+            "finalized_starting_xi_and_bench_objective",
+            payload["quality_gap_metric"],
+        )
         self.assertEqual(3, payload["reliable_anchor_policy"]["selected"])
         self.assertEqual(
             11,

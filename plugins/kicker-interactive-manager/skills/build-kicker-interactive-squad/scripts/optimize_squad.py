@@ -25,7 +25,7 @@ from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Iterable
+from typing import AbstractSet, Any, Iterable
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parent
 if str(SCRIPT_DIRECTORY) not in sys.path:
@@ -1160,6 +1160,54 @@ def is_offensive_premium_anchor(player: Player) -> bool:
     )
 
 
+def protected_reliable_premium_anchor_ids(
+    players: list[Player],
+    raw_scores: Mapping[str, float],
+    reference_ids: AbstractSet[str],
+) -> frozenset[str]:
+    """Protect only the safest elite anchors already chosen by the optimum.
+
+    This is intentionally evidence- and percentile-based. A famous name,
+    benchmark flag or user mention never enters the decision.
+    """
+
+    protected: set[str] = set()
+    for position in ("MIDFIELDER", "FORWARD"):
+        position_scores = sorted(
+            raw_scores[player.player_id]
+            for player in players
+            if player.position == position
+        )
+        if not position_scores:
+            continue
+        elite_index = max(
+            0,
+            math.ceil(0.90 * len(position_scores)) - 1,
+        )
+        elite_floor = position_scores[elite_index]
+        for player in players:
+            if (
+                player.position != position
+                or player.player_id not in reference_ids
+                or raw_scores[player.player_id] < elite_floor
+                or not is_offensive_premium_anchor(player)
+                or player.proven_seasons < 4
+                or player.components["confirmed_performance"] < 90
+                or player.components["minutes"] < 80
+                or player.components["role"] < 80
+                or player.components["stability"] < 70
+                or player.components["fitness"] < 70
+                or player.risks["transfer"] > 15
+                or player.risks["injury"] > 25
+                or player.risks["rotation"] > 15
+                or player.risks["outlier"] > 20
+                or player.risks["unknown_role"] > 15
+            ):
+                continue
+            protected.add(player.player_id)
+    return frozenset(protected)
+
+
 def effective_weights(profile: str, maintenance: str) -> dict[str, float]:
     weights = {key: float(value) for key, value in PROFILE_WEIGHTS[profile].items()}
     if maintenance == "low":
@@ -1778,16 +1826,61 @@ def squad_architecture_metrics(
     }
 
 
+def finalized_squad_objective(
+    squad: Squad,
+    candidates: list[Player],
+    utility_scores: Mapping[str, float],
+    raw_scores: Mapping[str, float],
+    args: argparse.Namespace,
+) -> tuple[float, bool]:
+    """Evaluate final, varied and counterfactual squads on one scale."""
+
+    architecture_objective = squad.architecture_diagnostics.get(
+        "architecture_objective"
+    )
+    if architecture_objective is not None:
+        return float(architecture_objective), True
+    if float(getattr(args, "min_core_budget_share", 0.0)) <= 0.0:
+        return (
+            sum(utility_scores[player.player_id] for player in squad.players),
+            True,
+        )
+    metrics = squad_architecture_metrics(
+        squad,
+        raw_scores,
+        maintenance=args.maintenance,
+        min_reliable_anchors=args.min_reliable_anchors,
+        min_attacking_anchors=args.min_attacking_anchors,
+        min_core_budget_share=args.min_core_budget_share,
+        target_core_budget_share=float(
+            getattr(args, "effective_core_budget_share_target", 0.0)
+        ),
+        min_offensive_premium_anchors=(
+            args.min_offensive_premium_anchors
+        ),
+        premium_starter_ids=premium_starter_candidate_ids(
+            candidates,
+            raw_scores,
+        ),
+    )
+    return float(metrics["architecture_objective"]), bool(metrics["passes"])
+
+
 def _architecture_candidate_is_legal(
     players: list[Player],
     *,
     budget: int,
     club_cap: int,
     min_reliable_anchors: int,
+    required_player_ids: AbstractSet[str] = frozenset(),
 ) -> bool:
     if len(players) != len({player.player_id for player in players}):
         return False
     if sum(player.cost for player in players) != budget:
+        return False
+    if not frozenset(required_player_ids).issubset(
+        player.player_id for player in players
+    ):
         return False
     if any(
         count > club_cap
@@ -1996,6 +2089,7 @@ def optimize_joint_squad_architecture(
     quality_loss_limit: float = 0.05,
     max_iterations: int = 10,
     same_club_goalkeepers: bool = True,
+    protected_player_ids: AbstractSet[str] = frozenset(),
 ) -> Squad:
     """Jointly improve the legal XI and its reserves at exact total spend."""
 
@@ -2141,6 +2235,7 @@ def optimize_joint_squad_architecture(
                 budget=budget,
                 club_cap=club_cap,
                 min_reliable_anchors=min_reliable_anchors,
+                required_player_ids=protected_player_ids,
             ):
                 return
             replacement_quality = sum(
@@ -2386,7 +2481,7 @@ def optimize_joint_squad_architecture(
         maximum_reachable_core_share,
     )
     current.architecture_diagnostics = {
-        "model_version": "joint-xi-bench-v3",
+        "model_version": "joint-xi-bench-v4-protected-final-objective",
         "expected_contribution": round(
             current_metrics["expected_contribution"],
             6,
@@ -2636,6 +2731,7 @@ def repair_core_budget_share(
     quality_floor: float,
     minimum_spend: int = 0,
     min_offensive_premium_anchors: int = 0,
+    protected_player_ids: AbstractSet[str] = frozenset(),
 ) -> Squad | None:
     """Replace expensive reserves with the best safe cheaper alternatives."""
 
@@ -2679,6 +2775,7 @@ def repair_core_budget_share(
         for reserve in current.players:
             if (
                 reserve.player_id in core_ids
+                or reserve.player_id in protected_player_ids
                 or reserve.position == "GOALKEEPER"
             ):
                 continue
@@ -2776,6 +2873,7 @@ def upgrade_core_with_remaining_budget(
     min_attacking_anchors: int,
     min_core_budget_share: float,
     min_offensive_premium_anchors: int = 0,
+    protected_player_ids: AbstractSet[str] = frozenset(),
 ) -> Squad:
     """Spend remaining budget only on safe, stronger starting-core upgrades."""
 
@@ -2803,6 +2901,7 @@ def upgrade_core_with_remaining_budget(
         for incumbent in current.players:
             if (
                 incumbent.player_id not in core_ids
+                or incumbent.player_id in protected_player_ids
                 or incumbent.position == "GOALKEEPER"
             ):
                 continue
@@ -2883,6 +2982,7 @@ def finalize_reliable_core_architecture(
     min_offensive_premium_anchors: int = 0,
     maintenance: str = "low",
     same_club_goalkeepers: bool = True,
+    protected_player_ids: AbstractSet[str] = frozenset(),
 ) -> Squad:
     """Apply the same core-first architecture to a squad and its reference."""
 
@@ -2908,6 +3008,7 @@ def finalize_reliable_core_architecture(
             quality_floor=float("-inf"),
             minimum_spend=minimum_spend,
             min_offensive_premium_anchors=0,
+            protected_player_ids=protected_player_ids,
         )
         if repaired is not None:
             current = repaired
@@ -2922,6 +3023,7 @@ def finalize_reliable_core_architecture(
         min_attacking_anchors=min_attacking_anchors,
         min_core_budget_share=min_core_budget_share,
         min_offensive_premium_anchors=min_offensive_premium_anchors,
+        protected_player_ids=protected_player_ids,
     )
     return optimize_joint_squad_architecture(
         current,
@@ -2937,6 +3039,7 @@ def finalize_reliable_core_architecture(
         target_core_budget_share=target_core_budget_share,
         min_offensive_premium_anchors=min_offensive_premium_anchors,
         same_club_goalkeepers=same_club_goalkeepers,
+        protected_player_ids=protected_player_ids,
     )
 
 
@@ -4195,6 +4298,7 @@ def varied_squad(
     exposure_strength: float = 1.0,
     prepared_context: dict[str, Any] | None = None,
     forbidden_ids: set[str] | None = None,
+    protected_ids: AbstractSet[str] = frozenset(),
     optimizer_cache: Path | None = None,
 ) -> tuple[Squad, Squad, int, bool]:
     context = prepared_context or prepare_variation_context(
@@ -4212,6 +4316,7 @@ def varied_squad(
         optimizer_cache=optimizer_cache,
     )
     optimum = context["optimum"]
+    protected_ids = frozenset(protected_ids).intersection(optimum.ids)
     if variation == "none":
         return optimum, optimum, 0, True
 
@@ -4318,10 +4423,17 @@ def varied_squad(
         )
         for player in variation_players
     }
+    selection_scores = dict(seeded_scores)
+    if protected_ids:
+        retention_bonus = (
+            2.0 * sum(abs(score) for score in base_scores.values()) + 1.0
+        )
+        for player_id in protected_ids:
+            selection_scores[player_id] += retention_bonus
     seeded_buckets = optimize_distance_buckets(
         variation_players,
         budget,
-        seeded_scores,
+        selection_scores,
         club_cap,
         minimum_spend,
         slots,
@@ -4330,20 +4442,45 @@ def varied_squad(
         same_club_goalkeepers,
         min_reliable_anchors,
     )
-    seeded_candidate = seeded_buckets[chosen_bucket]
-    seeded_baseline_score = sum(
-        base_scores[player.player_id] for player in seeded_candidate.players
+    preferred_distances = [
+        chosen_bucket,
+        *range(chosen_bucket - 1, -1, -1),
+    ]
+    chosen: Squad | None = None
+    selected_distance = chosen_bucket
+    for candidate_distance in preferred_distances:
+        seeded_candidate = seeded_buckets.get(candidate_distance)
+        if seeded_candidate is None:
+            continue
+        if not protected_ids.issubset(seeded_candidate.ids):
+            continue
+        seeded_baseline_score = sum(
+            base_scores[player.player_id]
+            for player in seeded_candidate.players
+        )
+        if seeded_baseline_score < quality_floor:
+            continue
+        chosen = Squad(
+            seeded_candidate.players,
+            seeded_baseline_score,
+        )
+        selected_distance = candidate_distance
+        break
+    if chosen is None:
+        chosen = optimum
+        selected_distance = 0
+    variation_target_met = (
+        variation_target_met
+        and selected_distance == target_distance
     )
-    if seeded_baseline_score < quality_floor:
-        chosen = Squad(base_candidate.players, base_candidate_score)
-    else:
-        chosen = Squad(seeded_candidate.players, seeded_baseline_score)
 
     distance = len(optimum.ids.symmetric_difference(chosen.ids)) // 2
+    if distance != selected_distance:
+        raise RuntimeError(
+            "distance-aware optimizer returned the wrong protected distance"
+        )
     if variation_target_met and distance != target_distance:
         raise RuntimeError("distance-aware optimizer violated the exact target distance")
-    if not variation_target_met and distance != chosen_bucket:
-        raise RuntimeError("distance-aware optimizer returned the wrong distance bucket")
     return chosen, optimum, distance, variation_target_met
 
 
@@ -4868,15 +5005,29 @@ def output_payload(
         "status": "not_configured",
         "required": False,
     }
-    squad_score = sum(utility_scores[player.player_id] for player in squad.players)
-    optimum_score = sum(utility_scores[player.player_id] for player in optimum.players)
+    squad_score, squad_objective_valid = finalized_squad_objective(
+        squad,
+        players,
+        utility_scores,
+        raw_scores,
+        args,
+    )
+    optimum_score, optimum_objective_valid = finalized_squad_objective(
+        optimum,
+        players,
+        utility_scores,
+        raw_scores,
+        args,
+    )
+    if not squad_objective_valid or not optimum_objective_valid:
+        raise ValueError(
+            "finalized squad objective cannot compare an invalid core architecture"
+        )
     raw_squad_score = sum(
         round(raw_scores[player.player_id], 3) for player in squad.players
     )
     raw_optimum_score = sum(raw_scores[player.player_id] for player in optimum.players)
-    visible_squad_utility = sum(
-        round(utility_scores[player.player_id], 3) for player in squad.players
-    )
+    visible_squad_utility = squad_score
     quality_gap = (
         100.0
         * (optimum_score - squad_score)
@@ -5106,7 +5257,51 @@ def output_payload(
                         "candidate cannot be forced inside the roster constraints"
                     ),
                 }
-            counterfactual_scope = "best_feasible_pool_squad_with_candidate"
+            if float(
+                getattr(args, "min_core_budget_share", 0.0)
+            ) > 0:
+                forced = finalize_reliable_core_architecture(
+                    forced,
+                    players,
+                    utility_scores,
+                    raw_scores,
+                    budget=args.budget,
+                    club_cap=args.max_outfield_per_club,
+                    min_reliable_anchors=args.min_reliable_anchors,
+                    min_attacking_anchors=getattr(
+                        args,
+                        "min_attacking_anchors",
+                        0,
+                    ),
+                    min_core_budget_share=getattr(
+                        args,
+                        "min_core_budget_share",
+                        0.0,
+                    ),
+                    target_core_budget_share=(
+                        getattr(
+                            args,
+                            "effective_core_budget_share_target",
+                            0.0,
+                        )
+                    ),
+                    minimum_spend=minimum_spend,
+                    min_offensive_premium_anchors=(
+                        getattr(
+                            args,
+                            "min_offensive_premium_anchors",
+                            0,
+                        )
+                    ),
+                    maintenance=getattr(args, "maintenance", "normal"),
+                    same_club_goalkeepers=not args.mixed_goalkeepers,
+                    protected_player_ids=frozenset(
+                        {player.player_id}
+                    ),
+                )
+            counterfactual_scope = (
+                "best_finalized_pool_squad_with_candidate"
+            )
         else:
             direct_replacements: list[Squad] = []
             for displaced in squad.players:
@@ -5163,10 +5358,35 @@ def output_payload(
                 key=lambda candidate: candidate.objective_score,
             )
             counterfactual_scope = "best_feasible_direct_replacement"
-        forced_utility = sum(
-            utility_scores[forced_player.player_id]
-            for forced_player in forced.players
+        forced_utility, forced_objective_valid = finalized_squad_objective(
+            forced,
+            players,
+            utility_scores,
+            raw_scores,
+            args,
         )
+        if not forced_objective_valid:
+            return {
+                "feasible": False,
+                "scope": counterfactual_scope,
+                "reason": (
+                    "candidate package fails the finalized starting-XI and "
+                    "bench architecture"
+                ),
+            }
+        if forced_utility > optimum_score + 1e-9:
+            return {
+                "feasible": None,
+                "scope": counterfactual_scope,
+                "reason": (
+                    "finalized counterfactual exceeds the current reference "
+                    "optimum; re-optimize the reference before reporting a "
+                    "percentage comparison"
+                ),
+                "model_utility": round(forced_utility, 3),
+                "best_pool_utility": round(optimum_score, 3),
+                "requires_reference_reoptimization": True,
+            }
         forced_ids = forced.ids
 
         def compact(candidate: Player) -> dict[str, Any]:
@@ -5495,7 +5715,7 @@ def output_payload(
         "model_utility": round(visible_squad_utility, 3),
         "best_pool_utility": round(optimum_score, 3),
         "quality_gap_percent": round(max(0.0, quality_gap), 3),
-        "quality_gap_metric": "model_utility",
+        "quality_gap_metric": "finalized_starting_xi_and_bench_objective",
         "optimization_scope": {
             "eligible_players": len(players),
             "basis": (
@@ -6740,6 +6960,33 @@ def main() -> int:
                 optimizer_cache=args.optimizer_cache,
             )
         else:
+            prepared_context = prepare_variation_context(
+                players=eligible_players,
+                budget=args.budget,
+                base_scores=eligible_utility_scores,
+                profile=args.profile,
+                variation=args.variation,
+                club_cap=args.max_outfield_per_club,
+                minimum_spend=minimum_spend,
+                slots=args.slots,
+                same_club_goalkeepers=not args.mixed_goalkeepers,
+                min_reliable_anchors=args.min_reliable_anchors,
+                technical_smoke=args.allow_unannotated,
+                optimizer_cache=args.optimizer_cache,
+            )
+            protected_premium_ids = (
+                protected_reliable_premium_anchor_ids(
+                    eligible_players,
+                    eligible_raw_scores,
+                    prepared_context["optimum"].ids,
+                )
+                if (
+                    args.profile == "reliable"
+                    and args.maintenance == "low"
+                    and not args.allow_unannotated
+                )
+                else frozenset()
+            )
             squad, optimum, distance, variation_target_met = varied_squad(
                 players=eligible_players,
                 budget=args.budget,
@@ -6754,6 +7001,8 @@ def main() -> int:
                 same_club_goalkeepers=not args.mixed_goalkeepers,
                 min_reliable_anchors=args.min_reliable_anchors,
                 technical_smoke=args.allow_unannotated,
+                prepared_context=prepared_context,
+                protected_ids=protected_premium_ids,
                 optimizer_cache=args.optimizer_cache,
             )
             if args.min_core_budget_share > 0:
@@ -6776,6 +7025,7 @@ def main() -> int:
                     ),
                     maintenance=args.maintenance,
                     same_club_goalkeepers=not args.mixed_goalkeepers,
+                    protected_player_ids=protected_premium_ids,
                 )
                 squad = finalize_reliable_core_architecture(
                     squad,
@@ -6796,7 +7046,56 @@ def main() -> int:
                     ),
                     maintenance=args.maintenance,
                     same_club_goalkeepers=not args.mixed_goalkeepers,
+                    protected_player_ids=protected_premium_ids,
                 )
+                squad_final_objective, squad_final_valid = (
+                    finalized_squad_objective(
+                        squad,
+                        eligible_players,
+                        eligible_utility_scores,
+                        eligible_raw_scores,
+                        args,
+                    )
+                )
+                optimum_final_objective, optimum_final_valid = (
+                    finalized_squad_objective(
+                        optimum,
+                        eligible_players,
+                        eligible_utility_scores,
+                        eligible_raw_scores,
+                        args,
+                    )
+                )
+                profile_factor = (
+                    0.75
+                    if args.profile == "reliable"
+                    else (1.20 if args.profile == "breakout" else 1.0)
+                )
+                final_quality_floor = optimum_final_objective * (
+                    1.0
+                    - VARIATION_CONFIG[args.variation]["gap"]
+                    * profile_factor
+                )
+                if (
+                    not squad_final_valid
+                    or not optimum_final_valid
+                    or not protected_premium_ids.issubset(squad.ids)
+                    or squad_final_objective + 1e-9
+                    < final_quality_floor
+                    or (
+                        len(
+                            optimum.ids.symmetric_difference(squad.ids)
+                        )
+                        // 2
+                        > int(
+                            VARIATION_CONFIG[
+                                args.variation
+                            ]["distance"]
+                        )
+                        + 1
+                    )
+                ):
+                    squad = optimum
                 distance = len(
                     optimum.ids.symmetric_difference(squad.ids)
                 ) // 2
