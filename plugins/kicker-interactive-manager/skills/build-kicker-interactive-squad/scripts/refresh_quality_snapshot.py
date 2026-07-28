@@ -2922,6 +2922,23 @@ def goalkeeper_hierarchy_score(
     )
 
 
+def goalkeeper_rank_score(
+    annotation: dict[str, Any],
+    *,
+    club_price_share: float,
+    global_price_percentile: float,
+    role_profile: dict[str, Any] | None,
+) -> float:
+    return clamp(
+        goalkeeper_hierarchy_score(
+            annotation,
+            club_price_share=club_price_share,
+            global_price_percentile=global_price_percentile,
+        )
+        + goalkeeper_role_cache_adjustment(role_profile)
+    )
+
+
 def apply_goalkeeper_hierarchy(
     annotations: dict[str, dict[str, Any]],
     market_payload: dict[str, Any],
@@ -3016,12 +3033,12 @@ def apply_goalkeeper_hierarchy(
             )
             ranked.append(
                 (
-                    goalkeeper_hierarchy_score(
+                    goalkeeper_rank_score(
                         annotations[player_id],
                         club_price_share=price_share,
                         global_price_percentile=price_percentile,
-                    )
-                    + goalkeeper_role_cache_adjustment(role_profile),
+                        role_profile=role_profile,
+                    ),
                     player_id,
                     price_share,
                     price_percentile,

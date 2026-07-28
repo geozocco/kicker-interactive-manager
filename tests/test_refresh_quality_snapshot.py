@@ -520,6 +520,45 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             ),
         )
 
+    def test_goalkeeper_rank_score_clamps_role_cache_adjustment(self) -> None:
+        annotation = {
+            "components": {
+                "minutes": 100,
+                "role": 100,
+                "confirmed_performance": 100,
+                "upside": 100,
+            },
+            "risks": {
+                "transfer": 0,
+                "rotation": 0,
+            },
+        }
+
+        self.assertEqual(
+            100,
+            quality.goalkeeper_rank_score(
+                annotation,
+                club_price_share=100,
+                global_price_percentile=100,
+                role_profile={
+                    "fresh": True,
+                    "designation": "confirmed_starter",
+                },
+            ),
+        )
+        self.assertGreaterEqual(
+            quality.goalkeeper_rank_score(
+                annotation,
+                club_price_share=0,
+                global_price_percentile=0,
+                role_profile={
+                    "fresh": True,
+                    "designation": "perspective",
+                },
+            ),
+            0,
+        )
+
     def test_recovery_preserves_healthy_quality_but_caps_readiness(self) -> None:
         histories = [
             form_season(
