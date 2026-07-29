@@ -276,6 +276,130 @@ class LoanPathwayTests(unittest.TestCase):
         self.assertEqual(0, profile["value_bonus"])
         self.assertEqual(0, profile["upside_bonus"])
 
+    def test_recent_u19_history_infers_development_age_ceiling(self) -> None:
+        inferred = quality.inferred_age_from_history(
+            {
+                "seasons": [
+                    {
+                        "season": 2025,
+                        "competitions": [
+                            {
+                                "label": "U19-Nationalmannschaft Qualifikation",
+                                "minutes": 323,
+                            }
+                        ],
+                    }
+                ]
+            },
+            reference_season=2026,
+        )
+
+        self.assertEqual(20, inferred)
+
+    def test_qualified_inbound_loan_is_added_beyond_position_quota(
+        self,
+    ) -> None:
+        regular = {
+            "id": "regular",
+            "name": "Regular Defender",
+            "club": "Club A",
+            "position": "DEFENDER",
+            "market_value": 100_000,
+            "points": 120,
+            "average_grade": 3.0,
+            "available": True,
+        }
+        loan = {
+            "id": "loan",
+            "name": "Loan Talent",
+            "club": "Club B",
+            "position": "DEFENDER",
+            "market_value": 400_000,
+            "points": 0,
+            "average_grade": 0,
+            "available": True,
+        }
+        news_players = {
+            f"api_sports:{index}": {
+                "name": player["name"],
+                "club": player["club"],
+                "mapping": {
+                    "confidence": "verified",
+                    "api_sports_player_id": index,
+                },
+            }
+            for index, player in enumerate((regular, loan), start=1)
+        }
+        history = {
+            "players": {
+                "regular": {
+                    "mapping": {"status": "verified"},
+                    "career": {
+                        "confirmed_score": 80,
+                        "proven_seasons": 2,
+                    },
+                    "seasons": [],
+                },
+                "loan": {
+                    "mapping": {"status": "probable"},
+                    "career": {
+                        "confirmed_score": 28,
+                        "proven_seasons": 0,
+                        "youth_score": 64,
+                        "youth_adjusted_minutes": 6_300,
+                        "recent_minutes_score": 71,
+                        "role_score": 84,
+                    },
+                    "seasons": [
+                        {
+                            "season": 2025,
+                            "competitions": [
+                                {
+                                    "label": "U19 competition",
+                                    "minutes": 450,
+                                },
+                                {
+                                    "label": "3. Liga",
+                                    "kind": "domestic_league",
+                                    "strength_factor": 0.64,
+                                    "minutes": 2_386,
+                                },
+                            ],
+                        }
+                    ],
+                },
+            }
+        }
+        selected = quality.select_candidates(
+            {"players": [regular, loan]},
+            {
+                "players": news_players,
+                "transfer_profiles": {
+                    "loan": {
+                        "status": "confirmed",
+                        "stage": "official",
+                        "direction": "in",
+                        "from_club": "Top Club",
+                        "to_club": "Club B",
+                        "deal_type": "loan",
+                        "fresh": True,
+                    }
+                },
+            },
+            history,
+            {
+                "GOALKEEPER": 0,
+                "DEFENDER": 1,
+                "MIDFIELDER": 0,
+                "FORWARD": 0,
+            },
+        )
+
+        self.assertEqual(
+            {"regular", "loan"},
+            {player["id"] for player, _, _ in selected},
+        )
+
     def test_actual_higher_league_minutes_count_not_just_parent_contract(
         self,
     ) -> None:

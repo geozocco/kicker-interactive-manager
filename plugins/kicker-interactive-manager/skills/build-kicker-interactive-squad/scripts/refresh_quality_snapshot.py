@@ -55,7 +55,7 @@ from refresh_news_snapshot import (
 from advanced_signals import apply_advanced_signals
 
 
-MODEL_VERSION = "multi-season-v15-loan-pathway"
+MODEL_VERSION = "multi-season-v16-loan-pathway-shortlist"
 PRESEASON_MODEL_VERSION = "preseason-readiness-v3-role-responsibilities"
 FORM_MODEL_VERSION = "recency-context-v4-evidence-role-transfer"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
@@ -355,6 +355,55 @@ def youth_talent_profile(
     }
 
 
+def inferred_age_from_history(
+    history_player: dict[str, Any],
+    *,
+    reference_season: int | None = None,
+) -> int | None:
+    """Infer a conservative age ceiling from recent U17-U21 appearances."""
+
+    seasons = history_player.get("seasons", [])
+    latest_season = max(
+        (
+            int(season.get("season", 0))
+            for season in seasons
+            if isinstance(season, dict)
+        ),
+        default=0,
+    )
+    if latest_season <= 0:
+        return None
+    current_season = max(
+        latest_season,
+        reference_season or utc_now().year,
+    )
+    inferred: list[int] = []
+    for season in seasons:
+        if not isinstance(season, dict):
+            continue
+        season_id = int(season.get("season", 0))
+        for competition in season.get("competitions", []):
+            if not isinstance(competition, dict):
+                continue
+            if numeric(competition.get("minutes")) < 90:
+                continue
+            label = str(competition.get("label", ""))
+            age_match = re.search(r"\bU(17|18|19|20|21)\b", label, re.I)
+            if age_match is None:
+                continue
+            competition_ceiling = int(age_match.group(1))
+            # Snapshot seasons use their starting year. Add one year for the
+            # current campaign and the elapsed season distance, producing an
+            # intentionally conservative upper bound rather than a fake DOB.
+            inferred.append(
+                competition_ceiling
+                + max(0, current_season - season_id)
+            )
+    if not inferred:
+        return None
+    return max(15, min(30, min(inferred)))
+
+
 def candidate_rank(
     player: dict[str, Any],
     points_by_position: dict[str, list[float]],
@@ -383,7 +432,8 @@ def candidate_rank(
         if mapping_status == "probable"
         else 0.0
     )
-    talent_profile = youth_talent_profile(history_player, age)
+    resolved_age = age or inferred_age_from_history(history_player)
+    talent_profile = youth_talent_profile(history_player, resolved_age)
     talent_score = float(talent_profile["talent_score"])
     age_value = talent_profile["age"]
     age_factor = (
@@ -414,6 +464,40 @@ def candidate_rank(
         + 0.17 * grade_score
         + 0.16 * price_signal
         + 0.35 * historical_signal
+    )
+
+
+def loan_pathway_shortlist_signal(
+    player: dict[str, Any],
+    history_player: dict[str, Any],
+    transfer_profile: dict[str, Any] | None,
+) -> bool:
+    """Keep credible inbound loan talents in the researched quality pool."""
+
+    transfer = (
+        transfer_profile if isinstance(transfer_profile, dict) else {}
+    )
+    if not (
+        transfer.get("status") == "confirmed"
+        and transfer.get("stage") == "official"
+        and transfer.get("direction") == "in"
+        and transfer.get("deal_type") == "loan"
+        and transfer.get("fresh", False)
+        and club_match(
+            str(transfer.get("to_club", "")),
+            str(player.get("club", "")),
+        )
+    ):
+        return False
+    career = history_player.get("career", {})
+    inferred_age = inferred_age_from_history(history_player)
+    development_window = inferred_age is not None and inferred_age <= 22
+    return (
+        development_window
+        and numeric(career.get("youth_score")) >= 52
+        and numeric(career.get("youth_adjusted_minutes")) >= 900
+        and numeric(career.get("recent_minutes_score")) >= 55
+        and numeric(career.get("role_score")) >= 55
     )
 
 
@@ -601,11 +685,27 @@ def select_candidates(
         and float(item["summary"].get("signal_score", 0)) >= 60
         and int(item["summary"].get("appearances", 0)) >= 2
     }
+    transfer_profiles = news_payload.get("transfer_profiles", {})
     for position in POSITIONS:
         for _, player, news_id, news_player in ranked[position]:
             player_id = str(player["id"])
+            history_player = history_payload["players"].get(
+                player_id,
+                {
+                    "mapping": {"status": "unmatched"},
+                    "career": {},
+                    "seasons": [],
+                },
+            )
+            qualified_loan_pathway = loan_pathway_shortlist_signal(
+                player,
+                history_player,
+                transfer_profiles.get(player_id),
+            )
             if (
-                player_id in forced_ids or news_id in preseason_news_ids
+                player_id in forced_ids
+                or news_id in preseason_news_ids
+                or qualified_loan_pathway
             ) and player_id not in selected_ids:
                 selected.append((player, news_id, news_player))
                 selected_ids.add(player_id)
@@ -2710,10 +2810,16 @@ def build_annotation(
     provider_age = optional_int(
         news_player.get("mapping", {}).get("age")
     )
-    age = provider_age or next(
-        (int(stats["age"]) for stats in histories if stats.get("age") is not None),
-        27,
+    history_age = inferred_age_from_history(history_player)
+    api_history_age = next(
+        (
+            int(stats["age"])
+            for stats in histories
+            if stats.get("age") is not None
+        ),
+        None,
     )
+    age = provider_age or api_history_age or history_age or 27
     _, club_changed_hint, _ = historical_club_context(
         histories,
         market_club=str(market_player["club"]),
@@ -2741,6 +2847,15 @@ def build_annotation(
     )
     role = clamp(role + float(form_adjustments["role"]))
     talent_profile = youth_talent_profile(history_player, age)
+    talent_profile["age_source"] = (
+        "api_sports_current"
+        if provider_age is not None
+        else "api_sports_history"
+        if api_history_age is not None
+        else "history_youth_ceiling"
+        if history_age is not None
+        else "unknown_default"
+    )
     talent_score = float(talent_profile["talent_score"])
     readiness_score = float(talent_profile["readiness_score"])
     age_factor = (

@@ -100,6 +100,7 @@ Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüf
 
 - Je Position etablierte Kandidaten, Neuzugänge, höherklassig erprobte Spieler, Jugendtalente und Rebound-Kandidaten aufnehmen.
 - Leihspieler über das `loan_pathway_profile` differenzieren: tatsächliche Herrenminuten im Herkunftsniveau, altersrelative Reife, Stammvereinsniveau, Leihzweck, Zielvereinsrolle und Konkurrenz getrennt bewerten. Der Name oder die Ligazugehörigkeit des Stammvereins allein ist niemals ein Leistungsnachweis.
+- Bestätigte Zugangsleihen mit belastbarer altersrelativer Jugend-/Herrenhistorie auch außerhalb der normalen Positionsquote in den Qualitätsvergleich aufnehmen. Fehlt ein Geburtsdatum, darf eine konservative Altersobergrenze aus belegten U17-U21-Einsätzen abgeleitet werden; sie bleibt eine Modellableitung und ist kein exaktes Geburtsdatum.
 - Mindestens die realistischen Startelf- und Bankkandidaten prüfen; reine 0,05-/0,10-Füller nicht ohne belegbare Einsatzchance bevorzugen.
 - Vor dem finalen Lauf in jeder Position mindestens die doppelte tatsächliche Sollzahl aktuell annotieren. Bei den üblichen 3/7/7/5 sind das 6/14/14/10. Im Standardmodus mindestens zwei hierarchisch ausreichend sichere vollständige Torwartblöcke abdecken.
 - In Abwehr, Mittelfeld und Sturm jeweils mindestens zwei auswählbare Leistungsreferenzen mit `benchmark: true` annotieren. Diese Spieler bilden den Vergleichsmaßstab für Preis, Sicherheit und erwartbare Leistung; sie müssen nicht automatisch gekauft werden.
