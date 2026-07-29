@@ -1497,6 +1497,7 @@ def parse_args() -> argparse.Namespace:
         help="maximum transfer-watcher targets; 0 researches the full market",
     )
     parser.add_argument("--openai-transfer-batch-size", type=int, default=8)
+    parser.add_argument("--openai-transfer-workers", type=int, default=4)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--previous")
     parser.add_argument(
@@ -1527,6 +1528,8 @@ def parse_args() -> argparse.Namespace:
         )
     if not 1 <= args.openai_transfer_batch_size <= 8:
         parser.error("--openai-transfer-batch-size must be between 1 and 8")
+    if not 1 <= args.openai_transfer_workers <= 8:
+        parser.error("--openai-transfer-workers must be between 1 and 8")
     if bool(args.market) != bool(args.previous_quality):
         parser.error(
             "--market and --previous-quality must be provided together"
@@ -1770,6 +1773,7 @@ def main() -> int:
                 api_key=api_key,
                 model=args.openai_role_model,
                 batch_size=args.openai_transfer_batch_size,
+                max_workers=args.openai_transfer_workers,
             )
         else:
             researched_transfer_reports = {

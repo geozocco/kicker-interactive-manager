@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterable
 from urllib.parse import urlparse
@@ -522,6 +523,7 @@ def research_transfer_reports(
     model: str = DEFAULT_MODEL,
     now: datetime | None = None,
     batch_size: int = 8,
+    max_workers: int = 4,
     requester: Callable[..., dict[str, Any]] = request_openai,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], dict[str, Any]]:
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -541,12 +543,22 @@ def research_transfer_reports(
         else:
             pending.append(target)
 
-    failures: list[str] = []
-    requests = researched = no_signal = inconclusive = 0
-    for batch in chunks(pending, max(1, min(8, batch_size))):
+    def research_batch(
+        batch: list[dict[str, Any]],
+    ) -> tuple[
+        dict[str, dict[str, Any]],
+        dict[str, dict[str, Any]],
+        str,
+        int,
+        int,
+        int,
+    ]:
+        batch_reports: dict[str, dict[str, Any]] = {}
+        batch_abstentions: dict[str, dict[str, Any]] = {}
         completed: set[str] = set()
         raw_by_id: dict[str, Any] = {}
         failure = ""
+        researched_count = no_signal_count = inconclusive_count = 0
         try:
             response = requester(
                 build_request(
@@ -558,7 +570,6 @@ def research_transfer_reports(
                 ),
                 api_key=api_key,
             )
-            requests += 1
             grounded_urls = response_source_urls(response)
             payload = json.loads(response_output_text(response))
             raw_by_id = {
@@ -570,14 +581,14 @@ def research_transfer_reports(
                 player_id = str(target["player_id"])
                 raw = raw_by_id.get(player_id)
                 if isinstance(raw, dict) and not raw.get("has_transfer_signal"):
-                    abstentions[player_id] = _cache_record(
+                    batch_abstentions[player_id] = _cache_record(
                         target,
                         now=current,
                         model=model,
                         status="no_grounded_transfer_signal",
                     )
                     completed.add(player_id)
-                    no_signal += 1
+                    no_signal_count += 1
                     continue
                 normalized = normalize_report(
                     raw,
@@ -588,18 +599,17 @@ def research_transfer_reports(
                     model=model,
                 )
                 if normalized:
-                    reports[player_id] = normalized
+                    batch_reports[player_id] = normalized
                     completed.add(player_id)
-                    researched += 1
+                    researched_count += 1
         except (RuntimeError, json.JSONDecodeError, TypeError, ValueError) as error:
             failure = str(error)[:240]
-            failures.append(failure)
         for target in batch:
             player_id = str(target["player_id"])
             if player_id in completed:
                 continue
             if _reusable(previous.get(player_id), now=current, model=model):
-                reports[player_id] = dict(previous[player_id])
+                batch_reports[player_id] = dict(previous[player_id])
                 continue
             reason = (
                 f"request_failed: {failure}"
@@ -608,14 +618,44 @@ def research_transfer_reports(
                 if player_id not in raw_by_id
                 else "invalid_or_ungrounded_output"
             )
-            abstentions[player_id] = _cache_record(
+            batch_abstentions[player_id] = _cache_record(
                 target,
                 now=current,
                 model=model,
                 status="research_inconclusive",
                 reason=reason,
             )
-            inconclusive += 1
+            inconclusive_count += 1
+        return (
+            batch_reports,
+            batch_abstentions,
+            failure,
+            researched_count,
+            no_signal_count,
+            inconclusive_count,
+        )
+
+    failures: list[str] = []
+    requests = researched = no_signal = inconclusive = 0
+    pending_batches = list(chunks(pending, max(1, min(8, batch_size))))
+    worker_count = max(1, min(8, max_workers, len(pending_batches) or 1))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        for (
+            batch_reports,
+            batch_abstentions,
+            failure,
+            researched_count,
+            no_signal_count,
+            inconclusive_count,
+        ) in executor.map(research_batch, pending_batches):
+            requests += 1
+            researched += researched_count
+            no_signal += no_signal_count
+            inconclusive += inconclusive_count
+            reports.update(batch_reports)
+            abstentions.update(batch_abstentions)
+            if failure:
+                failures.append(failure)
 
     return reports, abstentions, {
         "status": (
@@ -630,6 +670,7 @@ def research_transfer_reports(
         "prompt_version": PROMPT_VERSION,
         "targets": len(targets),
         "cache_hits": len(targets) - len(pending),
+        "workers": worker_count,
         "researched_reports": researched,
         "researched_abstentions": no_signal,
         "researched_inconclusive": inconclusive,

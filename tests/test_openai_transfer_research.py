@@ -225,6 +225,48 @@ class TransferResearchTests(unittest.TestCase):
         )
         self.assertEqual("new", selected[0]["player_id"])
 
+    def test_multiple_batches_use_bounded_workers(self) -> None:
+        targets = []
+        for index in range(4):
+            player = target()
+            player["player_id"] = f"p{index}"
+            player["name"] = f"Spieler {index}"
+            targets.append(player)
+
+        def requester(payload, *, api_key):
+            requested = json.loads(
+                payload["input"][0]["content"][0]["text"].split(
+                    "TARGETS_JSON:\n",
+                    1,
+                )[1]
+            )
+            items = []
+            for item in requested:
+                no_signal = raw_report()
+                no_signal["player_id"] = item["player_id"]
+                no_signal["has_transfer_signal"] = False
+                no_signal["evidence"] = []
+                items.append(no_signal)
+            return response_for(items)
+
+        reports, abstentions, audit = transfer.research_transfer_reports(
+            targets,
+            competition="2. Bundesliga",
+            season="2026/27",
+            competition_clubs={"Energie Cottbus"},
+            previous_reports={},
+            previous_abstentions={},
+            api_key="secret",
+            now=NOW,
+            batch_size=2,
+            max_workers=8,
+            requester=requester,
+        )
+        self.assertEqual({}, reports)
+        self.assertEqual(4, len(abstentions))
+        self.assertEqual(2, audit["requests"])
+        self.assertEqual(2, audit["workers"])
+
 
 if __name__ == "__main__":
     unittest.main()

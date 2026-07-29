@@ -67,6 +67,7 @@ jobs:
             --openai-role-batch-size 8 \
             --openai-transfer-max-players 0 \
             --openai-transfer-batch-size 8 \
+            --openai-transfer-workers 4 \
             --output public/v1/news/2-bundesliga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/news/2-bundesliga.json \
             --provider api_sports \
@@ -90,6 +91,7 @@ jobs:
             --openai-role-batch-size 8 \
             --openai-transfer-max-players 0 \
             --openai-transfer-batch-size 8 \
+            --openai-transfer-workers 4 \
             --output public/v1/news/3-liga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/news/3-liga.json \
             --provider api_sports \
