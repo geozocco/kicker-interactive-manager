@@ -2284,7 +2284,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             after["bench_usage_weights"]["FORWARD"],
         )
         self.assertEqual(
-            "joint-xi-bench-v7-scorer-defense-opportunity",
+            "joint-xi-bench-v8-defender-floor",
             optimized.architecture_diagnostics["model_version"],
         )
         self.assertGreater(
@@ -2825,6 +2825,153 @@ class ReliableCorePolicyTests(unittest.TestCase):
             metrics["defensive_overspend_adjustment"],
             0.0,
         )
+
+    def test_defender_floor_rejects_all_minimum_price_unit(self) -> None:
+        squad_players: list[optimizer.Player] = []
+        scores: dict[str, float] = {}
+        for position, prefix, count in (
+            ("GOALKEEPER", "dfg", 3),
+            ("DEFENDER", "dfd", 7),
+            ("MIDFIELDER", "dfm", 7),
+            ("FORWARD", "dff", 5),
+        ):
+            for index in range(count):
+                item = player(
+                    f"{prefix}{index}",
+                    (
+                        "Defender Floor Goalkeepers"
+                        if position == "GOALKEEPER"
+                        else f"Defender Floor Club {prefix}{index}"
+                    ),
+                    position,
+                    50 if position == "DEFENDER" else 100,
+                )
+                squad_players.append(item)
+                scores[item.player_id] = 100.0 - index
+
+        metrics = optimizer.squad_architecture_metrics(
+            optimizer.Squad(squad_players, 0.0),
+            scores,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.10,
+            target_core_budget_share=0.10,
+            position_minimum_costs={"DEFENDER": 50},
+        )
+
+        defender_audit = metrics["defender_architecture"]
+        self.assertFalse(metrics["passes"])
+        self.assertEqual(7, defender_audit["minimum_price_count"])
+        self.assertEqual(4, defender_audit["minimum_price_limit"])
+        self.assertGreater(
+            defender_audit["minimum_price_starter_count"],
+            defender_audit["minimum_price_starter_limit"],
+        )
+
+    def test_joint_architecture_repairs_defender_floor_progressively(
+        self,
+    ) -> None:
+        squad_players: list[optimizer.Player] = []
+        candidates: list[optimizer.Player] = []
+        scores: dict[str, float] = {}
+        for position, prefix, count, cost, score in (
+            ("GOALKEEPER", "rfg", 3, 100, 70.0),
+            ("DEFENDER", "rfd", 7, 50, 50.0),
+            ("MIDFIELDER", "rfm", 7, 300, 90.0),
+            ("FORWARD", "rff", 5, 300, 90.0),
+        ):
+            for index in range(count):
+                item = player(
+                    f"{prefix}{index}",
+                    (
+                        "Repair Floor Goalkeepers"
+                        if position == "GOALKEEPER"
+                        else f"Repair Floor Club {prefix}{index}"
+                    ),
+                    position,
+                    cost,
+                )
+                squad_players.append(item)
+                candidates.append(item)
+                scores[item.player_id] = score - index
+
+        for index in range(3):
+            upgraded = player(
+                f"repair-defender-{index}",
+                f"Repair Defender Club {index}",
+                "DEFENDER",
+                150,
+            )
+            balancing = player(
+                f"repair-forward-{index}",
+                f"Repair Forward Club {index}",
+                "FORWARD",
+                200,
+            )
+            candidates.extend((upgraded, balancing))
+            scores[upgraded.player_id] = 95.0 - index
+            scores[balancing.player_id] = 75.0 - index
+
+        initial = optimizer.Squad(
+            squad_players,
+            sum(scores[item.player_id] for item in squad_players),
+        )
+        optimized = optimizer.optimize_joint_squad_architecture(
+            initial,
+            candidates,
+            scores,
+            scores,
+            budget=initial.cost,
+            club_cap=4,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.10,
+            target_core_budget_share=0.10,
+            quality_loss_limit=0.20,
+        )
+
+        defender_audit = optimized.architecture_diagnostics[
+            "defender_architecture"
+        ]
+        self.assertTrue(optimized.architecture_diagnostics["passes"])
+        self.assertLessEqual(
+            defender_audit["minimum_price_count"],
+            defender_audit["minimum_price_limit"],
+        )
+        self.assertLessEqual(
+            defender_audit["minimum_price_starter_count"],
+            defender_audit["minimum_price_starter_limit"],
+        )
+        self.assertGreaterEqual(
+            optimized.architecture_diagnostics["improvement_iterations"],
+            1,
+        )
+
+    def test_finalized_objective_rejects_failed_architecture_diagnostics(
+        self,
+    ) -> None:
+        item = player("failed-architecture", "Failed Club", "MIDFIELDER", 100)
+        squad = optimizer.Squad(
+            [item],
+            0.0,
+            architecture_diagnostics={
+                "architecture_objective": 999.0,
+                "passes": False,
+            },
+        )
+
+        objective, valid = optimizer.finalized_squad_objective(
+            squad,
+            [item],
+            {item.player_id: 50.0},
+            {item.player_id: 50.0},
+            SimpleNamespace(min_core_budget_share=0.10),
+        )
+
+        self.assertEqual(999.0, objective)
+        self.assertFalse(valid)
 
     def test_joint_architecture_values_goalkeeper_primary_over_backups(
         self,

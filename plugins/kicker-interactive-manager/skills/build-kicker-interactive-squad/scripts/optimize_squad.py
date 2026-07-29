@@ -1904,8 +1904,19 @@ DEFENSIVE_OVERSPEND_WEIGHTS = {
     "active": 120.0,
 }
 PACKAGE_STARTER_LIMITS = {
+    "DEFENDER": 4,
     "MIDFIELDER": 4,
     "FORWARD": 3,
+}
+DEFENDER_MINIMUM_PRICE_LIMITS = {
+    "low": 4,
+    "normal": 5,
+    "active": 6,
+}
+DEFENDER_MINIMUM_PRICE_STARTER_LIMITS = {
+    "low": 1,
+    "normal": 2,
+    "active": 3,
 }
 
 
@@ -1985,6 +1996,118 @@ def premium_starter_candidate_ids(
     return frozenset(eligible)
 
 
+def minimum_costs_by_position(
+    players: Iterable[Player],
+) -> dict[str, int]:
+    """Return the real market floor for each position."""
+
+    minimums: dict[str, int] = {}
+    for player in players:
+        current = minimums.get(player.position)
+        if current is None or player.cost < current:
+            minimums[player.position] = player.cost
+    return minimums
+
+
+def defender_architecture_audit(
+    squad: Squad,
+    core_ids: AbstractSet[str],
+    *,
+    maintenance: str,
+    enforce: bool,
+    position_minimum_costs: Mapping[str, int] | None = None,
+) -> dict[str, Any]:
+    """Prevent a nominal defense made almost entirely of price-floor fillers."""
+
+    defenders = [
+        player for player in squad.players if player.position == "DEFENDER"
+    ]
+    starting_defenders = [
+        player for player in defenders if player.player_id in core_ids
+    ]
+    inferred_minimum = min(
+        (player.cost for player in defenders),
+        default=0,
+    )
+    minimum_cost = int(
+        (position_minimum_costs or {}).get(
+            "DEFENDER",
+            inferred_minimum,
+        )
+    )
+    minimum_price_defenders = [
+        player for player in defenders if player.cost <= minimum_cost
+    ]
+    minimum_price_starters = [
+        player
+        for player in starting_defenders
+        if player.cost <= minimum_cost
+    ]
+    lineup_ready_defenders = [
+        player
+        for player in starting_defenders
+        if (
+            player.components["minutes"] >= 65
+            and player.components["role"] >= 65
+            and player.components["fitness"] >= 65
+            and player.risks["transfer"] <= 45
+            and player.risks["injury"] <= 45
+            and player.risks["rotation"] <= 40
+            and player.risks["unknown_role"] <= 40
+        )
+    ]
+    maximum_minimum_price = min(
+        DEFENDER_MINIMUM_PRICE_LIMITS.get(
+            maintenance,
+            DEFENDER_MINIMUM_PRICE_LIMITS["normal"],
+        ),
+        max(0, len(defenders) - 1),
+    )
+    maximum_minimum_price_starters = (
+        DEFENDER_MINIMUM_PRICE_STARTER_LIMITS.get(
+            maintenance,
+            DEFENDER_MINIMUM_PRICE_STARTER_LIMITS["normal"],
+        )
+    )
+    required_lineup_ready = max(0, len(starting_defenders) - 1)
+    minimum_price_excess = max(
+        0,
+        len(minimum_price_defenders) - maximum_minimum_price,
+    )
+    minimum_price_starter_excess = max(
+        0,
+        len(minimum_price_starters) - maximum_minimum_price_starters,
+    )
+    lineup_ready_deficit = max(
+        0,
+        required_lineup_ready - len(lineup_ready_defenders),
+    )
+    violation_score = (
+        minimum_price_excess
+        + minimum_price_starter_excess
+        + lineup_ready_deficit
+    )
+    return {
+        "enforced": enforce,
+        "minimum_cost": minimum_cost,
+        "minimum_price_count": len(minimum_price_defenders),
+        "minimum_price_limit": maximum_minimum_price,
+        "minimum_price_excess": minimum_price_excess,
+        "starting_count": len(starting_defenders),
+        "minimum_price_starter_count": len(minimum_price_starters),
+        "minimum_price_starter_limit": maximum_minimum_price_starters,
+        "minimum_price_starter_excess": minimum_price_starter_excess,
+        "lineup_ready_count": len(lineup_ready_defenders),
+        "lineup_ready_required": required_lineup_ready,
+        "lineup_ready_deficit": lineup_ready_deficit,
+        "lineup_ready_player_ids": sorted(
+            player.player_id for player in lineup_ready_defenders
+        ),
+        "violation_score": violation_score if enforce else 0,
+        "passes": not enforce or violation_score == 0,
+    }
+
+
 def squad_architecture_metrics(
     squad: Squad,
     raw_scores: Mapping[str, float],
@@ -1999,6 +2122,8 @@ def squad_architecture_metrics(
     qualified_potential_ids: frozenset[str] = frozenset(),
     min_qualified_potential_core: int = 0,
     target_qualified_potential_core: int = 0,
+    position_minimum_costs: Mapping[str, int] | None = None,
+    defender_floor_available_count: int | None = None,
 ) -> dict[str, Any]:
     """Value starters at full use and reserves at expected positional use."""
 
@@ -2061,6 +2186,55 @@ def squad_architecture_metrics(
             target_qualified_potential_core,
         ),
         available_potential_count,
+    )
+    defender_audit = defender_architecture_audit(
+        squad,
+        core_ids,
+        maintenance=maintenance,
+        enforce=(
+            maintenance == "low"
+            and min_core_budget_share > 0
+            and (
+                defender_floor_available_count is None
+                or defender_floor_available_count >= 3
+            )
+        ),
+        position_minimum_costs=position_minimum_costs,
+    )
+    reliable_anchor_deficit = max(
+        0,
+        min_reliable_anchors - int(audit["reliable_anchors"]),
+    )
+    attacking_anchor_deficit = max(
+        0,
+        min_attacking_anchors - int(audit["attacking_anchors"]),
+    )
+    offensive_premium_deficit = max(
+        0,
+        min_offensive_premium_anchors
+        - int(audit["offensive_premium_anchors"]),
+    )
+    core_budget_deficit = max(
+        0,
+        math.ceil(
+            20
+            * max(
+                0.0,
+                min_core_budget_share - float(audit["core_budget_share"]),
+            )
+        ),
+    )
+    potential_core_deficit = max(
+        0,
+        effective_potential_minimum - len(selected_potential_core_ids),
+    )
+    hard_violation_score = (
+        reliable_anchor_deficit
+        + attacking_anchor_deficit
+        + offensive_premium_deficit
+        + core_budget_deficit
+        + potential_core_deficit
+        + int(defender_audit["violation_score"])
     )
     potential_core_adjustment = -8.0 * max(
         0,
@@ -2176,13 +2350,16 @@ def squad_architecture_metrics(
     )
     forward_budget = position_core_budget["FORWARD"]
     midfield_budget = position_core_budget["MIDFIELDER"]
+    architecture_passes = (
+        bool(audit["passes"])
+        and potential_core_deficit == 0
+        and bool(defender_audit["passes"])
+    )
     return {
         **audit,
-        "passes": (
-            bool(audit["passes"])
-            and len(selected_potential_core_ids)
-            >= effective_potential_minimum
-        ),
+        "passes": architecture_passes,
+        "hard_violation_score": hard_violation_score,
+        "defender_architecture": defender_audit,
         "expected_contribution": expected_contribution,
         "concentration_adjustment": concentration_adjustment,
         "position_concentration_adjustment": (
@@ -2263,6 +2440,7 @@ def squad_architecture_metrics(
             + premium_starter_adjustment
             + potential_core_adjustment
             + defensive_overspend_adjustment
+            - 50.0 * int(defender_audit["violation_score"])
         ),
         "player_contributions": player_contributions,
         "player_usage_weights": player_usage_weights,
@@ -2294,13 +2472,20 @@ def finalized_squad_objective(
     architecture_objective = squad.architecture_diagnostics.get(
         "architecture_objective"
     )
-    if architecture_objective is not None:
+    architecture_passes = squad.architecture_diagnostics.get("passes")
+    if architecture_objective is not None and architecture_passes is not None:
+        return float(architecture_objective), bool(architecture_passes)
+    if (
+        architecture_objective is not None
+        and float(getattr(args, "min_core_budget_share", 0.0)) <= 0.0
+    ):
         return float(architecture_objective), True
     if float(getattr(args, "min_core_budget_share", 0.0)) <= 0.0:
         return (
             sum(utility_scores[player.player_id] for player in squad.players),
             True,
         )
+    candidate_minimum_costs = minimum_costs_by_position(candidates)
     metrics = squad_architecture_metrics(
         squad,
         raw_scores,
@@ -2326,6 +2511,13 @@ def finalized_squad_objective(
         ),
         target_qualified_potential_core=int(
             getattr(args, "target_qualified_potential_core", 0)
+        ),
+        position_minimum_costs=candidate_minimum_costs,
+        defender_floor_available_count=sum(
+            player.position == "DEFENDER"
+            and player.cost
+            > candidate_minimum_costs.get("DEFENDER", 0)
+            for player in candidates
         ),
     )
     return float(metrics["architecture_objective"]), bool(metrics["passes"])
@@ -2586,6 +2778,12 @@ def optimize_joint_squad_architecture(
         raw_scores,
     )
     qualified_potential_ids = qualified_potential_player_ids(candidates)
+    position_minimum_costs = minimum_costs_by_position(candidates)
+    defender_floor_available_count = sum(
+        player.position == "DEFENDER"
+        and player.cost > position_minimum_costs.get("DEFENDER", 0)
+        for player in candidates
+    )
     single_packages: dict[tuple[str, int], list[Player]] = {}
     for position in positions:
         for player in candidate_by_position[position]:
@@ -2803,6 +3001,8 @@ def optimize_joint_squad_architecture(
         qualified_potential_ids=qualified_potential_ids,
         min_qualified_potential_core=min_qualified_potential_core,
         target_qualified_potential_core=target_qualified_potential_core,
+        position_minimum_costs=position_minimum_costs,
+        defender_floor_available_count=defender_floor_available_count,
     )
     maximum_reachable_core_share = current_metrics["core_budget_share"]
     evaluated_rosters = 1
@@ -2866,9 +3066,23 @@ def optimize_joint_squad_architecture(
                 target_qualified_potential_core=(
                     target_qualified_potential_core
                 ),
+                position_minimum_costs=position_minimum_costs,
+                defender_floor_available_count=(
+                    defender_floor_available_count
+                ),
             )
             evaluated_rosters += 1
-            if not metrics["passes"]:
+            if (
+                not metrics["passes"]
+                and current_metrics["passes"]
+            ):
+                return
+            if (
+                not metrics["passes"]
+                and not current_metrics["passes"]
+                and metrics["hard_violation_score"]
+                >= current_metrics["hard_violation_score"]
+            ):
                 return
             maximum_reachable_core_share = max(
                 maximum_reachable_core_share,
@@ -3041,7 +3255,13 @@ def optimize_joint_squad_architecture(
             for first_replacement, second_replacement in pair_packages.get(
                 package_key,
                 [],
-            )[:16]:
+            )[
+                : (
+                    16
+                    if current_metrics["passes"]
+                    else 80
+                )
+            ]:
                 if (
                     first_replacement.player_id in selected_ids
                     or second_replacement.player_id in selected_ids
@@ -3261,9 +3481,29 @@ def optimize_joint_squad_architecture(
             break
         best = max(
             alternatives,
-            key=lambda item: (item[0], item[1], item[2]),
+            key=lambda item: (
+                int(item[4]["passes"]),
+                -int(item[4]["hard_violation_score"]),
+                item[0],
+                item[1],
+                item[2],
+            ),
         )
-        if best[0] <= current_metrics["architecture_objective"] + 1e-9:
+        if (
+            current_metrics["passes"]
+            and (
+                not best[4]["passes"]
+                or best[0]
+                <= current_metrics["architecture_objective"] + 1e-9
+            )
+        ):
+            break
+        if (
+            not current_metrics["passes"]
+            and not best[4]["passes"]
+            and best[4]["hard_violation_score"]
+            >= current_metrics["hard_violation_score"]
+        ):
             break
         current = best[3]
         current_metrics = best[4]
@@ -3275,8 +3515,14 @@ def optimize_joint_squad_architecture(
     )
     current.architecture_diagnostics = {
         "model_version": (
-            "joint-xi-bench-v7-scorer-defense-opportunity"
+            "joint-xi-bench-v8-defender-floor"
         ),
+        "passes": bool(current_metrics["passes"]),
+        "hard_violation_score": int(
+            current_metrics["hard_violation_score"]
+        ),
+        "formation": current_metrics["formation"],
+        "player_ids": sorted(current_metrics["player_ids"]),
         "expected_contribution": round(
             current_metrics["expected_contribution"],
             6,
@@ -3389,6 +3635,9 @@ def optimize_joint_squad_architecture(
         ],
         "defensive_overspend_adjustment": current_metrics[
             "defensive_overspend_adjustment"
+        ],
+        "defender_architecture": current_metrics[
+            "defender_architecture"
         ],
         "squad_average_age": current_metrics["squad_average_age"],
         "starting_xi_average_age": current_metrics[
@@ -6194,14 +6443,31 @@ def output_payload(
     core_anchor_requirement = (
         args.min_reliable_anchors if args.profile == "reliable" else 0
     )
-    formation, core_ids = best_starting_lineup(
-        squad.players,
-        raw_scores,
-        core_anchor_requirement,
-        2 if args.maintenance == "low" else 1,
-        4 if args.maintenance == "low" else 5,
-        int(getattr(args, "min_offensive_premium_anchors", 0)),
+    architecture_core_ids = squad.architecture_diagnostics.get(
+        "player_ids"
     )
+    architecture_formation = squad.architecture_diagnostics.get(
+        "formation"
+    )
+    if (
+        isinstance(architecture_core_ids, list)
+        and len(architecture_core_ids) == 11
+        and isinstance(architecture_formation, str)
+        and architecture_formation
+    ):
+        formation = architecture_formation
+        core_ids = frozenset(
+            str(player_id) for player_id in architecture_core_ids
+        )
+    else:
+        formation, core_ids = best_starting_lineup(
+            squad.players,
+            raw_scores,
+            core_anchor_requirement,
+            2 if args.maintenance == "low" else 1,
+            4 if args.maintenance == "low" else 5,
+            int(getattr(args, "min_offensive_premium_anchors", 0)),
+        )
     selected_anchors = [
         player for player in squad.players if player.reliable_anchor
     ]
@@ -6832,6 +7098,18 @@ def output_payload(
             warnings.append(
                 "The extended sporting core meets its minimum youth floor, "
                 "but remains below the evidence-qualified U23 target."
+            )
+        defender_architecture = architecture_audit.get(
+            "defender_architecture",
+            {},
+        )
+        if (
+            isinstance(defender_architecture, dict)
+            and not defender_architecture.get("passes", True)
+        ):
+            warnings.append(
+                "The defense fails the playable-floor gate: too many "
+                "minimum-price defenders or too few lineup-ready starters."
             )
         if float(
             architecture_audit.get("starting_xi_average_age") or 0.0
@@ -8560,6 +8838,31 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    if (
+        not args.allow_unannotated
+        and args.min_core_budget_share > 0
+    ):
+        _, final_architecture_valid = finalized_squad_objective(
+            squad,
+            eligible_players,
+            eligible_utility_scores,
+            eligible_raw_scores,
+            args,
+        )
+        if not final_architecture_valid:
+            defender_audit = squad.architecture_diagnostics.get(
+                "defender_architecture",
+                {},
+            )
+            print(
+                "Optimization stopped: the final squad violates a hard "
+                "architecture gate. The optimizer must repair the starting "
+                "core, qualified-potential floor and defender playability "
+                "before a recommendation can be published. "
+                f"Defender audit={defender_audit}.",
+                file=sys.stderr,
+            )
+            return 2
     selected_ids = squad.ids
     news_conflicts = {
         player_id: reasons
