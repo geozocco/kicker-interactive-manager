@@ -73,6 +73,15 @@ def player(
     )
 
 
+def premium_scorer_profile() -> dict[str, object]:
+    return {
+        "sample_minutes": 6_000,
+        "proven_seasons": 5,
+        "goals_per_90": 0.24,
+        "contributions_per_90": 0.43,
+    }
+
+
 def varied_pool() -> tuple[list[optimizer.Player], dict[str, float]]:
     players: list[optimizer.Player] = []
     scores: dict[str, float] = {}
@@ -334,6 +343,7 @@ class DistanceOptimizerTests(unittest.TestCase):
             components=premium_components,
             reliable_anchor=True,
             proven_seasons=7,
+            scorer_profile=premium_scorer_profile(),
         )
         players = [
             premium if item.player_id == premium.player_id else item
@@ -960,6 +970,7 @@ class DistanceOptimizerTests(unittest.TestCase):
             anchor_basis="explicit",
             anchor_reason="Seven stable seasons and a repeatable key role",
             proven_seasons=7,
+            scorer_profile=premium_scorer_profile(),
             components={
                 **incumbent.components,
                 "confirmed_performance": 99.0,
@@ -1211,6 +1222,7 @@ class DistanceOptimizerTests(unittest.TestCase):
                     anchor,
                     components=premium_components,
                     proven_seasons=7,
+                    scorer_profile=premium_scorer_profile(),
                 )
             players.append(anchor)
             scores[player_id] = 10.0 - 0.01 * index
@@ -1783,6 +1795,114 @@ class CentralNewsIdentityTests(unittest.TestCase):
 
 
 class ReliableCorePolicyTests(unittest.TestCase):
+    def test_reliable_low_scorer_is_not_an_offensive_premium_anchor(
+        self,
+    ) -> None:
+        regular = optimizer.replace(
+            player(
+                "safe-low-scorer",
+                "Safe Club",
+                "MIDFIELDER",
+                350,
+                reliable_anchor=True,
+            ),
+            proven_seasons=5,
+            components={
+                "confirmed_performance": 100.0,
+                "minutes": 89.26,
+                "role": 90.86,
+                "stability": 78.91,
+                "context": 70.0,
+                "fitness": 92.0,
+                "upside": 70.0,
+                "value": 64.67,
+            },
+            scorer_profile={
+                "sample_minutes": 11_330,
+                "proven_seasons": 5,
+                "goals_per_90": 0.086,
+                "contributions_per_90": 0.112,
+            },
+            role_context={
+                "continuity": "confirmed",
+                "responsibilities": {
+                    "penalties": "none",
+                    "direct_free_kicks": "none",
+                    "corners": "none",
+                    "playmaker": "none",
+                    "offensive_focal_point": "none",
+                },
+            },
+        )
+
+        evidence = optimizer.offensive_premium_path_evidence(regular)
+
+        self.assertTrue(regular.reliable_anchor)
+        self.assertLess(
+            optimizer.starting_scorer_leverage(regular),
+            optimizer.OFFENSIVE_PREMIUM_SCORER_LEVERAGE_MINIMUM,
+        )
+        self.assertFalse(evidence["qualified"])
+        self.assertFalse(optimizer.is_offensive_premium_anchor(regular))
+        self.assertEqual(
+            frozenset(),
+            optimizer.protected_reliable_premium_anchor_ids(
+                [regular],
+                {regular.player_id: 100.0},
+                {regular.player_id},
+            ),
+        )
+
+    def test_repeatable_scorer_path_unlocks_offensive_premium_status(
+        self,
+    ) -> None:
+        premium = optimizer.replace(
+            player(
+                "role-scorer",
+                "Scoring Club",
+                "MIDFIELDER",
+                900,
+                reliable_anchor=True,
+                role_context={
+                    "continuity": "confirmed",
+                    "responsibilities": {
+                        "direct_free_kicks": "primary",
+                        "corners": "primary",
+                        "playmaker": "shared",
+                    },
+                },
+            ),
+            proven_seasons=5,
+            scorer_profile={
+                "sample_minutes": 5_500,
+                "proven_seasons": 5,
+                "goals_per_90": 0.15,
+                "contributions_per_90": 0.31,
+            },
+            components={
+                key: value
+                for key, value in {
+                    "confirmed_performance": 98.0,
+                    "minutes": 90.0,
+                    "role": 94.0,
+                    "stability": 84.0,
+                    "context": 80.0,
+                    "fitness": 88.0,
+                    "upside": 72.0,
+                    "value": 76.0,
+                }.items()
+            },
+        )
+
+        evidence = optimizer.offensive_premium_path_evidence(premium)
+
+        self.assertTrue(evidence["qualified"])
+        self.assertGreaterEqual(
+            evidence["scorer_leverage"],
+            optimizer.OFFENSIVE_PREMIUM_SCORER_LEVERAGE_MINIMUM,
+        )
+        self.assertTrue(optimizer.is_offensive_premium_anchor(premium))
+
     def test_protected_premium_anchor_is_evidence_and_percentile_based(
         self,
     ) -> None:
@@ -1804,6 +1924,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             anchor_basis="explicit",
             anchor_reason="Repeatable elite role",
             proven_seasons=7,
+            scorer_profile=premium_scorer_profile(),
             components={
                 **candidates[0].components,
                 "confirmed_performance": 99.0,
@@ -1867,6 +1988,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
                     "fitness": 90.0,
                 },
                 proven_seasons=7,
+                scorer_profile=premium_scorer_profile(),
                 anchor_basis="explicit",
                 anchor_reason="Stable elite role",
             ),
@@ -1881,6 +2003,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
                     "fitness": 88.0,
                 },
                 proven_seasons=6,
+                scorer_profile=premium_scorer_profile(),
                 anchor_basis="explicit",
                 anchor_reason="Equivalent stable elite role",
             ),
@@ -1958,6 +2081,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
                     reliable_anchor=True,
                 ).__dict__,
                 "proven_seasons": 7,
+                "scorer_profile": premium_scorer_profile(),
                 "components": {
                     **player(
                         "premium-components",
@@ -2388,7 +2512,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             after["bench_usage_weights"]["FORWARD"],
         )
         self.assertEqual(
-            "joint-xi-bench-v9-marginal-bench",
+            "joint-xi-bench-v10-offensive-evidence",
             optimized.architecture_diagnostics["model_version"],
         )
         self.assertGreater(
@@ -2436,6 +2560,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
                 reliable_anchor=True,
             ),
             proven_seasons=7,
+            scorer_profile=premium_scorer_profile(),
             components={
                 key: 95.0 for key in optimizer.COMPONENTS
             },

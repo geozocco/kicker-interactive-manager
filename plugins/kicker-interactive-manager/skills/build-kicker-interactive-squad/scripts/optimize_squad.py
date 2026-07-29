@@ -122,7 +122,9 @@ VARIATION_STATE_SCHEMA_VERSION = 2
 OPTIMIZER_CACHE_ENV = "KICKER_OPTIMIZER_CACHE"
 OPTIMIZER_CACHE_SCHEMA_VERSION = 1
 OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v5-marginal-bench"
-ARCHITECTURE_MODEL_VERSION = "joint-xi-bench-v9-marginal-bench"
+ARCHITECTURE_MODEL_VERSION = (
+    "joint-xi-bench-v10-offensive-evidence"
+)
 COMPETITION_BUDGETS = {
     "Bundesliga": 42_500_000,
     "2. Bundesliga": 10_000_000,
@@ -520,6 +522,7 @@ VARIATION_CONFIG = {
 }
 DEFAULT_CLUB_CAP = {"reliable": 4, "balanced": 4, "breakout": 3}
 OFFENSIVE_PREMIUM_ANCHOR_MINIMUM = 14.0
+OFFENSIVE_PREMIUM_SCORER_LEVERAGE_MINIMUM = 4.0
 
 
 def variation_distance_met(variation: str, distance: int) -> bool:
@@ -1372,11 +1375,20 @@ def classify_reliable_anchor(
 
 
 def offensive_premium_anchor_strength(player: Player) -> float:
-    """Rate repeatable attacking excellence without using names or benchmark flags."""
+    """Rate repeatable attacking excellence with a proven scoring path.
+
+    Multi-season reliability is only the foundation. A midfielder or forward
+    must additionally offer a currently usable route to Kicker points through
+    repeatable production, set pieces, playmaking or an offensive focal role.
+    This prevents safe low-scorer regulars from being misclassified as
+    offensive premium anchors.
+    """
 
     if (
         player.position not in {"MIDFIELDER", "FORWARD"}
         or not player.reliable_anchor
+        or starting_scorer_leverage(player)
+        < OFFENSIVE_PREMIUM_SCORER_LEVERAGE_MINIMUM
     ):
         return 0.0
     strength = (
@@ -1510,6 +1522,55 @@ def scorer_leverage_candidate_ids(
         for player in players
         if starting_scorer_leverage(player) >= 4.0
     )
+
+
+def offensive_premium_path_evidence(
+    player: Player,
+) -> dict[str, Any]:
+    """Expose why a player does or does not have an offensive premium path."""
+
+    profile = player.scorer_profile
+    responsibilities = player.role_context.get(
+        "responsibilities",
+        profile.get("responsibilities", {}),
+    )
+    if not isinstance(responsibilities, dict):
+        responsibilities = {}
+    relevant_keys = (
+        "penalties",
+        "direct_free_kicks",
+        "corners",
+        "playmaker",
+        "offensive_focal_point",
+    )
+    active_responsibilities = {
+        key: str(responsibilities.get(key, "none")).casefold()
+        for key in relevant_keys
+        if str(responsibilities.get(key, "none")).casefold()
+        in {"shared", "primary"}
+    }
+    leverage = starting_scorer_leverage(player)
+    return {
+        "qualified": (
+            player.position in {"MIDFIELDER", "FORWARD"}
+            and leverage
+            >= OFFENSIVE_PREMIUM_SCORER_LEVERAGE_MINIMUM
+        ),
+        "minimum_scorer_leverage": (
+            OFFENSIVE_PREMIUM_SCORER_LEVERAGE_MINIMUM
+        ),
+        "scorer_leverage": leverage,
+        "active_responsibilities": active_responsibilities,
+        "sample_minutes": int(numeric(profile.get("sample_minutes"))),
+        "goals_per_90": round(
+            numeric(profile.get("goals_per_90")),
+            3,
+        ),
+        "contributions_per_90": round(
+            numeric(profile.get("contributions_per_90")),
+            3,
+        ),
+    }
 
 
 def protected_reliable_premium_anchor_ids(
@@ -6943,6 +7004,9 @@ def output_payload(
             "offensive_premium_strength": round(
                 offensive_premium_anchor_strength(player),
                 3,
+            ),
+            "offensive_premium_path": (
+                offensive_premium_path_evidence(player)
             ),
             "starting_scorer_leverage": starting_scorer_leverage(
                 player
