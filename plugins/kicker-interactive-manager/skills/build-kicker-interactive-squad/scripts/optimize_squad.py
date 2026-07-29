@@ -123,7 +123,7 @@ OPTIMIZER_CACHE_ENV = "KICKER_OPTIMIZER_CACHE"
 OPTIMIZER_CACHE_SCHEMA_VERSION = 1
 OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v5-marginal-bench"
 ARCHITECTURE_MODEL_VERSION = (
-    "joint-xi-bench-v10-offensive-evidence"
+    "joint-xi-bench-v11-elite-rebound"
 )
 COMPETITION_BUDGETS = {
     "Bundesliga": 42_500_000,
@@ -523,6 +523,15 @@ VARIATION_CONFIG = {
 DEFAULT_CLUB_CAP = {"reliable": 4, "balanced": 4, "breakout": 3}
 OFFENSIVE_PREMIUM_ANCHOR_MINIMUM = 14.0
 OFFENSIVE_PREMIUM_SCORER_LEVERAGE_MINIMUM = 4.0
+ELITE_REBOUND_MINIMUM_PROVEN_SEASONS = 4
+ELITE_REBOUND_MINIMUM_CONFIRMED_PERFORMANCE = 84.0
+ELITE_REBOUND_MINIMUM_START_PROBABILITY = 75.0
+ELITE_REBOUND_MINIMUM_FITNESS = 80.0
+ELITE_REBOUND_MINIMUM_SCORER_LEVERAGE = 10.0
+ELITE_REBOUND_MINIMUM_SAMPLE_MINUTES = 1_200
+ELITE_REBOUND_MINIMUM_GOALS_PER_90 = 0.40
+ELITE_REBOUND_MINIMUM_CONTRIBUTIONS_PER_90 = 0.70
+ELITE_REBOUND_REALLOCATION_PENALTY = 24.0
 
 
 def variation_distance_met(variation: str, distance: int) -> bool:
@@ -1524,6 +1533,134 @@ def scorer_leverage_candidate_ids(
     )
 
 
+def elite_rebound_striker_evidence(
+    player: Player,
+) -> dict[str, Any]:
+    """Recognize restored elite scorers after one misleading weak season.
+
+    This is deliberately name-independent. Long-term scoring class alone is
+    insufficient: the current role, start probability, fitness and risk
+    picture must prove that the old level is usable again.
+    """
+
+    role_confidence = str(
+        player.role_context.get(
+            "evidence_confidence",
+            player.role_context.get("confidence", "none"),
+        )
+    ).casefold()
+    expected_start_probability = numeric(
+        player.role_context.get("expected_start_probability")
+    )
+    sample_minutes = numeric(player.scorer_profile.get("sample_minutes"))
+    goals_per_90 = numeric(player.scorer_profile.get("goals_per_90"))
+    contributions_per_90 = numeric(
+        player.scorer_profile.get("contributions_per_90")
+    )
+    scorer_leverage = starting_scorer_leverage(player)
+    seasons = player.form_summary.get("seasons", [])
+    season_scores = [
+        numeric(season.get("score"))
+        for season in seasons
+        if isinstance(season, dict)
+        and isinstance(season.get("score"), (int, float))
+        and not isinstance(season.get("score"), bool)
+    ]
+    latest_score = (
+        numeric(player.form_summary.get("latest_season_score"))
+        if season_scores
+        else None
+    )
+    prior_average = (
+        sum(season_scores[1:]) / len(season_scores[1:])
+        if len(season_scores) >= 2
+        else None
+    )
+    weak_latest_season = (
+        latest_score is not None
+        and prior_average is not None
+        and prior_average - latest_score >= 8.0
+    )
+    scoring_path_qualified = (
+        sample_minutes >= ELITE_REBOUND_MINIMUM_SAMPLE_MINUTES
+        and (
+            goals_per_90 >= ELITE_REBOUND_MINIMUM_GOALS_PER_90
+            or contributions_per_90
+            >= ELITE_REBOUND_MINIMUM_CONTRIBUTIONS_PER_90
+        )
+    )
+    current_readiness_qualified = (
+        expected_start_probability
+        >= ELITE_REBOUND_MINIMUM_START_PROBABILITY
+        and role_confidence in {"medium", "high"}
+        and player.components["fitness"] >= ELITE_REBOUND_MINIMUM_FITNESS
+        and player.components["role"] >= 80.0
+        and player.risks["injury"] <= 25.0
+        and player.risks["rotation"] <= 25.0
+        and player.risks["transfer"] <= 25.0
+        and player.risks["unknown_role"] <= 25.0
+    )
+    qualified = (
+        player.position == "FORWARD"
+        and player.reliable_anchor
+        and player.proven_seasons
+        >= ELITE_REBOUND_MINIMUM_PROVEN_SEASONS
+        and player.components["confirmed_performance"]
+        >= ELITE_REBOUND_MINIMUM_CONFIRMED_PERFORMANCE
+        and scorer_leverage >= ELITE_REBOUND_MINIMUM_SCORER_LEVERAGE
+        and scoring_path_qualified
+        and current_readiness_qualified
+        and weak_latest_season
+    )
+    return {
+        "qualified": qualified,
+        "proven_seasons": player.proven_seasons,
+        "minimum_proven_seasons": (
+            ELITE_REBOUND_MINIMUM_PROVEN_SEASONS
+        ),
+        "confirmed_performance": round(
+            player.components["confirmed_performance"],
+            3,
+        ),
+        "expected_start_probability": round(
+            expected_start_probability,
+            3,
+        ),
+        "role_confidence": role_confidence,
+        "fitness": round(player.components["fitness"], 3),
+        "scorer_leverage": scorer_leverage,
+        "sample_minutes": int(sample_minutes),
+        "goals_per_90": round(goals_per_90, 3),
+        "contributions_per_90": round(contributions_per_90, 3),
+        "scoring_path_qualified": scoring_path_qualified,
+        "current_readiness_qualified": current_readiness_qualified,
+        "weak_latest_season": weak_latest_season,
+        "latest_season_score": (
+            round(latest_score, 3) if latest_score is not None else None
+        ),
+        "prior_seasons_average": (
+            round(prior_average, 3)
+            if prior_average is not None
+            else None
+        ),
+    }
+
+
+def is_elite_rebound_striker(player: Player) -> bool:
+    return bool(elite_rebound_striker_evidence(player)["qualified"])
+
+
+def elite_rebound_class_adjustment(player: Player) -> float:
+    """Bound the recency penalty from one weak season after readiness returns."""
+
+    evidence = elite_rebound_striker_evidence(player)
+    if not evidence["qualified"] or not evidence["weak_latest_season"]:
+        return 0.0
+    latest = float(evidence["latest_season_score"])
+    prior_average = float(evidence["prior_seasons_average"])
+    return round(min(6.0, 0.20 * (prior_average - latest)), 3)
+
+
 def offensive_premium_path_evidence(
     player: Player,
 ) -> dict[str, Any]:
@@ -1723,7 +1860,16 @@ def score_players(players: Iterable[Player], profile: str, maintenance: str) -> 
             weights[key] * player.components[key] / 100.0 for key in COMPONENTS
         )
         risk_penalty = sum(risk_weights[key] * player.risks[key] for key in RISKS)
-        scores[player.player_id] = component_score - risk_penalty
+        rebound_scale = {
+            "reliable": 1.0,
+            "balanced": 0.8,
+            "breakout": 0.6,
+        }[profile]
+        scores[player.player_id] = (
+            component_score
+            - risk_penalty
+            + rebound_scale * elite_rebound_class_adjustment(player)
+        )
     return scores
 
 
@@ -1749,7 +1895,7 @@ def core_weighted_scores(
         "balanced": (0.22, 3.0, 0.45),
         "breakout": (0.32, 2.0, 0.25),
     }[profile]
-    price_premium_ids = premium_starter_candidate_ids(
+    premium_starter_ids = premium_starter_candidate_ids(
         players,
         scores,
     )
@@ -1831,9 +1977,9 @@ def core_weighted_scores(
             # bounded, evidence-derived premium prevents several tiny reserve
             # upgrades from collectively displacing a proven top scorer.
             weighted_score += premium_bonus
-            if player.player_id in price_premium_ids:
-                # Price alone never earns a bonus. The candidate must also
-                # clear the upper performance quartile at its position.
+            if player.player_id in premium_starter_ids:
+                # A candidate qualifies through current top-price performance
+                # or through the stricter elite-rebound evidence gate.
                 weighted_score += price_premium_bonus
             weighted[player.player_id] = weighted_score
             multipliers[player.player_id] = multiplier
@@ -2175,9 +2321,13 @@ def premium_starter_candidate_ids(
     candidates: list[Player],
     raw_scores: Mapping[str, float],
 ) -> frozenset[str]:
-    """Find price-premium attackers whose performance also clears the top quartile."""
+    """Find credible premium starters without treating price as ground truth."""
 
-    eligible: set[str] = set()
+    eligible: set[str] = {
+        player.player_id
+        for player in candidates
+        if is_elite_rebound_striker(player)
+    }
     for position in ("MIDFIELDER", "FORWARD"):
         position_players = [
             player
@@ -2503,6 +2653,7 @@ def squad_architecture_metrics(
     target_core_budget_share: float,
     min_offensive_premium_anchors: int = 0,
     premium_starter_ids: frozenset[str] = frozenset(),
+    elite_rebound_striker_costs: Mapping[str, int] | None = None,
     qualified_potential_ids: frozenset[str] = frozenset(),
     min_qualified_potential_core: int = 0,
     target_qualified_potential_core: int = 0,
@@ -2708,6 +2859,54 @@ def squad_architecture_metrics(
         0,
         premium_starter_target - len(premium_starters),
     )
+    elite_rebound_costs = dict(elite_rebound_striker_costs or {})
+    elite_rebound_ids = set(elite_rebound_costs)
+    elite_rebound_core_ids = sorted(core_ids.intersection(elite_rebound_ids))
+    core_forward_costs = [
+        player.cost
+        for player in squad.players
+        if (
+            player.position == "FORWARD"
+            and player.player_id in core_ids
+        )
+    ]
+    reserve_excess_budget = 0
+    for position in ("MIDFIELDER", "FORWARD"):
+        minimum_cost = (position_minimum_costs or {}).get(position, 0)
+        reserve_players = [
+            player
+            for player in squad.players
+            if (
+                player.position == position
+                and player.player_id not in core_ids
+            )
+        ]
+        reserve_excess_budget += sum(
+            max(0, player.cost - minimum_cost)
+            for player in reserve_players
+        )
+    elite_rebound_required_increment = (
+        min(
+            max(0, candidate_cost - incumbent_cost)
+            for candidate_cost in elite_rebound_costs.values()
+            for incumbent_cost in core_forward_costs
+        )
+        if elite_rebound_costs and core_forward_costs
+        else None
+    )
+    elite_rebound_financeable_from_reserves = (
+        elite_rebound_required_increment is not None
+        and reserve_excess_budget >= elite_rebound_required_increment
+    )
+    elite_rebound_reallocation_adjustment = (
+        -ELITE_REBOUND_REALLOCATION_PENALTY
+        if (
+            elite_rebound_ids
+            and not elite_rebound_core_ids
+            and elite_rebound_financeable_from_reserves
+        )
+        else 0.0
+    )
     defender_spend = sum(
         player.cost
         for player in squad.players
@@ -2783,6 +2982,24 @@ def squad_architecture_metrics(
             len(premium_starters) >= premium_starter_target
         ),
         "premium_starter_adjustment": premium_starter_adjustment,
+        "elite_rebound_striker_candidate_ids": sorted(
+            elite_rebound_ids
+        ),
+        "elite_rebound_striker_core_ids": elite_rebound_core_ids,
+        "elite_rebound_striker_target_met": bool(
+            elite_rebound_core_ids
+        )
+        or not elite_rebound_ids,
+        "elite_rebound_required_increment": (
+            elite_rebound_required_increment
+        ),
+        "offensive_reserve_excess_budget": reserve_excess_budget,
+        "elite_rebound_financeable_from_reserves": (
+            elite_rebound_financeable_from_reserves
+        ),
+        "elite_rebound_reallocation_adjustment": (
+            elite_rebound_reallocation_adjustment
+        ),
         "scorer_leverage": scorer_leverage,
         "starting_scorer_leverage": round(
             sum(
@@ -2838,6 +3055,7 @@ def squad_architecture_metrics(
             + concentration_adjustment
             + position_concentration_adjustment
             + premium_starter_adjustment
+            + elite_rebound_reallocation_adjustment
             + potential_core_adjustment
             + defensive_overspend_adjustment
             - 50.0 * int(defender_audit["violation_score"])
@@ -2905,6 +3123,11 @@ def finalized_squad_objective(
             candidates,
             raw_scores,
         ),
+        elite_rebound_striker_costs={
+            player.player_id: player.cost
+            for player in candidates
+            if is_elite_rebound_striker(player)
+        },
         qualified_potential_ids=qualified_potential_ids,
         min_qualified_potential_core=int(
             getattr(args, "min_qualified_potential_core", 0)
@@ -3182,6 +3405,11 @@ def optimize_joint_squad_architecture(
         candidates,
         raw_scores,
     )
+    elite_rebound_striker_costs = {
+        player.player_id: player.cost
+        for player in candidates
+        if is_elite_rebound_striker(player)
+    }
     qualified_potential_ids = qualified_potential_player_ids(candidates)
     position_minimum_costs = minimum_costs_by_position(candidates)
     defender_ready_reserve_available_count = sum(
@@ -3299,6 +3527,7 @@ def optimize_joint_squad_architecture(
     compact_by_position: dict[str, list[Player]] = {}
     focus_ids = (
         premium_starter_ids
+        .union(elite_rebound_striker_costs)
         .union(qualified_potential_ids)
         .union(scorer_leverage_candidate_ids(candidates))
     )
@@ -3464,6 +3693,7 @@ def optimize_joint_squad_architecture(
             target_core_budget_share=target_core_budget_share,
             min_offensive_premium_anchors=min_offensive_premium_anchors,
             premium_starter_ids=premium_starter_ids,
+            elite_rebound_striker_costs=elite_rebound_striker_costs,
             qualified_potential_ids=qualified_potential_ids,
             min_qualified_potential_core=min_qualified_potential_core,
             target_qualified_potential_core=target_qualified_potential_core,
@@ -4060,6 +4290,27 @@ def optimize_joint_squad_architecture(
         ],
         "premium_starter_target_met": current_metrics[
             "premium_starter_target_met"
+        ],
+        "elite_rebound_striker_candidate_ids": current_metrics[
+            "elite_rebound_striker_candidate_ids"
+        ],
+        "elite_rebound_striker_core_ids": current_metrics[
+            "elite_rebound_striker_core_ids"
+        ],
+        "elite_rebound_striker_target_met": current_metrics[
+            "elite_rebound_striker_target_met"
+        ],
+        "elite_rebound_required_increment": current_metrics[
+            "elite_rebound_required_increment"
+        ],
+        "offensive_reserve_excess_budget": current_metrics[
+            "offensive_reserve_excess_budget"
+        ],
+        "elite_rebound_financeable_from_reserves": current_metrics[
+            "elite_rebound_financeable_from_reserves"
+        ],
+        "elite_rebound_reallocation_adjustment": current_metrics[
+            "elite_rebound_reallocation_adjustment"
         ],
         "qualified_potential_candidate_ids": current_metrics[
             "qualified_potential_candidate_ids"
@@ -7010,6 +7261,13 @@ def output_payload(
             ),
             "starting_scorer_leverage": starting_scorer_leverage(
                 player
+            ),
+            "elite_rebound_striker": is_elite_rebound_striker(player),
+            "elite_rebound_evidence": (
+                elite_rebound_striker_evidence(player)
+            ),
+            "elite_rebound_class_adjustment": (
+                elite_rebound_class_adjustment(player)
             ),
             "anchor_basis": player.anchor_basis,
             "anchor_reason": player.anchor_reason,

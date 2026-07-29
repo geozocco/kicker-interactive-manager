@@ -1795,6 +1795,123 @@ class CentralNewsIdentityTests(unittest.TestCase):
 
 
 class ReliableCorePolicyTests(unittest.TestCase):
+    def test_restored_elite_striker_qualifies_without_name_or_top_price(
+        self,
+    ) -> None:
+        rebound = optimizer.replace(
+            player(
+                "elite-rebound",
+                "Rebound Club",
+                "FORWARD",
+                900,
+                reliable_anchor=True,
+                role_context={
+                    "continuity": "confirmed",
+                    "confidence": "high",
+                    "expected_start_probability": 84,
+                    "responsibilities": {
+                        "offensive_focal_point": "primary",
+                        "penalties": "primary",
+                        "playmaker": "shared",
+                    },
+                },
+            ),
+            proven_seasons=6,
+            components={
+                "confirmed_performance": 89.0,
+                "minutes": 86.0,
+                "role": 94.0,
+                "stability": 84.0,
+                "context": 78.0,
+                "fitness": 92.0,
+                "upside": 66.0,
+                "value": 45.0,
+            },
+            scorer_profile={
+                "sample_minutes": 8_000,
+                "proven_seasons": 6,
+                "goals_per_90": 0.48,
+                "contributions_per_90": 0.57,
+            },
+            form_summary={
+                "latest_season_score": 62.0,
+                "seasons": [
+                    {"season": 2025, "score": 62.0},
+                    {"season": 2024, "score": 89.0},
+                    {"season": 2023, "score": 91.0},
+                    {"season": 2022, "score": 88.0},
+                ],
+            },
+        )
+        current_top_price = player(
+            "top-price",
+            "Top Price Club",
+            "FORWARD",
+            1_000,
+        )
+        candidates = [rebound, current_top_price]
+        raw_scores = {
+            rebound.player_id: 82.0,
+            current_top_price.player_id: 95.0,
+        }
+
+        evidence = optimizer.elite_rebound_striker_evidence(rebound)
+        premium_ids = optimizer.premium_starter_candidate_ids(
+            candidates,
+            raw_scores,
+        )
+
+        self.assertTrue(evidence["qualified"])
+        self.assertTrue(evidence["weak_latest_season"])
+        self.assertGreater(
+            optimizer.elite_rebound_class_adjustment(rebound),
+            0.0,
+        )
+        self.assertIn(rebound.player_id, premium_ids)
+        self.assertIn(current_top_price.player_id, premium_ids)
+
+    def test_elite_rebound_requires_current_role_and_fitness_proof(
+        self,
+    ) -> None:
+        unresolved = optimizer.replace(
+            player(
+                "unresolved-rebound",
+                "Unresolved Club",
+                "FORWARD",
+                900,
+                reliable_anchor=True,
+            ),
+            proven_seasons=6,
+            components={
+                key: value
+                for key, value in {
+                    "confirmed_performance": 92.0,
+                    "minutes": 88.0,
+                    "role": 90.0,
+                    "stability": 85.0,
+                    "context": 78.0,
+                    "fitness": 92.0,
+                    "upside": 65.0,
+                    "value": 45.0,
+                }.items()
+            },
+            scorer_profile={
+                "sample_minutes": 8_000,
+                "proven_seasons": 6,
+                "goals_per_90": 0.48,
+                "contributions_per_90": 0.57,
+            },
+        )
+
+        evidence = optimizer.elite_rebound_striker_evidence(unresolved)
+
+        self.assertFalse(evidence["qualified"])
+        self.assertFalse(evidence["current_readiness_qualified"])
+        self.assertEqual(
+            0.0,
+            optimizer.elite_rebound_class_adjustment(unresolved),
+        )
+
     def test_reliable_low_scorer_is_not_an_offensive_premium_anchor(
         self,
     ) -> None:
@@ -2512,7 +2629,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             after["bench_usage_weights"]["FORWARD"],
         )
         self.assertEqual(
-            "joint-xi-bench-v10-offensive-evidence",
+            "joint-xi-bench-v11-elite-rebound",
             optimized.architecture_diagnostics["model_version"],
         )
         self.assertGreater(
@@ -3144,6 +3261,63 @@ class ReliableCorePolicyTests(unittest.TestCase):
         self.assertLess(
             metrics["defensive_overspend_adjustment"],
             0.0,
+        )
+
+    def test_financeable_elite_striker_penalizes_expensive_reserves(
+        self,
+    ) -> None:
+        squad_players: list[optimizer.Player] = []
+        scores: dict[str, float] = {}
+        for position, prefix, count in (
+            ("GOALKEEPER", "erg", 3),
+            ("DEFENDER", "erd", 7),
+            ("MIDFIELDER", "erm", 7),
+            ("FORWARD", "erf", 5),
+        ):
+            for index in range(count):
+                cost = (
+                    500
+                    if position == "MIDFIELDER" and index == 6
+                    else 100
+                )
+                item = player(
+                    f"{prefix}{index}",
+                    (
+                        "Elite Rebound Goalkeepers"
+                        if position == "GOALKEEPER"
+                        else f"Elite Rebound Club {prefix}{index}"
+                    ),
+                    position,
+                    cost,
+                )
+                squad_players.append(item)
+                scores[item.player_id] = 100.0 - index
+
+        metrics = optimizer.squad_architecture_metrics(
+            optimizer.Squad(squad_players, 0.0),
+            scores,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.0,
+            target_core_budget_share=0.0,
+            premium_starter_ids=frozenset({"available-elite"}),
+            elite_rebound_striker_costs={"available-elite": 500},
+            position_minimum_costs={
+                "DEFENDER": 100,
+                "MIDFIELDER": 100,
+                "FORWARD": 100,
+            },
+        )
+
+        self.assertEqual(400, metrics["offensive_reserve_excess_budget"])
+        self.assertEqual(400, metrics["elite_rebound_required_increment"])
+        self.assertTrue(
+            metrics["elite_rebound_financeable_from_reserves"]
+        )
+        self.assertEqual(
+            -optimizer.ELITE_REBOUND_REALLOCATION_PENALTY,
+            metrics["elite_rebound_reallocation_adjustment"],
         )
 
     def test_ready_minimum_price_defenders_count_as_functional(self) -> None:
