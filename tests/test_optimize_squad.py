@@ -1641,6 +1641,96 @@ class DistanceOptimizerTests(unittest.TestCase):
 
 
 class CentralNewsIdentityTests(unittest.TestCase):
+    def test_verified_provider_identity_beats_unverified_kicker_placeholder(
+        self,
+    ) -> None:
+        kicker_player = optimizer.replace(
+            player("kicker-15", "Karlsruhe", "MIDFIELDER", 100),
+            name="Marvin Wanitzek",
+        )
+        payload = {
+            "schema_version": 1,
+            "generated_at": "2026-07-24T08:00:00Z",
+            "expires_at": "2026-07-25T02:00:00Z",
+            "competition": "2. Bundesliga",
+            "season": "2026/27",
+            "providers": {"api_sports": {"status": "ok"}},
+            "players": {
+                "kicker-15": {
+                    "name": "Marvin Wanitzek",
+                    "club": "Karlsruher SC",
+                    "mapping": {
+                        "api_sports_player_id": None,
+                        "api_sports_team_id": None,
+                        "confidence": "unverified",
+                    },
+                    "signals": [
+                        {
+                            "kind": "transfer_rumour",
+                            "status": "rumour",
+                            "severity": 35,
+                            "source_provider": "transfer_watcher",
+                            "source_url": "https://example.com/transfer",
+                            "observed_at": "2026-07-24T08:00:00Z",
+                            "detail": "possible move",
+                        }
+                    ],
+                    "consensus": {
+                        "injury": 0,
+                        "transfer": 35,
+                        "rotation": 0,
+                        "fitness_cap": 100,
+                        "exclude": False,
+                        "confidence": "low",
+                        "conflicts": [],
+                    },
+                },
+                "api_sports:101": {
+                    "name": "M. Wanitzek",
+                    "club": "Karlsruher SC",
+                    "mapping": {
+                        "api_sports_player_id": 101,
+                        "api_sports_team_id": 10,
+                        "confidence": "verified",
+                    },
+                    "signals": [],
+                    "consensus": {
+                        "injury": 20,
+                        "transfer": 0,
+                        "rotation": 0,
+                        "fitness_cap": 60,
+                        "exclude": False,
+                        "confidence": "medium",
+                        "conflicts": [],
+                    },
+                },
+            },
+        }
+
+        updated, audit, exclusions = optimizer.apply_news_snapshot(
+            [kicker_player],
+            payload,
+        )
+
+        self.assertEqual([], exclusions)
+        self.assertEqual(
+            ["kicker-15"],
+            audit["provider_mapped_player_ids"],
+        )
+        self.assertEqual(
+            "api_sports:101",
+            audit["identity_bindings"]["kicker-15"],
+        )
+        self.assertEqual(35, updated[0].risks["transfer"])
+        self.assertEqual(20, updated[0].risks["injury"])
+        self.assertEqual(60, updated[0].components["fitness"])
+        self.assertTrue(
+            any(
+                item.get("source_provider") == "transfer_watcher"
+                for item in updated[0].evidence
+            )
+        )
+
     def test_provider_roster_matches_kicker_full_name_to_initial(self) -> None:
         kicker_player = optimizer.replace(
             player("kicker-16", "Karlsruhe", "MIDFIELDER", 100),

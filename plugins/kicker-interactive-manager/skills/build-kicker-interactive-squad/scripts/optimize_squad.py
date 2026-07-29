@@ -1057,15 +1057,114 @@ def clubs_match(left: str, right: str) -> bool:
     )
 
 
+def snapshot_provider_mapping_rank(entry: dict[str, Any]) -> int:
+    mapping = entry.get("mapping", {})
+    if not isinstance(mapping, dict):
+        return 0
+    confidence = str(mapping.get("confidence", "")).strip().lower()
+    if confidence not in {"verified", "high"}:
+        return 0
+    return int(
+        any(
+            mapping.get(player_key) is not None
+            and mapping.get(team_key) is not None
+            for player_key, team_key in (
+                ("api_sports_player_id", "api_sports_team_id"),
+                ("sportsmonks_player_id", "sportsmonks_team_id"),
+            )
+        )
+    )
+
+
+def merge_snapshot_entries(
+    primary: dict[str, Any],
+    supplemental: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Keep a verified identity while retaining Kicker-keyed news signals."""
+
+    if not isinstance(supplemental, dict) or supplemental is primary:
+        return primary
+    merged = dict(primary)
+    primary_consensus = primary.get("consensus", {})
+    supplemental_consensus = supplemental.get("consensus", {})
+    if not isinstance(primary_consensus, dict):
+        primary_consensus = {}
+    if not isinstance(supplemental_consensus, dict):
+        supplemental_consensus = {}
+    confidence_order = {"low": 0, "medium": 1, "high": 2}
+    confidence = max(
+        (
+            str(primary_consensus.get("confidence", "low")),
+            str(supplemental_consensus.get("confidence", "low")),
+        ),
+        key=lambda value: confidence_order.get(value, 0),
+    )
+    merged["consensus"] = {
+        **primary_consensus,
+        "injury": max(
+            clamp(primary_consensus.get("injury"), 0.0),
+            clamp(supplemental_consensus.get("injury"), 0.0),
+        ),
+        "transfer": max(
+            clamp(primary_consensus.get("transfer"), 0.0),
+            clamp(supplemental_consensus.get("transfer"), 0.0),
+        ),
+        "rotation": max(
+            clamp(primary_consensus.get("rotation"), 0.0),
+            clamp(supplemental_consensus.get("rotation"), 0.0),
+        ),
+        "fitness_cap": min(
+            clamp(primary_consensus.get("fitness_cap"), 100.0),
+            clamp(supplemental_consensus.get("fitness_cap"), 100.0),
+        ),
+        "exclude": bool(primary_consensus.get("exclude", False))
+        or bool(supplemental_consensus.get("exclude", False)),
+        "confidence": confidence,
+        "conflicts": sorted(
+            {
+                str(value)
+                for value in (
+                    *primary_consensus.get("conflicts", []),
+                    *supplemental_consensus.get("conflicts", []),
+                )
+                if str(value).strip()
+            }
+        ),
+    }
+    signals: list[dict[str, Any]] = []
+    seen_signals: set[str] = set()
+    for signal in (
+        *primary.get("signals", []),
+        *supplemental.get("signals", []),
+    ):
+        if not isinstance(signal, dict):
+            continue
+        fingerprint = json.dumps(
+            signal,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        if fingerprint in seen_signals:
+            continue
+        seen_signals.add(fingerprint)
+        signals.append(signal)
+    merged["signals"] = signals
+    return merged
+
+
 def resolve_snapshot_entry(
     player: Player,
     entries: dict[str, Any],
 ) -> tuple[str | None, dict[str, Any] | None, list[str]]:
     direct = entries.get(player.player_id)
-    if isinstance(direct, dict):
+    if (
+        isinstance(direct, dict)
+        and snapshot_provider_mapping_rank(direct) > 0
+    ):
         return player.player_id, direct, []
 
-    candidates: list[tuple[int, str, dict[str, Any]]] = []
+    candidates: list[tuple[int, int, int, str, dict[str, Any]]] = []
     for snapshot_key, raw_entry in entries.items():
         if not isinstance(raw_entry, dict):
             continue
@@ -1078,17 +1177,29 @@ def resolve_snapshot_entry(
             str(raw_entry.get("club", "")),
         ):
             continue
-        candidates.append((name_score, str(snapshot_key), raw_entry))
+        candidates.append(
+            (
+                snapshot_provider_mapping_rank(raw_entry),
+                name_score,
+                int(str(snapshot_key) == player.player_id),
+                str(snapshot_key),
+                raw_entry,
+            )
+        )
     if not candidates:
-        return None, None, []
-    best_score = max(item[0] for item in candidates)
-    best = [item for item in candidates if item[0] == best_score]
+        return (
+            (player.player_id, direct, [])
+            if isinstance(direct, dict)
+            else (None, None, [])
+        )
+    best_rank = max(item[:3] for item in candidates)
+    best = [item for item in candidates if item[:3] == best_rank]
     if len(best) != 1:
         return None, None, [
             "multiple central news identities match this Kicker player"
         ]
-    _, snapshot_key, entry = best[0]
-    return snapshot_key, entry, []
+    _, _, _, snapshot_key, entry = best[0]
+    return snapshot_key, merge_snapshot_entries(entry, direct), []
 
 
 def apply_news_snapshot(
