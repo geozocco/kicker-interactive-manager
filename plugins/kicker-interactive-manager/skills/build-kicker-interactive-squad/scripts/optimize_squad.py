@@ -118,10 +118,11 @@ CLUB_IDENTITY_STOPWORDS = {
     "ev",
 }
 VARIATION_STATE_ENV = "KICKER_VARIATION_STATE"
-VARIATION_STATE_SCHEMA_VERSION = 1
+VARIATION_STATE_SCHEMA_VERSION = 2
 OPTIMIZER_CACHE_ENV = "KICKER_OPTIMIZER_CACHE"
 OPTIMIZER_CACHE_SCHEMA_VERSION = 1
-OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v4-scorer-architecture"
+OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v5-marginal-bench"
+ARCHITECTURE_MODEL_VERSION = "joint-xi-bench-v9-marginal-bench"
 COMPETITION_BUDGETS = {
     "Bundesliga": 42_500_000,
     "2. Bundesliga": 10_000_000,
@@ -230,23 +231,63 @@ def _load_variation_state(path: Path) -> dict[str, Any]:
         ) from error
     installation_id = payload.get("installation_id")
     contexts = payload.get("contexts")
+    schema_version = payload.get("schema_version")
     if (
-        payload.get("schema_version") != VARIATION_STATE_SCHEMA_VERSION
+        schema_version not in {1, VARIATION_STATE_SCHEMA_VERSION}
         or not isinstance(installation_id, str)
         or re.fullmatch(r"[0-9a-f]{48}", installation_id) is None
         or not isinstance(contexts, dict)
         or any(
             not isinstance(key, str)
-            or not isinstance(value, int)
-            or isinstance(value, bool)
-            or value < 0
+            or (
+                not (
+                    isinstance(value, int)
+                    and not isinstance(value, bool)
+                    and value >= 0
+                )
+                and not (
+                    isinstance(value, dict)
+                    and isinstance(value.get("generation"), int)
+                    and not isinstance(value.get("generation"), bool)
+                    and value["generation"] >= 0
+                    and isinstance(value.get("squads", {}), dict)
+                    and all(
+                        isinstance(generation, str)
+                        and generation.isdigit()
+                        and isinstance(player_ids, list)
+                        and all(
+                            isinstance(player_id, str)
+                            for player_id in player_ids
+                        )
+                        for generation, player_ids in value.get(
+                            "squads",
+                            {},
+                        ).items()
+                    )
+                )
+            )
             for key, value in contexts.items()
         )
     ):
         raise VariationStateError(
             f"local variation state has an unsupported format at {path}"
         )
-    return payload
+    normalized_contexts = {
+        key: (
+            {"generation": value, "squads": {}}
+            if isinstance(value, int)
+            else {
+                "generation": value["generation"],
+                "squads": dict(value.get("squads", {})),
+            }
+        )
+        for key, value in contexts.items()
+    }
+    return {
+        "schema_version": VARIATION_STATE_SCHEMA_VERSION,
+        "installation_id": installation_id,
+        "contexts": normalized_contexts,
+    }
 
 
 def _save_variation_state(path: Path, payload: dict[str, Any]) -> None:
@@ -300,10 +341,15 @@ def automatic_variation_seed(
     )
     context_key = hashlib.sha256(context.encode("utf-8")).hexdigest()[:24]
     state = _load_variation_state(state_path)
-    generation = int(state["contexts"].get(context_key, 0))
+    context_state = state["contexts"].get(
+        context_key,
+        {"generation": 0, "squads": {}},
+    )
+    generation = int(context_state["generation"])
     if new_variant:
         generation += 1
-    state["contexts"][context_key] = generation
+    context_state["generation"] = generation
+    state["contexts"][context_key] = context_state
     _save_variation_state(state_path, state)
     digest = hashlib.sha256(
         (
@@ -311,6 +357,105 @@ def automatic_variation_seed(
         ).encode("utf-8")
     ).digest()
     return int.from_bytes(digest[:8], "big") % (2**31), generation
+
+
+def automatic_variation_exposure(
+    *,
+    state_path: Path,
+    competition: str | None,
+    season: str | None,
+    profile: str,
+    maintenance: str,
+    variation: str,
+    budget: int,
+    slots: Mapping[str, int],
+    generation: int,
+) -> Counter[str]:
+    """Return deterministic exposure from completed earlier local variants."""
+
+    context = json.dumps(
+        {
+            "competition": competition or "unspecified",
+            "season": season or "unspecified",
+            "profile": profile,
+            "maintenance": maintenance,
+            "variation": variation,
+            "budget": budget,
+            "slots": dict(sorted(slots.items())),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    context_key = hashlib.sha256(context.encode("utf-8")).hexdigest()[:24]
+    state = _load_variation_state(state_path)
+    context_state = state["contexts"].get(
+        context_key,
+        {"generation": generation, "squads": {}},
+    )
+    return Counter(
+        player_id
+        for stored_generation, player_ids in context_state.get(
+            "squads",
+            {},
+        ).items()
+        if int(stored_generation) < generation
+        for player_id in player_ids
+    )
+
+
+def record_automatic_variation_squad(
+    *,
+    state_path: Path,
+    competition: str | None,
+    season: str | None,
+    profile: str,
+    maintenance: str,
+    variation: str,
+    budget: int,
+    slots: Mapping[str, int],
+    generation: int,
+    player_ids: Iterable[str],
+) -> None:
+    """Remember one local result per generation for future rerolls."""
+
+    context = json.dumps(
+        {
+            "competition": competition or "unspecified",
+            "season": season or "unspecified",
+            "profile": profile,
+            "maintenance": maintenance,
+            "variation": variation,
+            "budget": budget,
+            "slots": dict(sorted(slots.items())),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    context_key = hashlib.sha256(context.encode("utf-8")).hexdigest()[:24]
+    state = _load_variation_state(state_path)
+    context_state = state["contexts"].get(
+        context_key,
+        {"generation": generation, "squads": {}},
+    )
+    context_state["generation"] = max(
+        generation,
+        int(context_state["generation"]),
+    )
+    context_state.setdefault("squads", {})[str(generation)] = sorted(
+        set(player_ids)
+    )
+    retained_generations = sorted(
+        context_state["squads"],
+        key=int,
+    )[-5:]
+    context_state["squads"] = {
+        key: context_state["squads"][key]
+        for key in retained_generations
+    }
+    state["contexts"][context_key] = context_state
+    _save_variation_state(state_path, state)
 
 PROFILE_WEIGHTS = {
     "reliable": {
@@ -1874,7 +2019,7 @@ BENCH_USAGE_WEIGHTS = {
 POSITION_CORE_BUDGET_TARGETS = {
     "low": {
         "DEFENDER": 0.65,
-        "MIDFIELDER": 0.65,
+        "MIDFIELDER": 0.80,
         "FORWARD": 0.75,
     },
     "normal": {
@@ -1914,6 +2059,11 @@ DEFENDER_MINIMUM_PRICE_LIMITS = {
     "active": 6,
 }
 DEFENDER_MINIMUM_PRICE_STARTER_LIMITS = {
+    "low": 1,
+    "normal": 2,
+    "active": 3,
+}
+MIDFIELD_EXPENSIVE_ORDINARY_RESERVE_LIMITS = {
     "low": 1,
     "normal": 2,
     "active": 3,
@@ -2009,13 +2159,119 @@ def minimum_costs_by_position(
     return minimums
 
 
+def defender_is_lineup_ready(player: Player) -> bool:
+    """Return whether a defender is credible as a current starting option."""
+
+    return (
+        player.components["minutes"] >= 65
+        and player.components["role"] >= 65
+        and player.components["fitness"] >= 65
+        and player.risks["transfer"] <= 45
+        and player.risks["injury"] <= 45
+        and player.risks["rotation"] <= 40
+        and player.risks["unknown_role"] <= 40
+    )
+
+
+def defender_is_direct_backup_ready(player: Player) -> bool:
+    """Return whether a defender is a credible first substitute."""
+
+    return (
+        player.components["minutes"] >= 60
+        and player.components["role"] >= 60
+        and player.components["fitness"] >= 65
+        and player.risks["transfer"] <= 45
+        and player.risks["injury"] <= 45
+        and player.risks["rotation"] <= 45
+        and player.risks["unknown_role"] <= 45
+    )
+
+
+def midfield_architecture_audit(
+    squad: Squad,
+    core_ids: AbstractSet[str],
+    *,
+    maintenance: str,
+    enforce: bool,
+    qualified_potential_ids: AbstractSet[str] = frozenset(),
+    position_minimum_costs: Mapping[str, int] | None = None,
+    floor_available_count: int | None = None,
+) -> dict[str, Any]:
+    """Keep low-maintenance midfield budget in starters, not ordinary depth."""
+
+    midfielders = [
+        player for player in squad.players if player.position == "MIDFIELDER"
+    ]
+    reserves = [
+        player for player in midfielders if player.player_id not in core_ids
+    ]
+    inferred_minimum = min(
+        (player.cost for player in midfielders),
+        default=0,
+    )
+    minimum_cost = int(
+        (position_minimum_costs or {}).get(
+            "MIDFIELDER",
+            inferred_minimum,
+        )
+    )
+    expensive_ordinary_reserves = [
+        player
+        for player in reserves
+        if (
+            player.cost > minimum_cost
+            and player.player_id not in qualified_potential_ids
+        )
+    ]
+    qualified_potential_reserves = [
+        player
+        for player in reserves
+        if (
+            player.cost > minimum_cost
+            and player.player_id in qualified_potential_ids
+        )
+    ]
+    limit = MIDFIELD_EXPENSIVE_ORDINARY_RESERVE_LIMITS.get(
+        maintenance,
+        MIDFIELD_EXPENSIVE_ORDINARY_RESERVE_LIMITS["normal"],
+    )
+    enough_floor_options = (
+        floor_available_count is None
+        or floor_available_count >= max(0, len(reserves) - 1)
+    )
+    effective_enforcement = enforce and enough_floor_options
+    excess = max(0, len(expensive_ordinary_reserves) - limit)
+    violation_score = excess if effective_enforcement else 0
+    return {
+        "enforced": effective_enforcement,
+        "minimum_cost": minimum_cost,
+        "reserve_count": len(reserves),
+        "expensive_ordinary_reserve_count": len(
+            expensive_ordinary_reserves
+        ),
+        "expensive_ordinary_reserve_limit": limit,
+        "expensive_ordinary_reserve_excess": excess,
+        "expensive_ordinary_reserve_ids": sorted(
+            player.player_id for player in expensive_ordinary_reserves
+        ),
+        "qualified_potential_reserve_ids": sorted(
+            player.player_id for player in qualified_potential_reserves
+        ),
+        "floor_candidate_count": floor_available_count,
+        "violation_score": violation_score,
+        "passes": not effective_enforcement or violation_score == 0,
+    }
+
+
 def defender_architecture_audit(
     squad: Squad,
     core_ids: AbstractSet[str],
     *,
     maintenance: str,
     enforce: bool,
+    raw_scores: Mapping[str, float] | None = None,
     position_minimum_costs: Mapping[str, int] | None = None,
+    ready_reserve_available_count: int | None = None,
 ) -> dict[str, Any]:
     """Prevent a nominal defense made almost entirely of price-floor fillers."""
 
@@ -2025,6 +2281,18 @@ def defender_architecture_audit(
     starting_defenders = [
         player for player in defenders if player.player_id in core_ids
     ]
+    reserve_defenders = sorted(
+        (
+            player
+            for player in defenders
+            if player.player_id not in core_ids
+        ),
+        key=lambda player: (
+            -(raw_scores or {}).get(player.player_id, 0.0),
+            player.player_id,
+        ),
+    )
+    direct_backup = reserve_defenders[0] if reserve_defenders else None
     inferred_minimum = min(
         (player.cost for player in defenders),
         default=0,
@@ -2046,16 +2314,12 @@ def defender_architecture_audit(
     lineup_ready_defenders = [
         player
         for player in starting_defenders
-        if (
-            player.components["minutes"] >= 65
-            and player.components["role"] >= 65
-            and player.components["fitness"] >= 65
-            and player.risks["transfer"] <= 45
-            and player.risks["injury"] <= 45
-            and player.risks["rotation"] <= 40
-            and player.risks["unknown_role"] <= 40
-        )
+        if defender_is_lineup_ready(player)
     ]
+    direct_backup_ready = bool(
+        direct_backup
+        and defender_is_direct_backup_ready(direct_backup)
+    )
     maximum_minimum_price = min(
         DEFENDER_MINIMUM_PRICE_LIMITS.get(
             maintenance,
@@ -2070,22 +2334,65 @@ def defender_architecture_audit(
         )
     )
     required_lineup_ready = max(0, len(starting_defenders) - 1)
+    functional_minimum_price_ids = {
+        player.player_id
+        for player in minimum_price_defenders
+        if (
+            (
+                player.player_id in core_ids
+                and defender_is_lineup_ready(player)
+            )
+            or (
+                direct_backup is not None
+                and player.player_id == direct_backup.player_id
+                and direct_backup_ready
+            )
+        )
+    }
+    minimum_price_filler_count = (
+        len(minimum_price_defenders) - len(functional_minimum_price_ids)
+    )
+    nonfunctional_minimum_price_starters = [
+        player
+        for player in minimum_price_starters
+        if player.player_id not in functional_minimum_price_ids
+    ]
+    minimum_price_filler_limit = max(
+        0,
+        len(defenders) - len(starting_defenders) - 1,
+    )
     minimum_price_excess = max(
         0,
         len(minimum_price_defenders) - maximum_minimum_price,
     )
+    minimum_price_filler_excess = max(
+        0,
+        minimum_price_filler_count - minimum_price_filler_limit,
+    )
     minimum_price_starter_excess = max(
         0,
-        len(minimum_price_starters) - maximum_minimum_price_starters,
+        len(nonfunctional_minimum_price_starters)
+        - maximum_minimum_price_starters,
     )
     lineup_ready_deficit = max(
         0,
         required_lineup_ready - len(lineup_ready_defenders),
     )
+    direct_backup_required = bool(
+        reserve_defenders
+        and (
+            ready_reserve_available_count is None
+            or ready_reserve_available_count > 0
+        )
+    )
+    direct_backup_deficit = int(
+        direct_backup_required and not direct_backup_ready
+    )
     violation_score = (
-        minimum_price_excess
+        minimum_price_filler_excess
         + minimum_price_starter_excess
         + lineup_ready_deficit
+        + direct_backup_deficit
     )
     return {
         "enforced": enforce,
@@ -2093,8 +2400,17 @@ def defender_architecture_audit(
         "minimum_price_count": len(minimum_price_defenders),
         "minimum_price_limit": maximum_minimum_price,
         "minimum_price_excess": minimum_price_excess,
+        "minimum_price_filler_count": minimum_price_filler_count,
+        "minimum_price_filler_limit": minimum_price_filler_limit,
+        "minimum_price_filler_excess": minimum_price_filler_excess,
+        "functional_minimum_price_player_ids": sorted(
+            functional_minimum_price_ids
+        ),
         "starting_count": len(starting_defenders),
         "minimum_price_starter_count": len(minimum_price_starters),
+        "nonfunctional_minimum_price_starter_count": len(
+            nonfunctional_minimum_price_starters
+        ),
         "minimum_price_starter_limit": maximum_minimum_price_starters,
         "minimum_price_starter_excess": minimum_price_starter_excess,
         "lineup_ready_count": len(lineup_ready_defenders),
@@ -2103,6 +2419,13 @@ def defender_architecture_audit(
         "lineup_ready_player_ids": sorted(
             player.player_id for player in lineup_ready_defenders
         ),
+        "direct_backup_player_id": (
+            direct_backup.player_id if direct_backup else None
+        ),
+        "direct_backup_ready": direct_backup_ready,
+        "direct_backup_required": direct_backup_required,
+        "direct_backup_available_count": ready_reserve_available_count,
+        "direct_backup_deficit": direct_backup_deficit,
         "violation_score": violation_score if enforce else 0,
         "passes": not enforce or violation_score == 0,
     }
@@ -2123,7 +2446,8 @@ def squad_architecture_metrics(
     min_qualified_potential_core: int = 0,
     target_qualified_potential_core: int = 0,
     position_minimum_costs: Mapping[str, int] | None = None,
-    defender_floor_available_count: int | None = None,
+    defender_ready_reserve_available_count: int | None = None,
+    midfield_floor_available_count: int | None = None,
 ) -> dict[str, Any]:
     """Value starters at full use and reserves at expected positional use."""
 
@@ -2194,12 +2518,24 @@ def squad_architecture_metrics(
         enforce=(
             maintenance == "low"
             and min_core_budget_share > 0
-            and (
-                defender_floor_available_count is None
-                or defender_floor_available_count >= 3
-            )
         ),
+        raw_scores=raw_scores,
         position_minimum_costs=position_minimum_costs,
+        ready_reserve_available_count=(
+            defender_ready_reserve_available_count
+        ),
+    )
+    midfield_audit = midfield_architecture_audit(
+        squad,
+        core_ids,
+        maintenance=maintenance,
+        enforce=(
+            maintenance == "low"
+            and min_core_budget_share > 0
+        ),
+        qualified_potential_ids=qualified_potential_ids,
+        position_minimum_costs=position_minimum_costs,
+        floor_available_count=midfield_floor_available_count,
     )
     reliable_anchor_deficit = max(
         0,
@@ -2235,6 +2571,7 @@ def squad_architecture_metrics(
         + core_budget_deficit
         + potential_core_deficit
         + int(defender_audit["violation_score"])
+        + int(midfield_audit["violation_score"])
     )
     potential_core_adjustment = -8.0 * max(
         0,
@@ -2354,12 +2691,14 @@ def squad_architecture_metrics(
         bool(audit["passes"])
         and potential_core_deficit == 0
         and bool(defender_audit["passes"])
+        and bool(midfield_audit["passes"])
     )
     return {
         **audit,
         "passes": architecture_passes,
         "hard_violation_score": hard_violation_score,
         "defender_architecture": defender_audit,
+        "midfield_architecture": midfield_audit,
         "expected_contribution": expected_contribution,
         "concentration_adjustment": concentration_adjustment,
         "position_concentration_adjustment": (
@@ -2441,6 +2780,7 @@ def squad_architecture_metrics(
             + potential_core_adjustment
             + defensive_overspend_adjustment
             - 50.0 * int(defender_audit["violation_score"])
+            - 50.0 * int(midfield_audit["violation_score"])
         ),
         "player_contributions": player_contributions,
         "player_usage_weights": player_usage_weights,
@@ -2486,6 +2826,7 @@ def finalized_squad_objective(
             True,
         )
     candidate_minimum_costs = minimum_costs_by_position(candidates)
+    qualified_potential_ids = qualified_potential_player_ids(candidates)
     metrics = squad_architecture_metrics(
         squad,
         raw_scores,
@@ -2503,9 +2844,7 @@ def finalized_squad_objective(
             candidates,
             raw_scores,
         ),
-        qualified_potential_ids=qualified_potential_player_ids(
-            candidates
-        ),
+        qualified_potential_ids=qualified_potential_ids,
         min_qualified_potential_core=int(
             getattr(args, "min_qualified_potential_core", 0)
         ),
@@ -2513,10 +2852,15 @@ def finalized_squad_objective(
             getattr(args, "target_qualified_potential_core", 0)
         ),
         position_minimum_costs=candidate_minimum_costs,
-        defender_floor_available_count=sum(
+        defender_ready_reserve_available_count=sum(
             player.position == "DEFENDER"
+            and defender_is_direct_backup_ready(player)
+            for player in candidates
+        ),
+        midfield_floor_available_count=sum(
+            player.position == "MIDFIELDER"
             and player.cost
-            > candidate_minimum_costs.get("DEFENDER", 0)
+            <= candidate_minimum_costs.get("MIDFIELDER", 0)
             for player in candidates
         ),
     )
@@ -2779,9 +3123,14 @@ def optimize_joint_squad_architecture(
     )
     qualified_potential_ids = qualified_potential_player_ids(candidates)
     position_minimum_costs = minimum_costs_by_position(candidates)
-    defender_floor_available_count = sum(
+    defender_ready_reserve_available_count = sum(
         player.position == "DEFENDER"
-        and player.cost > position_minimum_costs.get("DEFENDER", 0)
+        and defender_is_direct_backup_ready(player)
+        for player in candidates
+    )
+    midfield_floor_available_count = sum(
+        player.position == "MIDFIELDER"
+        and player.cost <= position_minimum_costs.get("MIDFIELDER", 0)
         for player in candidates
     )
     single_packages: dict[tuple[str, int], list[Player]] = {}
@@ -2836,6 +3185,52 @@ def optimize_joint_squad_architecture(
                 pair[1].player_id,
             ),
         )[:300]
+    targeted_bench_defense_packages: dict[
+        tuple[str, str, int], list[tuple[Player, Player]]
+    ] = {}
+    for key, packages in pair_packages.items():
+        if "DEFENDER" not in key[:2] or not (
+            {"MIDFIELDER", "FORWARD"}.intersection(key[:2])
+        ):
+            continue
+
+        def targeted_package_priority(
+            package: tuple[Player, Player],
+        ) -> tuple[int, int, float, str, str]:
+            defender = next(
+                player
+                for player in package
+                if player.position == "DEFENDER"
+            )
+            reserve_position_player = next(
+                player
+                for player in package
+                if player.position != "DEFENDER"
+            )
+            reserve_minimum = position_minimum_costs.get(
+                reserve_position_player.position,
+                0,
+            )
+            expensive_ordinary_reserve = (
+                reserve_position_player.cost > reserve_minimum
+                and reserve_position_player.player_id
+                not in qualified_potential_ids
+            )
+            return (
+                int(not defender_is_direct_backup_ready(defender)),
+                int(expensive_ordinary_reserve),
+                -(
+                    raw_scores[defender.player_id]
+                    + raw_scores[reserve_position_player.player_id]
+                ),
+                defender.player_id,
+                reserve_position_player.player_id,
+            )
+
+        targeted_bench_defense_packages[key] = sorted(
+            packages,
+            key=targeted_package_priority,
+        )[:48]
 
     # Four-player reallocations use one targeted premium/potential incoming
     # player plus a compact three-player balancing package. Keep the package
@@ -2988,27 +3383,48 @@ def optimize_joint_squad_architecture(
                 if expected_primary in block:
                     goalkeeper_blocks.append(block)
 
-    current_metrics = squad_architecture_metrics(
-        current,
-        raw_scores,
-        maintenance=maintenance,
-        min_reliable_anchors=min_reliable_anchors,
-        min_attacking_anchors=min_attacking_anchors,
-        min_core_budget_share=min_core_budget_share,
-        target_core_budget_share=target_core_budget_share,
-        min_offensive_premium_anchors=min_offensive_premium_anchors,
-        premium_starter_ids=premium_starter_ids,
-        qualified_potential_ids=qualified_potential_ids,
-        min_qualified_potential_core=min_qualified_potential_core,
-        target_qualified_potential_core=target_qualified_potential_core,
-        position_minimum_costs=position_minimum_costs,
-        defender_floor_available_count=defender_floor_available_count,
-    )
+    metric_cache: dict[frozenset[str], dict[str, Any]] = {}
+    architecture_metric_cache_hits = 0
+
+    def architecture_metrics(candidate: Squad) -> dict[str, Any]:
+        nonlocal architecture_metric_cache_hits
+        cache_key = candidate.ids
+        cached = metric_cache.get(cache_key)
+        if cached is not None:
+            architecture_metric_cache_hits += 1
+            return cached
+        metrics = squad_architecture_metrics(
+            candidate,
+            raw_scores,
+            maintenance=maintenance,
+            min_reliable_anchors=min_reliable_anchors,
+            min_attacking_anchors=min_attacking_anchors,
+            min_core_budget_share=min_core_budget_share,
+            target_core_budget_share=target_core_budget_share,
+            min_offensive_premium_anchors=min_offensive_premium_anchors,
+            premium_starter_ids=premium_starter_ids,
+            qualified_potential_ids=qualified_potential_ids,
+            min_qualified_potential_core=min_qualified_potential_core,
+            target_qualified_potential_core=target_qualified_potential_core,
+            position_minimum_costs=position_minimum_costs,
+            defender_ready_reserve_available_count=(
+                defender_ready_reserve_available_count
+            ),
+            midfield_floor_available_count=(
+                midfield_floor_available_count
+            ),
+        )
+        metric_cache[cache_key] = metrics
+        return metrics
+
+    current_metrics = architecture_metrics(current)
     maximum_reachable_core_share = current_metrics["core_budget_share"]
     evaluated_rosters = 1
     triple_swap_rosters_evaluated = 0
     four_swap_rosters_evaluated = 0
+    cross_position_pair_rosters_evaluated = 0
     completed_iterations = 0
+    marginal_search_complete = False
     position_packages_by_cost: dict[
         tuple[str, int, int], list[tuple[Player, ...]]
     ] = {}
@@ -3047,30 +3463,7 @@ def optimize_joint_squad_architecture(
                 replacement_players,
                 replacement_quality,
             )
-            metrics = squad_architecture_metrics(
-                replacement,
-                raw_scores,
-                maintenance=maintenance,
-                min_reliable_anchors=min_reliable_anchors,
-                min_attacking_anchors=min_attacking_anchors,
-                min_core_budget_share=min_core_budget_share,
-                target_core_budget_share=target_core_budget_share,
-                min_offensive_premium_anchors=(
-                    min_offensive_premium_anchors
-                ),
-                premium_starter_ids=premium_starter_ids,
-                qualified_potential_ids=qualified_potential_ids,
-                min_qualified_potential_core=(
-                    min_qualified_potential_core
-                ),
-                target_qualified_potential_core=(
-                    target_qualified_potential_core
-                ),
-                position_minimum_costs=position_minimum_costs,
-                defender_floor_available_count=(
-                    defender_floor_available_count
-                ),
-            )
+            metrics = architecture_metrics(replacement)
             evaluated_rosters += 1
             if (
                 not metrics["passes"]
@@ -3241,6 +3634,16 @@ def optimize_joint_squad_architecture(
                     )
 
         for first, second in itertools.combinations(field_players, 2):
+            outgoing_positions = {first.position, second.position}
+            current_core_ids = set(current_metrics["player_ids"])
+            targets_bench_to_defense_reallocation = (
+                "DEFENDER" in outgoing_positions
+                and any(
+                    player.position in {"MIDFIELDER", "FORWARD"}
+                    and player.player_id not in current_core_ids
+                    for player in (first, second)
+                )
+            )
             ordered_positions = tuple(
                 sorted(
                     (first.position, second.position),
@@ -3252,16 +3655,17 @@ def optimize_joint_squad_architecture(
                 ordered_positions[1],
                 first.cost + second.cost,
             )
-            for first_replacement, second_replacement in pair_packages.get(
-                package_key,
-                [],
-            )[
-                : (
-                    16
-                    if current_metrics["passes"]
-                    else 80
+            if targets_bench_to_defense_reallocation:
+                pair_candidates = targeted_bench_defense_packages.get(
+                    package_key,
+                    pair_packages.get(package_key, [])[:48],
                 )
-            ]:
+            else:
+                pair_candidates = pair_packages.get(
+                    package_key,
+                    [],
+                )[: (80 if not current_metrics["passes"] else 24)]
+            for first_replacement, second_replacement in pair_candidates:
                 if (
                     first_replacement.player_id in selected_ids
                     or second_replacement.player_id in selected_ids
@@ -3300,6 +3704,8 @@ def optimize_joint_squad_architecture(
                         ),
                     ):
                         replacement_map[outgoing.player_id] = incoming
+                if targets_bench_to_defense_reallocation:
+                    cross_position_pair_rosters_evaluated += 1
                 consider(
                     [
                         replacement_map.get(player.player_id, player)
@@ -3478,6 +3884,7 @@ def optimize_joint_squad_architecture(
                 consider([*other_positions, *package])
 
         if not alternatives:
+            marginal_search_complete = True
             break
         best = max(
             alternatives,
@@ -3497,6 +3904,7 @@ def optimize_joint_squad_architecture(
                 <= current_metrics["architecture_objective"] + 1e-9
             )
         ):
+            marginal_search_complete = True
             break
         if (
             not current_metrics["passes"]
@@ -3504,20 +3912,23 @@ def optimize_joint_squad_architecture(
             and best[4]["hard_violation_score"]
             >= current_metrics["hard_violation_score"]
         ):
+            marginal_search_complete = True
             break
         current = best[3]
         current_metrics = best[4]
         completed_iterations = iteration + 1
+    else:
+        marginal_search_complete = False
 
     optimizer_reachable_target = min(
         target_core_budget_share,
         maximum_reachable_core_share,
     )
     current.architecture_diagnostics = {
-        "model_version": (
-            "joint-xi-bench-v8-defender-floor"
+        "model_version": ARCHITECTURE_MODEL_VERSION,
+        "passes": bool(
+            current_metrics["passes"] and marginal_search_complete
         ),
-        "passes": bool(current_metrics["passes"]),
         "hard_violation_score": int(
             current_metrics["hard_violation_score"]
         ),
@@ -3639,6 +4050,9 @@ def optimize_joint_squad_architecture(
         "defender_architecture": current_metrics[
             "defender_architecture"
         ],
+        "midfield_architecture": current_metrics[
+            "midfield_architecture"
+        ],
         "squad_average_age": current_metrics["squad_average_age"],
         "starting_xi_average_age": current_metrics[
             "starting_xi_average_age"
@@ -3653,6 +4067,23 @@ def optimize_joint_squad_architecture(
             triple_swap_rosters_evaluated
         ),
         "four_swap_rosters_evaluated": four_swap_rosters_evaluated,
+        "cross_position_pair_rosters_evaluated": (
+            cross_position_pair_rosters_evaluated
+        ),
+        "architecture_metric_cache_hits": (
+            architecture_metric_cache_hits
+        ),
+        "unique_architecture_rosters": len(metric_cache),
+        "marginal_reallocation_audit": {
+            "search_complete": marginal_search_complete,
+            "dominated_final_roster": (
+                False if marginal_search_complete else None
+            ),
+            "scope": (
+                "exact-cost single, pair, position, targeted three- "
+                "and four-player packages"
+            ),
+        },
         "improvement_iterations": completed_iterations,
     }
     return current
@@ -8135,13 +8566,16 @@ def main() -> int:
     args = parse_args()
     variation_source = "explicit"
     variation_generation: int | None = None
+    variation_state_path = (
+        args.variation_state or default_variation_state_path()
+    )
     if args.seed is not None:
         seed = args.seed
     else:
         variation_source = "automatic_local"
         try:
             seed, variation_generation = automatic_variation_seed(
-                state_path=args.variation_state or default_variation_state_path(),
+                state_path=variation_state_path,
                 competition=args.competition,
                 season=args.season,
                 profile=args.profile,
@@ -8570,6 +9004,31 @@ def main() -> int:
         args.price_ceiling_core_budget_share_target
     )
     avoid_exposure = load_avoid_exposure(args.avoid_roster)
+    local_variation_exposure: Counter[str] = Counter()
+    if (
+        variation_source == "automatic_local"
+        and variation_generation is not None
+        and variation_generation > 0
+    ):
+        try:
+            local_variation_exposure = automatic_variation_exposure(
+                state_path=variation_state_path,
+                competition=args.competition,
+                season=args.season,
+                profile=args.profile,
+                maintenance=args.maintenance,
+                variation=args.variation,
+                budget=args.budget,
+                slots=args.slots,
+                generation=variation_generation,
+            )
+            avoid_exposure.update(local_variation_exposure)
+        except VariationStateError as error:
+            print(
+                f"Automatic variation stopped: {error}",
+                file=sys.stderr,
+            )
+            return 2
     minimum_spend = math.ceil(args.budget * args.min_spend_ratio)
     portfolio_audit: dict[str, Any] | None = None
     try:
@@ -8977,7 +9436,33 @@ def main() -> int:
         "generation": variation_generation,
         "new_variant_supported": True,
         "private_installation_id_exposed": False,
+        "prior_local_variant_exposure_count": sum(
+            local_variation_exposure.values()
+        ),
     }
+    if (
+        variation_source == "automatic_local"
+        and variation_generation is not None
+    ):
+        try:
+            record_automatic_variation_squad(
+                state_path=variation_state_path,
+                competition=args.competition,
+                season=args.season,
+                profile=args.profile,
+                maintenance=args.maintenance,
+                variation=args.variation,
+                budget=args.budget,
+                slots=args.slots,
+                generation=variation_generation,
+                player_ids=squad.ids,
+            )
+        except VariationStateError as error:
+            print(
+                f"Automatic variation stopped: {error}",
+                file=sys.stderr,
+            )
+            return 2
     rendered = (
         json.dumps(payload, ensure_ascii=False, indent=2)
         if args.format == "json"

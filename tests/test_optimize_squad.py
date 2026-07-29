@@ -1340,6 +1340,54 @@ class DistanceOptimizerTests(unittest.TestCase):
         self.assertEqual(1, exposure["m2"])
         self.assertEqual(1, exposure["m3"])
 
+    def test_repeated_ordinary_player_is_rotated_inside_quality_corridor(
+        self,
+    ) -> None:
+        players, scores = varied_pool()
+        slots = {
+            "GOALKEEPER": 3,
+            "DEFENDER": 2,
+            "MIDFIELDER": 2,
+            "FORWARD": 2,
+        }
+        first, optimum, first_distance, _ = optimizer.varied_squad(
+            players,
+            900,
+            scores,
+            "balanced",
+            "medium",
+            12345,
+            1,
+            900,
+            slots,
+            set(),
+        )
+        repeated_id = "D2"
+        self.assertIn(repeated_id, first.ids)
+
+        rerolled, _, rerolled_distance, _ = optimizer.varied_squad(
+            players,
+            900,
+            scores,
+            "balanced",
+            "medium",
+            12345,
+            1,
+            900,
+            slots,
+            Counter({repeated_id: 5}),
+        )
+
+        self.assertNotIn(repeated_id, rerolled.ids)
+        self.assertEqual(first_distance, rerolled_distance)
+        quality_floor = sum(
+            scores[item.player_id] for item in optimum.players
+        ) * (1.0 - 0.05)
+        self.assertGreaterEqual(
+            sum(scores[item.player_id] for item in rerolled.players),
+            quality_floor,
+        )
+
     def test_unreachable_quality_distance_falls_back_inside_corridor(self) -> None:
         players, scores = varied_pool()
         slots = {
@@ -1474,6 +1522,62 @@ class DistanceOptimizerTests(unittest.TestCase):
                     },
                 )
             self.assertEqual("not-json", state_path.read_text(encoding="utf-8"))
+
+    def test_new_local_variant_deemphasizes_only_completed_earlier_squads(
+        self,
+    ) -> None:
+        slots = {
+            "GOALKEEPER": 3,
+            "DEFENDER": 7,
+            "MIDFIELDER": 7,
+            "FORWARD": 5,
+        }
+        arguments = {
+            "competition": "3. Liga",
+            "season": "2026/27",
+            "profile": "reliable",
+            "maintenance": "low",
+            "variation": "medium",
+            "budget": 6_000_000,
+            "slots": slots,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "variation.json"
+            _, first_generation = optimizer.automatic_variation_seed(
+                state_path=state_path,
+                **arguments,
+            )
+            optimizer.record_automatic_variation_squad(
+                state_path=state_path,
+                generation=first_generation,
+                player_ids={"repeat-a", "repeat-b"},
+                **arguments,
+            )
+            same_generation_exposure = (
+                optimizer.automatic_variation_exposure(
+                    state_path=state_path,
+                    generation=first_generation,
+                    **arguments,
+                )
+            )
+            _, next_generation = optimizer.automatic_variation_seed(
+                state_path=state_path,
+                new_variant=True,
+                **arguments,
+            )
+            next_generation_exposure = (
+                optimizer.automatic_variation_exposure(
+                    state_path=state_path,
+                    generation=next_generation,
+                    **arguments,
+                )
+            )
+
+        self.assertEqual(Counter(), same_generation_exposure)
+        self.assertEqual(
+            Counter({"repeat-a": 1, "repeat-b": 1}),
+            next_generation_exposure,
+        )
 
     def test_five_installations_receive_five_controlled_synthetic_squads(self) -> None:
         players, scores = varied_pool()
@@ -2284,7 +2388,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             after["bench_usage_weights"]["FORWARD"],
         )
         self.assertEqual(
-            "joint-xi-bench-v8-defender-floor",
+            "joint-xi-bench-v9-marginal-bench",
             optimized.architecture_diagnostics["model_version"],
         )
         self.assertGreater(
@@ -2298,6 +2402,26 @@ class ReliableCorePolicyTests(unittest.TestCase):
         self.assertIn(
             "four_swap_rosters_evaluated",
             optimized.architecture_diagnostics,
+        )
+        self.assertIn(
+            "cross_position_pair_rosters_evaluated",
+            optimized.architecture_diagnostics,
+        )
+        self.assertGreaterEqual(
+            optimized.architecture_diagnostics[
+                "architecture_metric_cache_hits"
+            ],
+            0,
+        )
+        self.assertTrue(
+            optimized.architecture_diagnostics[
+                "marginal_reallocation_audit"
+            ]["search_complete"]
+        )
+        self.assertFalse(
+            optimized.architecture_diagnostics[
+                "marginal_reallocation_audit"
+            ]["dominated_final_roster"]
         )
 
     def test_reference_architecture_restarts_from_equivalent_premium_anchor(
@@ -2522,7 +2646,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             min_reliable_anchors=0,
             min_attacking_anchors=0,
             min_core_budget_share=0.50,
-            target_core_budget_share=0.65,
+            target_core_budget_share=0.80,
         )
         concentrated = optimizer.squad_architecture_metrics(
             concentrated_squad,
@@ -2531,7 +2655,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             min_reliable_anchors=0,
             min_attacking_anchors=0,
             min_core_budget_share=0.50,
-            target_core_budget_share=0.65,
+            target_core_budget_share=0.80,
         )
 
         self.assertAlmostEqual(0.60, flat["forward_core_budget_share"])
@@ -2675,11 +2799,11 @@ class ReliableCorePolicyTests(unittest.TestCase):
             target_core_budget_share=0.65,
         )
 
-        self.assertLess(flat["midfield_core_budget_share"], 0.65)
+        self.assertLess(flat["midfield_core_budget_share"], 0.80)
         self.assertFalse(flat["midfield_core_budget_target_met"])
         self.assertGreaterEqual(
             concentrated["midfield_core_budget_share"],
-            0.65,
+            0.80,
         )
         self.assertTrue(concentrated["midfield_core_budget_target_met"])
         self.assertEqual(0.22, flat["player_usage_weights"]["mm4"])
@@ -2688,6 +2812,77 @@ class ReliableCorePolicyTests(unittest.TestCase):
         self.assertGreater(
             concentrated["architecture_objective"],
             flat["architecture_objective"],
+        )
+
+    def test_low_maintenance_rejects_two_ordinary_expensive_midfield_reserves(
+        self,
+    ) -> None:
+        midfielders = [
+            player(
+                f"bank-m{index}",
+                f"Bank Midfield Club {index}",
+                "MIDFIELDER",
+                cost,
+            )
+            for index, cost in enumerate(
+                (500, 450, 400, 350, 250, 200, 50)
+            )
+        ]
+        squad = optimizer.Squad(midfielders, 0.0)
+        core_ids = {
+            player.player_id for player in midfielders[:4]
+        }
+
+        audit = optimizer.midfield_architecture_audit(
+            squad,
+            core_ids,
+            maintenance="low",
+            enforce=True,
+            position_minimum_costs={"MIDFIELDER": 50},
+            floor_available_count=10,
+        )
+
+        self.assertFalse(audit["passes"])
+        self.assertEqual(1, audit["expensive_ordinary_reserve_excess"])
+        self.assertEqual(
+            ["bank-m4", "bank-m5"],
+            audit["expensive_ordinary_reserve_ids"],
+        )
+
+    def test_qualified_potential_can_be_second_valuable_midfield_reserve(
+        self,
+    ) -> None:
+        midfielders = [
+            player(
+                f"talent-bank-m{index}",
+                f"Talent Midfield Club {index}",
+                "MIDFIELDER",
+                cost,
+            )
+            for index, cost in enumerate(
+                (500, 450, 400, 350, 250, 200, 50)
+            )
+        ]
+        squad = optimizer.Squad(midfielders, 0.0)
+        core_ids = {
+            player.player_id for player in midfielders[:4]
+        }
+
+        audit = optimizer.midfield_architecture_audit(
+            squad,
+            core_ids,
+            maintenance="low",
+            enforce=True,
+            qualified_potential_ids=frozenset({"talent-bank-m5"}),
+            position_minimum_costs={"MIDFIELDER": 50},
+            floor_available_count=10,
+        )
+
+        self.assertTrue(audit["passes"])
+        self.assertEqual(1, audit["expensive_ordinary_reserve_count"])
+        self.assertEqual(
+            ["talent-bank-m5"],
+            audit["qualified_potential_reserve_ids"],
         )
 
     def test_premium_starter_requires_price_and_performance(self) -> None:
@@ -2826,7 +3021,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             0.0,
         )
 
-    def test_defender_floor_rejects_all_minimum_price_unit(self) -> None:
+    def test_ready_minimum_price_defenders_count_as_functional(self) -> None:
         squad_players: list[optimizer.Player] = []
         scores: dict[str, float] = {}
         for position, prefix, count in (
@@ -2861,13 +3056,93 @@ class ReliableCorePolicyTests(unittest.TestCase):
         )
 
         defender_audit = metrics["defender_architecture"]
-        self.assertFalse(metrics["passes"])
+        self.assertTrue(metrics["passes"])
         self.assertEqual(7, defender_audit["minimum_price_count"])
         self.assertEqual(4, defender_audit["minimum_price_limit"])
-        self.assertGreater(
-            defender_audit["minimum_price_starter_count"],
-            defender_audit["minimum_price_starter_limit"],
+        self.assertEqual(
+            3,
+            defender_audit["minimum_price_filler_count"],
         )
+        self.assertEqual(3, defender_audit["minimum_price_filler_limit"])
+        self.assertTrue(defender_audit["direct_backup_ready"])
+
+    def test_defender_floor_requires_a_playable_first_reserve(self) -> None:
+        defenders = [
+            player(
+                f"backup-d{index}",
+                f"Backup Defender Club {index}",
+                "DEFENDER",
+                150 if index < 4 else 50,
+            )
+            for index in range(7)
+        ]
+        weak_backup = optimizer.replace(
+            defenders[3],
+            components={
+                **defenders[3].components,
+                "minutes": 40.0,
+                "role": 45.0,
+            },
+        )
+        defenders[3] = weak_backup
+        scores = {
+            item.player_id: 100.0 - index
+            for index, item in enumerate(defenders)
+        }
+
+        audit = optimizer.defender_architecture_audit(
+            optimizer.Squad(defenders, 0.0),
+            {item.player_id for item in defenders[:3]},
+            maintenance="low",
+            enforce=True,
+            raw_scores=scores,
+            position_minimum_costs={"DEFENDER": 50},
+            ready_reserve_available_count=5,
+        )
+
+        self.assertFalse(audit["passes"])
+        self.assertEqual("backup-d3", audit["direct_backup_player_id"])
+        self.assertEqual(1, audit["direct_backup_deficit"])
+
+    def test_dynamic_defender_filler_limit_tracks_the_formation(self) -> None:
+        defenders = [
+            player(
+                f"dynamic-d{index}",
+                f"Dynamic Defender Club {index}",
+                "DEFENDER",
+                150 if index < 5 else 50,
+            )
+            for index in range(7)
+        ]
+        scores = {
+            item.player_id: 100.0 - index
+            for index, item in enumerate(defenders)
+        }
+        squad = optimizer.Squad(defenders, 0.0)
+
+        three_defender_audit = optimizer.defender_architecture_audit(
+            squad,
+            {item.player_id for item in defenders[:3]},
+            maintenance="low",
+            enforce=True,
+            raw_scores=scores,
+            position_minimum_costs={"DEFENDER": 50},
+            ready_reserve_available_count=5,
+        )
+        four_defender_audit = optimizer.defender_architecture_audit(
+            squad,
+            {item.player_id for item in defenders[:4]},
+            maintenance="low",
+            enforce=True,
+            raw_scores=scores,
+            position_minimum_costs={"DEFENDER": 50},
+            ready_reserve_available_count=5,
+        )
+
+        self.assertEqual(3, three_defender_audit["minimum_price_filler_limit"])
+        self.assertEqual(2, four_defender_audit["minimum_price_filler_limit"])
+        self.assertTrue(three_defender_audit["direct_backup_ready"])
+        self.assertTrue(four_defender_audit["direct_backup_ready"])
 
     def test_joint_architecture_repairs_defender_floor_progressively(
         self,
