@@ -65,6 +65,8 @@ jobs:
             --previous-quality https://geozocco.github.io/kicker-interactive-manager/v1/quality/2-bundesliga.json \
             --openai-role-max-players 0 \
             --openai-role-batch-size 8 \
+            --openai-transfer-max-players 0 \
+            --openai-transfer-batch-size 8 \
             --output public/v1/news/2-bundesliga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/news/2-bundesliga.json \
             --provider api_sports \
@@ -86,6 +88,8 @@ jobs:
             --previous-quality https://geozocco.github.io/kicker-interactive-manager/v1/quality/3-liga.json \
             --openai-role-max-players 0 \
             --openai-role-batch-size 8 \
+            --openai-transfer-max-players 0 \
+            --openai-transfer-batch-size 8 \
             --output public/v1/news/3-liga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/news/3-liga.json \
             --provider api_sports \
@@ -124,6 +128,7 @@ jobs:
             --mapping config/history/2-bundesliga.json \
             --strengths config/history/competition-strength.json \
             --identity-seed config/history/identities/2-bundesliga.json \
+            --additional-identity-seed config/history/identities/3-liga.json \
             --performance-seed config/history/performance/2-bundesliga.json.gz \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/history/2-bundesliga.json \
             --output public/v1/history/2-bundesliga.json
@@ -135,6 +140,7 @@ jobs:
             --mapping config/history/3-liga.json \
             --strengths config/history/competition-strength.json \
             --identity-seed config/history/identities/3-liga.json \
+            --additional-identity-seed config/history/identities/2-bundesliga.json \
             --performance-seed config/history/performance/3-liga.json.gz \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/history/3-liga.json \
             --output public/v1/history/3-liga.json

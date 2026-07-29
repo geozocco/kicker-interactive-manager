@@ -36,6 +36,15 @@ def annotation(position: str, *, anchor: bool = False) -> dict:
         "reliable_anchor": anchor,
         "anchor_reason": "Two proven seasons" if anchor else "",
         "benchmark": False,
+        "loan_pathway": {
+            "model_version": "loan-pathway-v1",
+            "status": "none",
+            "qualified_potential": False,
+            "value_bonus": 0.0,
+            "upside_bonus": 0.0,
+            "minutes_floor": 0.0,
+            "role_floor": 0.0,
+        },
         "history_summary": {
             "mapping_status": "verified",
             "confidence": "high",

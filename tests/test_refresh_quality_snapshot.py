@@ -199,6 +199,119 @@ class QualityProviderRetryTests(unittest.TestCase):
         self.assertEqual(65, sleep.call_args_list[0].args[0])
 
 
+class LoanPathwayTests(unittest.TestCase):
+    def transfer_profile(self) -> dict:
+        return {
+            "model_version": "openai-transfer-watch-v1",
+            "status": "confirmed",
+            "stage": "official",
+            "direction": "in",
+            "deal_type": "loan",
+            "loan_intent": "development_minutes",
+            "parent_club_level": "top_five_first_division",
+            "fresh": True,
+            "evidence": [
+                {
+                    "claim": "Saisonleihe für den nächsten Entwicklungsschritt.",
+                    "source_url": "https://example.com/loan",
+                    "observed_at": "2026-07-28T12:00:00Z",
+                }
+            ],
+        }
+
+    def test_early_senior_starter_builds_qualified_loan_pathway(self) -> None:
+        profile = quality.loan_pathway_profile(
+            {
+                "seasons": [
+                    {
+                        "competitions": [
+                            {
+                                "kind": "domestic_league",
+                                "label": "3. Liga",
+                                "strength_factor": 0.64,
+                                "minutes": 2427,
+                            }
+                        ]
+                    }
+                ]
+            },
+            self.transfer_profile(),
+            talent_profile={
+                "talent_score": 84,
+                "readiness_score": 82,
+                "early_senior_weighted_minutes": 2427,
+            },
+            lower_league_profile={"status": "standout_lower_league"},
+            role_context={
+                "expected_start_probability": 72,
+                "evidence": [{"claim": "Einsatzrolle"}],
+            },
+            target_strength=0.8,
+            age=18,
+        )
+        self.assertEqual("qualified", profile["status"])
+        self.assertTrue(profile["qualified_potential"])
+        self.assertGreater(profile["value_bonus"], 0)
+        self.assertGreater(profile["minutes_floor"], 60)
+
+    def test_parent_club_prestige_alone_never_creates_credit(self) -> None:
+        profile = quality.loan_pathway_profile(
+            {"seasons": []},
+            self.transfer_profile(),
+            talent_profile={
+                "talent_score": 45,
+                "readiness_score": 35,
+                "early_senior_weighted_minutes": 0,
+            },
+            lower_league_profile={"status": "none"},
+            role_context={
+                "expected_start_probability": 0,
+                "evidence": [],
+            },
+            target_strength=0.8,
+            age=20,
+        )
+        self.assertEqual("loan_watch", profile["status"])
+        self.assertFalse(profile["qualified_potential"])
+        self.assertEqual(0, profile["value_bonus"])
+        self.assertEqual(0, profile["upside_bonus"])
+
+    def test_actual_higher_league_minutes_count_not_just_parent_contract(
+        self,
+    ) -> None:
+        profile = quality.loan_pathway_profile(
+            {
+                "seasons": [
+                    {
+                        "competitions": [
+                            {
+                                "kind": "domestic_league",
+                                "label": "Premier League",
+                                "strength_factor": 1.0,
+                                "minutes": 800,
+                            }
+                        ]
+                    }
+                ]
+            },
+            self.transfer_profile(),
+            talent_profile={
+                "talent_score": 55,
+                "readiness_score": 58,
+                "early_senior_weighted_minutes": 0,
+            },
+            lower_league_profile={"status": "none"},
+            role_context={
+                "expected_start_probability": 65,
+                "evidence": [{"claim": "Einsatzrolle"}],
+            },
+            target_strength=0.9,
+            age=22,
+        )
+        self.assertEqual(800, profile["higher_tier_senior_minutes"])
+        self.assertTrue(profile["qualified_potential"])
+
+
 class BenchmarkResilienceTests(unittest.TestCase):
     def test_quality_builder_keeps_four_benchmark_references_per_position(
         self,

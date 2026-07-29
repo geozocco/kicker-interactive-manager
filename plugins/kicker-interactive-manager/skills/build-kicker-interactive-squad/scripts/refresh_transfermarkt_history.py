@@ -724,7 +724,7 @@ def previous_by_transfermarkt_id(
 def load_identity_seed(
     path: Path | None,
     *,
-    competition: str,
+    competition: str | None,
     season: str,
 ) -> list[dict[str, Any]]:
     if path is None:
@@ -733,7 +733,10 @@ def load_identity_seed(
     if (
         not isinstance(payload, dict)
         or payload.get("schema_version") != 1
-        or payload.get("competition") != competition
+        or (
+            competition is not None
+            and payload.get("competition") != competition
+        )
         or payload.get("season") != season
         or not isinstance(payload.get("players"), list)
     ):
@@ -1135,6 +1138,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mapping", type=Path, required=True)
     parser.add_argument("--strengths", type=Path, required=True)
     parser.add_argument("--identity-seed", type=Path)
+    parser.add_argument(
+        "--additional-identity-seed",
+        type=Path,
+        action="append",
+        default=[],
+        help="validated same-season identity catalog from another competition",
+    )
     parser.add_argument("--performance-seed", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--previous")
@@ -1155,6 +1165,23 @@ def main() -> int:
         args.identity_seed,
         competition=str(config["competition"]),
         season=str(config["season"]),
+    )
+    additional_identities = [
+        player
+        for path in args.additional_identity_seed
+        for player in load_identity_seed(
+            path,
+            competition=None,
+            season=str(config["season"]),
+        )
+    ]
+    identity_by_id = {
+        int(player["player_id"]): player
+        for player in [*identity_seed, *additional_identities]
+    }
+    identity_seed = sorted(
+        identity_by_id.values(),
+        key=lambda player: int(player["player_id"]),
     )
     current_strength_sha = strength_model_sha256(strength_model)
     performance_seed = load_performance_seed(

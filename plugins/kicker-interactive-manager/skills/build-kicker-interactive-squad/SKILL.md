@@ -9,7 +9,7 @@ description: Plane, optimiere, bewerte und ändere Kader im kicker Managerspiel 
 
 - Ausschließlich die bereits angemeldete Chrome-Sitzung verwenden. Keine Passwörter, Cookies, Tokens oder Browser-Speicher lesen oder exportieren.
 - Vor jeder Browsersteuerung den verfügbaren Chrome-Control-Skill vollständig laden und dessen Interaktions- und Finalisierungsregeln befolgen.
-- Aktuelle Informationen zu Transfers, Verletzungen, Vorbereitung, Trainer und Rollen im Web verifizieren. Offizielle Vereins- und Ligaseiten bevorzugen.
+- Aktuelle Informationen zu Transfers, Verletzungen, Vorbereitung, Trainer und Rollen im Web verifizieren. Offizielle Vereins- und Ligaseiten bevorzugen. Den zentralen redaktionellen Transfer-Watcher für Transfermarkt-, kicker-, Sky-, Vereins- und Zielvereinsmeldungen auswerten: Gerüchte nie automatisch ausschließen, fortgeschrittene Meldungen kurzfristig primär prüfen und bestätigte Abgänge sofort berücksichtigen.
 - Für die 2. Bundesliga und 3. Liga 2026/27 die im Optimierer hinterlegten zentralen Markt-, Transfermarkt-Historien-, Vorbereitungs-, Qualitäts- und News-Feeds als erstes maschinenlesbares Gate verwenden. Der Qualitätsbestand ist nur gültig, wenn er zu den aktuellen Markt-, News-, Vorbereitungs- und Historien-Prüfsummen gehört. Lokale Feed-URLs dürfen diesen Standard für Tests oder einen internen Spiegel überschreiben. Zentraldaten ersetzen die gezielte Prüfung von Lücken, Konflikten und folgenreichen Meldungen in Primärquellen nicht.
 - Keine Vorjahrespunkte als Prognose behandeln. Wiederholbarkeit, Rolle, Einsatzwahrscheinlichkeit, Umfeld und Preis getrennt bewerten. Historische Minuten und Scorer stets im Niveau der damaligen Liga bewerten; unterklassige Produktion nicht eins zu eins auf die Zielliga übertragen. Die österreichische Bundesliga und die Schweizer Super League im Modell ungefähr auf deutschem Drittliganiveau einordnen.
 - Berücksichtigen, dass nur die am Spieltag aufgestellte Elf Punkte sammelt. Reservequalität ist Absicherung und darf insbesondere bei geringem Betreuungsaufwand nicht genauso viel Budgetgewicht erhalten wie der wahrscheinliche Kern.
@@ -99,6 +99,7 @@ Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüf
 ```
 
 - Je Position etablierte Kandidaten, Neuzugänge, höherklassig erprobte Spieler, Jugendtalente und Rebound-Kandidaten aufnehmen.
+- Leihspieler über das `loan_pathway_profile` differenzieren: tatsächliche Herrenminuten im Herkunftsniveau, altersrelative Reife, Stammvereinsniveau, Leihzweck, Zielvereinsrolle und Konkurrenz getrennt bewerten. Der Name oder die Ligazugehörigkeit des Stammvereins allein ist niemals ein Leistungsnachweis.
 - Mindestens die realistischen Startelf- und Bankkandidaten prüfen; reine 0,05-/0,10-Füller nicht ohne belegbare Einsatzchance bevorzugen.
 - Vor dem finalen Lauf in jeder Position mindestens die doppelte tatsächliche Sollzahl aktuell annotieren. Bei den üblichen 3/7/7/5 sind das 6/14/14/10. Im Standardmodus mindestens zwei hierarchisch ausreichend sichere vollständige Torwartblöcke abdecken.
 - In Abwehr, Mittelfeld und Sturm jeweils mindestens zwei auswählbare Leistungsreferenzen mit `benchmark: true` annotieren. Diese Spieler bilden den Vergleichsmaßstab für Preis, Sicherheit und erwartbare Leistung; sie müssen nicht automatisch gekauft werden.

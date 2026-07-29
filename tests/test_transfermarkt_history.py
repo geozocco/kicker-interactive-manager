@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -247,6 +248,60 @@ class TransfermarktHistoryTests(unittest.TestCase):
         )
         self.assertEqual("verified", mapping["status"])
         self.assertEqual(100, mapping["player_id"])
+
+    def test_unique_cross_competition_identity_survives_club_change(
+        self,
+    ) -> None:
+        mapping = transfermarkt.match_market_player(
+            {"name": "Luca Erlein", "club": "Energie Cottbus"},
+            [
+                {
+                    "player_id": 1009442,
+                    "name": "Luca Erlein",
+                    "club": "TSG 1899 Hoffenheim II",
+                    "profile_url": (
+                        "https://www.transfermarkt.co.uk/luca-erlein/"
+                        "profil/spieler/1009442"
+                    ),
+                }
+            ],
+        )
+        self.assertEqual("probable", mapping["status"])
+        self.assertEqual(
+            "globally_unique_exact_name",
+            mapping["match_method"],
+        )
+
+    def test_additional_identity_seed_allows_another_competition(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "identities.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "competition": "3. Liga",
+                        "season": "2026/27",
+                        "players": [
+                            {
+                                "player_id": 1009442,
+                                "name": "Luca Erlein",
+                                "club": "TSG 1899 Hoffenheim II",
+                                "profile_url": (
+                                    "https://www.transfermarkt.co.uk/"
+                                    "luca-erlein/profil/spieler/1009442"
+                                ),
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            identities = transfermarkt.load_identity_seed(
+                path,
+                competition=None,
+                season="2026/27",
+            )
+        self.assertEqual(1009442, identities[0]["player_id"])
 
 
 if __name__ == "__main__":

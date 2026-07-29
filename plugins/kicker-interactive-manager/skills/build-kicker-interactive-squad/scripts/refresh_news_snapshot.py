@@ -30,6 +30,10 @@ from openai_role_research import (
     select_role_targets,
 )
 from openai_team_research import research_team_profiles
+from openai_transfer_research import (
+    research_transfer_reports,
+    select_transfer_targets,
+)
 from quality_snapshot import load_snapshot as load_quality_snapshot
 
 
@@ -73,6 +77,10 @@ def merge_role_research_into_previous_snapshot(
     role_research_audit: dict[str, Any],
     team_profiles: dict[str, dict[str, Any]] | None = None,
     team_research_audit: dict[str, Any] | None = None,
+    transfer_reports: dict[str, dict[str, Any]] | None = None,
+    transfer_research_abstentions: dict[str, dict[str, Any]] | None = None,
+    transfer_research_audit: dict[str, Any] | None = None,
+    market_players: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Refresh grounded roles without extending stale provider timestamps."""
 
@@ -95,6 +103,71 @@ def merge_role_research_into_previous_snapshot(
             "failures": [],
         }
     )
+    merged["transfer_profiles"] = copy.deepcopy(transfer_reports or {})
+    merged["transfer_research_abstentions"] = copy.deepcopy(
+        transfer_research_abstentions or {}
+    )
+    merged["transfer_research"] = copy.deepcopy(
+        transfer_research_audit
+        or {
+            "status": "not_configured",
+            "targets": 0,
+            "cache_hits": 0,
+            "researched_reports": 0,
+            "researched_abstentions": 0,
+            "researched_inconclusive": 0,
+            "requests": 0,
+            "failures": [],
+        }
+    )
+    merged_players = merged.setdefault("players", {})
+    market_by_id = {
+        str(player.get("id", "")): player
+        for player in market_players or []
+        if isinstance(player, dict) and str(player.get("id", "")).strip()
+    }
+    for player_id, report in (transfer_reports or {}).items():
+        if not isinstance(report, dict) or not report.get("fresh", False):
+            continue
+        market_player = market_by_id.get(str(player_id), {})
+        player = merged_players.setdefault(
+            str(player_id),
+            {
+                "name": str(market_player.get("name", "")),
+                "club": str(market_player.get("club", "")),
+                "mapping": {
+                    "api_sports_player_id": None,
+                    "api_sports_team_id": None,
+                    "sportsmonks_player_id": None,
+                    "sportsmonks_team_id": None,
+                    "age": None,
+                    "position": str(market_player.get("position", "")),
+                    "confidence": "unverified",
+                },
+                "signals": [],
+                "consensus": consensus_for([]),
+            },
+        )
+        editorial_signal = transfer_report_signal(
+            str(player_id),
+            report,
+            observed_at=str(
+                report.get("observed_at", merged.get("generated_at", ""))
+            ),
+        )
+        if editorial_signal is None:
+            continue
+        retained = [
+            item
+            for item in player.get("signals", [])
+            if not (
+                isinstance(item, dict)
+                and item.get("source_provider")
+                == "openai_transfer_watcher"
+            )
+        ]
+        player["signals"] = [*retained, editorial_signal]
+        player["consensus"] = consensus_for(player["signals"])
     merged.pop("content_sha256", None)
     merged["content_sha256"] = canonical_sha256(merged)
     return merged
@@ -1101,6 +1174,99 @@ def consensus_for(signals: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def merge_market_mappings(
+    runtime_config: dict[str, Any],
+    market_players: list[dict[str, Any]] | None,
+) -> None:
+    """Keep fresh Kicker additions visible before provider IDs catch up."""
+
+    configured = runtime_config.setdefault("players", {})
+    if not isinstance(configured, dict):
+        configured = {}
+        runtime_config["players"] = configured
+    for player in market_players or []:
+        if not isinstance(player, dict):
+            continue
+        player_id = str(player.get("id", "")).strip()
+        if not player_id:
+            continue
+        existing = configured.get(player_id, {})
+        existing = dict(existing) if isinstance(existing, dict) else {}
+        configured[player_id] = {
+            **existing,
+            "name": str(player.get("name", existing.get("name", ""))).strip(),
+            "club": str(player.get("club", existing.get("club", ""))).strip(),
+            "position": str(
+                player.get("position", existing.get("position", ""))
+            ).strip(),
+            "mapping_confidence": existing.get(
+                "mapping_confidence",
+                "unverified",
+            ),
+        }
+
+
+def transfer_report_signal(
+    player_id: str,
+    report: dict[str, Any],
+    *,
+    observed_at: str,
+) -> dict[str, Any] | None:
+    """Convert grounded editorial research into the provider-neutral gate."""
+
+    status = str(report.get("status", ""))
+    stage = str(report.get("stage", ""))
+    direction = str(report.get("direction", "unknown"))
+    if status not in {"rumour", "advanced", "confirmed"}:
+        return None
+    if status == "confirmed":
+        kind = "transfer_confirmed"
+        signal_status = "confirmed"
+        impact = direction
+    else:
+        kind = "transfer_rumour"
+        signal_status = "rumour"
+        impact = "rumour"
+    severity = {
+        "rumour": 35,
+        "contact": 42,
+        "negotiation": 55,
+        "agreement": 72,
+        "medical": 84,
+        "official": (
+            95 if direction == "out" else 55
+            if direction == "within_competition"
+            else 10
+        ),
+    }.get(stage, 35)
+    evidence = report.get("evidence", [])
+    source_url = next(
+        (
+            str(item.get("source_url", ""))
+            for item in evidence
+            if isinstance(item, dict)
+            and str(item.get("source_url", "")).startswith("https://")
+        ),
+        "",
+    )
+    detail = (
+        f"{report.get('from_club', '?')} -> {report.get('to_club', '?')} "
+        f"({stage}, {report.get('deal_type', 'unknown')})"
+    )
+    return signal(
+        kind=kind,
+        status=signal_status,
+        severity=severity,
+        provider="openai_transfer_watcher",
+        observed_at=observed_at,
+        record_id=str(report.get("research_fingerprint", player_id)),
+        detail=detail,
+        source_url=source_url,
+        effective_from=report.get("observed_at", observed_at),
+        availability_impact=impact,
+    )
+
+
 def build_snapshot(
     config: dict[str, Any],
     *,
@@ -1113,6 +1279,10 @@ def build_snapshot(
     role_research_audit: dict[str, Any] | None = None,
     researched_team_profiles: dict[str, dict[str, Any]] | None = None,
     team_research_audit: dict[str, Any] | None = None,
+    researched_transfer_reports: dict[str, dict[str, Any]] | None = None,
+    transfer_research_abstentions: dict[str, dict[str, Any]] | None = None,
+    transfer_research_audit: dict[str, Any] | None = None,
+    market_players: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     observed_at = iso_now()
     runtime_config = copy.deepcopy(config)
@@ -1185,6 +1355,29 @@ def build_snapshot(
         provider_audit[provider] = audit
         for kicker_id, items in signals.items():
             all_signals[kicker_id].extend(items)
+
+    merge_market_mappings(runtime_config, market_players)
+    if researched_transfer_reports:
+        provider_audit["openai_transfer_watcher"] = {
+            "status": str(
+                (transfer_research_audit or {}).get("status", "ok")
+            ),
+            "fetched_at": observed_at,
+            "records": len(researched_transfer_reports),
+            "requests": int(
+                (transfer_research_audit or {}).get("requests", 0)
+            ),
+        }
+    for kicker_id, report in (researched_transfer_reports or {}).items():
+        if not isinstance(report, dict) or not report.get("fresh", False):
+            continue
+        editorial_signal = transfer_report_signal(
+            str(kicker_id),
+            report,
+            observed_at=observed_at,
+        )
+        if editorial_signal is not None:
+            all_signals[str(kicker_id)].append(editorial_signal)
 
     players: dict[str, Any] = {}
     for kicker_id, mapping in runtime_config.get("players", {}).items():
@@ -1263,6 +1456,20 @@ def build_snapshot(
             "requests": 0,
             "failures": [],
         },
+        "transfer_profiles": researched_transfer_reports or {},
+        "transfer_research_abstentions": (
+            transfer_research_abstentions or {}
+        ),
+        "transfer_research": transfer_research_audit or {
+            "status": "not_configured",
+            "targets": 0,
+            "cache_hits": 0,
+            "researched_reports": 0,
+            "researched_abstentions": 0,
+            "researched_inconclusive": 0,
+            "requests": 0,
+            "failures": [],
+        },
     }
     validate_snapshot(payload)
     payload["content_sha256"] = canonical_sha256(payload)
@@ -1283,6 +1490,13 @@ def parse_args() -> argparse.Namespace:
         help="maximum targets; 0 researches every available market player",
     )
     parser.add_argument("--openai-role-batch-size", type=int, default=8)
+    parser.add_argument(
+        "--openai-transfer-max-players",
+        type=int,
+        default=0,
+        help="maximum transfer-watcher targets; 0 researches the full market",
+    )
+    parser.add_argument("--openai-transfer-batch-size", type=int, default=8)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--previous")
     parser.add_argument(
@@ -1307,6 +1521,12 @@ def parse_args() -> argparse.Namespace:
         )
     if not 1 <= args.openai_role_batch_size <= 8:
         parser.error("--openai-role-batch-size must be between 1 and 8")
+    if not 0 <= args.openai_transfer_max_players <= 2_000:
+        parser.error(
+            "--openai-transfer-max-players must be 0 (all) or between 1 and 2000"
+        )
+    if not 1 <= args.openai_transfer_batch_size <= 8:
+        parser.error("--openai-transfer-batch-size must be between 1 and 8")
     if bool(args.market) != bool(args.previous_quality):
         parser.error(
             "--market and --previous-quality must be provided together"
@@ -1379,6 +1599,19 @@ def main() -> int:
         "requests": 0,
         "failures": [],
     }
+    researched_transfer_reports: dict[str, dict[str, Any]] = {}
+    transfer_research_abstentions: dict[str, dict[str, Any]] = {}
+    transfer_research_audit: dict[str, Any] = {
+        "status": "not_configured",
+        "targets": 0,
+        "cache_hits": 0,
+        "researched_reports": 0,
+        "researched_abstentions": 0,
+        "researched_inconclusive": 0,
+        "requests": 0,
+        "failures": [],
+    }
+    market_payload: dict[str, Any] | None = None
     if args.market and args.previous_quality:
         market_payload = load_market_snapshot(args.market)
         try:
@@ -1505,6 +1738,80 @@ def main() -> int:
                 and str(player.get("club", "")).strip()
             }
         )
+        transfer_targets = select_transfer_targets(
+            market_payload,
+            previous_quality,
+            previous_news,
+            max_players=args.openai_transfer_max_players,
+        )
+        if api_key:
+            (
+                researched_transfer_reports,
+                transfer_research_abstentions,
+                transfer_research_audit,
+            ) = research_transfer_reports(
+                transfer_targets,
+                competition=str(config["competition"]),
+                season=str(config["season"]),
+                competition_clubs=set(clubs),
+                previous_reports=(
+                    previous_news.get("transfer_profiles", {})
+                    if isinstance(previous_news, dict)
+                    else {}
+                ),
+                previous_abstentions=(
+                    previous_news.get(
+                        "transfer_research_abstentions",
+                        {},
+                    )
+                    if isinstance(previous_news, dict)
+                    else {}
+                ),
+                api_key=api_key,
+                model=args.openai_role_model,
+                batch_size=args.openai_transfer_batch_size,
+            )
+        else:
+            researched_transfer_reports = {
+                str(player_id): dict(report)
+                for player_id, report in (
+                    previous_news.get("transfer_profiles", {}).items()
+                    if isinstance(previous_news, dict)
+                    and isinstance(
+                        previous_news.get("transfer_profiles"),
+                        dict,
+                    )
+                    else []
+                )
+                if isinstance(report, dict) and report.get("fresh", False)
+            }
+            transfer_research_abstentions = {
+                str(player_id): dict(record)
+                for player_id, record in (
+                    previous_news.get(
+                        "transfer_research_abstentions",
+                        {},
+                    ).items()
+                    if isinstance(previous_news, dict)
+                    and isinstance(
+                        previous_news.get(
+                            "transfer_research_abstentions"
+                        ),
+                        dict,
+                    )
+                    else []
+                )
+                if isinstance(record, dict)
+            }
+            transfer_research_audit = {
+                **transfer_research_audit,
+                "model": args.openai_role_model,
+                "targets": len(transfer_targets),
+                "cache_hits": (
+                    len(researched_transfer_reports)
+                    + len(transfer_research_abstentions)
+                ),
+            }
         if api_key:
             (
                 researched_team_profiles,
@@ -1552,6 +1859,14 @@ def main() -> int:
             role_research_audit=role_research_audit,
             researched_team_profiles=researched_team_profiles,
             team_research_audit=team_research_audit,
+            researched_transfer_reports=researched_transfer_reports,
+            transfer_research_abstentions=transfer_research_abstentions,
+            transfer_research_audit=transfer_research_audit,
+            market_players=(
+                market_payload.get("players", [])
+                if isinstance(market_payload, dict)
+                else []
+            ),
         )
     except RuntimeError as error:
         if not args.previous or not is_api_sports_daily_limit(error):
@@ -1571,6 +1886,14 @@ def main() -> int:
             role_research_audit=role_research_audit,
             team_profiles=researched_team_profiles,
             team_research_audit=team_research_audit,
+            transfer_reports=researched_transfer_reports,
+            transfer_research_abstentions=transfer_research_abstentions,
+            transfer_research_audit=transfer_research_audit,
+            market_players=(
+                market_payload.get("players", [])
+                if isinstance(market_payload, dict)
+                else []
+            ),
         )
         validate_snapshot(payload)
         print(
@@ -1596,6 +1919,7 @@ def main() -> int:
                 "providers": sorted(payload["providers"]),
                 "role_research": payload["role_research"],
                 "team_research": payload["team_research"],
+                "transfer_research": payload["transfer_research"],
                 "content_sha256": payload["content_sha256"],
             },
             ensure_ascii=False,

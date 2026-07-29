@@ -4,7 +4,7 @@
 
 Die News-Prüfung ist hybrid:
 
-1. Ein zentraler Lauf liest API-Sports viermal täglich mit dem geheimen Provider-Schlüssel aus. Sportmonks ist als optionale unabhängige Zweitquelle zugeschaltet, sobald Token sowie verifizierte Team- und Spielerzuordnungen vorliegen. OpenAI Web Search recherchiert priorisierte aktuelle Rollenfragen und liefert streng strukturierte, quellengebundene Profile.
+1. Ein zentraler Lauf liest API-Sports viermal täglich mit dem geheimen Provider-Schlüssel aus. Sportmonks ist als optionale unabhängige Zweitquelle zugeschaltet, sobald Token sowie verifizierte Team- und Spielerzuordnungen vorliegen. OpenAI Web Search recherchiert aktuelle Rollenfragen und führt zusätzlich einen redaktionellen Transfer-Watcher für den vollständigen Kicker-Markt aus. Dieser durchsucht bevorzugt offizielle Vereins- und Ligaseiten sowie Transfermarkt, kicker und Sky und liefert streng strukturierte, quellengebundene Profile.
 2. Er veröffentlicht ausschließlich ein normalisiertes Snapshot ohne Schlüssel und ohne vollständige Rohantworten.
 3. Der zentrale Qualitätslauf verbindet dieses Snapshot mit einem getrennten, ebenfalls frischen Vorbereitungssnapshot und prüft Alter, Wettbewerb, Saison, Prüfsummen, Spielerzuordnung und Provider-Konflikte.
 4. Offizielle Vereins-, Liga- und Transfermeldungen bleiben der gezielte Fallback für fehlende Zuordnungen, Konflikte und besonders folgenreiche Meldungen.
@@ -18,6 +18,8 @@ Vorbereitung nicht als gewöhnliche News-Risikomeldung modellieren. Testspiele b
 - Ein aktuelles Snapshot läuft nach höchstens 18 Stunden ab. Ein abgelaufenes oder nicht zum Wettbewerb beziehungsweise zur Saison passendes Snapshot darf keinen finalen Browserumbau begründen.
 - Risiken aus dem Snapshot dürfen manuelle Annotationen erhöhen, aber niemals herabsetzen. Die Fitness darf nur nach unten begrenzt werden.
 - Ein Transfergerücht führt nie automatisch zum Ausschluss. Es erhöht Transfer- und Rollenrisiko und kann den Status als verlässlicher Anker kosten.
+- Der redaktionelle Transfer-Watcher unterscheidet `rumour`, `advanced` und `confirmed`. Kontakt, Verhandlungen, grundsätzliche Einigung, Medizincheck oder ein redaktionelles „Transfer fix“ bleiben ohne offizielle Vereins- oder Ligabestätigung `advanced` und dürfen keinen automatischen Ausschluss auslösen. Ein offizieller Abgang wird anhand von aktuellem Verein, Zielverein und Ligamenge deterministisch als `out`, `within_competition` oder `in` eingeordnet.
+- Neue Kicker-Marktspieler bleiben auch dann im News-Snapshot sichtbar, wenn API-Sports den neuen Kader noch nicht kennt. So können Rollen- und Transferprofile die Provider-Verzögerung überbrücken, ohne eine nicht vorhandene Provider-ID vorzutäuschen.
 - Die automatische Kadererkennung speichert auch die Provider-Position. Dadurch kann der Qualitätslauf vereinsweise alle Torhüter erkennen. Ein bereits im Provider-Kader geführter, aber noch nicht im aktuellen Kicker-Markt zuordenbarer eingehender Torwart erhöht das externe Besetzungsrisiko des gesamten Blocks deutlich; ein bloßer zusätzlicher Nachwuchskeeper ohne Transferbeleg erhöht nur die Unsicherheit.
 - Torwarttransfers werden nicht wie gewöhnliche Rotationssignale behandelt. Da Trainer eine Nummer eins häufig langfristig festlegen, senkt ein plausibler externer Stammkeeper die Saison-Stammplatzwahrscheinlichkeit des bisherigen Favoriten und kann den Block für `gering` vollständig sperren.
 - Ein bestätigter Transfer wird nur dann als Abgang behandelt, wenn die Richtung aus dem aktuellen Verein heraus verifiziert ist. Historische oder eingehende Transfers sind kein Ausschlussgrund.
@@ -46,6 +48,8 @@ Die OpenAI-Rollenrecherche bezieht jeden aktuell verfügbaren Spieler der zentra
 Die getrennte OpenAI-Teamrecherche arbeitet einmal je Verein und cached das Ergebnis vierzehn Tage. Sie erfasst den aktuellen Trainer, belegte jüngere Trainerhistorie, bevorzugte Systeme, Jugendeinsatz, Rotation, Systemstabilität sowie den aktuellen offensiven und defensiven Ausblick. Mindestens ein aktueller Beleg der letzten 30 Tage ist erforderlich; ältere Karrierebelege dürfen diesen nur ergänzen. Das Teamprofil verändert individuelle Leistung nie direkt, sondern begrenzt Teamkontext und Trainer-/Systemsignale.
 
 Trainerentscheidungen, Aussagen zur sofortigen Hilfe oder Perspektivrolle, glaubhafte externe Torwart-Transfergefahr und aktuelle Standardverantwortungen bleiben so zentral wiederverwendbar, ohne Provider-Risikosignale mit redaktioneller Rolleninterpretation zu vermischen. Snapshots werden als Pages-Artefakt veröffentlicht und nicht in Git eingecheckt.
+
+Der Transfer-Watcher prüft alle verfügbaren Marktspieler, priorisiert neue oder bereits auffällige Spieler und cached belegte Meldungen nur kurz: fortgeschrittene beziehungsweise bestätigte Vorgänge sechs Stunden, übrige Gerüchte zwölf Stunden. Ein belegtes „keine aktuelle Meldung“ wird 24 Stunden gecached. Das Modell entdeckt und extrahiert Quellen; Status, Richtung, Ausschlusswirkung und Konfliktbehandlung bleiben deterministisch. Bei Leihen werden zusätzlich Stammverein, Dealtyp, Leihzweck und das Niveau der aktuellen Seniorenliga des Stammvereins erfasst. Prestige allein erzeugt dabei keinen Leistungsnachweis.
 
 Für eine manuelle zentrale Ausführung gilt weiterhin:
 

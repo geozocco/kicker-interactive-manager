@@ -276,6 +276,85 @@ class ConsensusTests(unittest.TestCase):
             ),
         )
 
+    @patch.dict("os.environ", {}, clear=True)
+    def test_market_only_player_and_confirmed_editorial_transfer_are_kept(
+        self,
+    ) -> None:
+        report = {
+            "model_version": "openai-transfer-watch-v1",
+            "research_fingerprint": "transfer-1",
+            "status": "confirmed",
+            "stage": "official",
+            "direction": "in",
+            "from_club": "Bayer 04 Leverkusen",
+            "to_club": "Energie Cottbus",
+            "deal_type": "loan",
+            "loan_intent": "development_minutes",
+            "parent_club_level": "top_five_first_division",
+            "probability": 100,
+            "confidence": "high",
+            "contradiction": False,
+            "observed_at": "2026-07-28T12:00:00Z",
+            "refresh_after": "2026-07-29T18:00:00Z",
+            "expires_at": "2026-08-28T12:00:00Z",
+            "fresh": True,
+            "evidence": [
+                {
+                    "claim": "Offizielle Saisonleihe.",
+                    "source_url": "https://example.com/loan",
+                    "observed_at": "2026-07-28T12:00:00Z",
+                    "source_authority": "official_destination_club",
+                }
+            ],
+            "note": "",
+        }
+        payload = refresh.build_snapshot(
+            {
+                "competition": "2. Bundesliga",
+                "season": "2026/27",
+                "players": {},
+            },
+            providers=[],
+            ttl_hours=18,
+            researched_transfer_reports={"p1": report},
+            market_players=[
+                {
+                    "id": "p1",
+                    "name": "Luca Beispiel",
+                    "club": "Energie Cottbus",
+                    "position": "DEFENDER",
+                }
+            ],
+        )
+        self.assertIn("p1", payload["players"])
+        self.assertEqual(
+            "openai_transfer_watcher",
+            payload["players"]["p1"]["signals"][0]["source_provider"],
+        )
+        self.assertFalse(payload["players"]["p1"]["consensus"]["exclude"])
+
+    def test_advanced_editorial_report_never_auto_excludes(self) -> None:
+        editorial = refresh.transfer_report_signal(
+            "p1",
+            {
+                "status": "advanced",
+                "stage": "medical",
+                "direction": "out",
+                "from_club": "A",
+                "to_club": "B",
+                "deal_type": "permanent",
+                "research_fingerprint": "x",
+                "evidence": [
+                    {"source_url": "https://example.com/medical"}
+                ],
+            },
+            observed_at="2026-07-29T08:00:00Z",
+        )
+        assert editorial is not None
+        consensus = refresh.consensus_for([editorial])
+        self.assertFalse(consensus["exclude"])
+        self.assertEqual("low", consensus["confidence"])
+
 
 class ProviderPagingTests(unittest.TestCase):
     @patch.object(refresh, "request_json")

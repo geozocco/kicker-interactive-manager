@@ -55,7 +55,7 @@ from refresh_news_snapshot import (
 from advanced_signals import apply_advanced_signals
 
 
-MODEL_VERSION = "multi-season-v14-advanced-context"
+MODEL_VERSION = "multi-season-v15-loan-pathway"
 PRESEASON_MODEL_VERSION = "preseason-readiness-v3-role-responsibilities"
 FORM_MODEL_VERSION = "recency-context-v4-evidence-role-transfer"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
@@ -1018,6 +1018,24 @@ def cached_role_evidence(
         "cache_model_version": str(profile.get("model_version", "")),
         "cache_expires_at": str(profile.get("expires_at", "")),
     }
+
+
+def cached_transfer_profile(
+    news_payload: dict[str, Any],
+    player_id: str,
+) -> dict[str, Any]:
+    """Return only a fresh, grounded central transfer-watcher profile."""
+
+    profiles = news_payload.get("transfer_profiles", {})
+    profile = profiles.get(player_id, {}) if isinstance(profiles, dict) else {}
+    if (
+        not isinstance(profile, dict)
+        or not profile.get("fresh", False)
+        or profile.get("model_version") != "openai-transfer-watch-v1"
+        or profile.get("status") not in {"rumour", "advanced", "confirmed"}
+    ):
+        return {}
+    return dict(profile)
 
 
 def goalkeeper_role_cache_adjustment(profile: dict[str, Any] | None) -> float:
@@ -2329,6 +2347,210 @@ def lower_league_translation_profile(
     }
 
 
+def loan_pathway_profile(
+    history_player: dict[str, Any],
+    transfer_profile: dict[str, Any] | None,
+    *,
+    talent_profile: dict[str, Any],
+    lower_league_profile: dict[str, Any],
+    role_context: dict[str, Any],
+    target_strength: float,
+    age: int,
+) -> dict[str, Any]:
+    """Value a loan pathway without treating parent-club prestige as proof."""
+
+    transfer = (
+        transfer_profile if isinstance(transfer_profile, dict) else {}
+    )
+    active_loan = (
+        transfer.get("status") == "confirmed"
+        and transfer.get("stage") == "official"
+        and transfer.get("direction") == "in"
+        and transfer.get("deal_type") == "loan"
+        and transfer.get("fresh", False)
+    )
+    if not active_loan:
+        return {
+            "model_version": "loan-pathway-v1",
+            "status": "none",
+            "qualified_potential": False,
+            "parent_club": "",
+            "parent_club_level": "unknown",
+            "loan_intent": "unclear",
+            "source_level": None,
+            "higher_tier_senior_minutes": 0,
+            "value_bonus": 0.0,
+            "upside_bonus": 0.0,
+            "minutes_floor": 0.0,
+            "role_floor": 0.0,
+            "evidence": [],
+        }
+
+    senior_competitions: list[dict[str, Any]] = []
+    higher_tier_minutes = 0.0
+    for season in history_player.get("seasons", [])[:3]:
+        for competition in season.get("competitions", []):
+            if str(competition.get("kind", "")) != "domestic_league":
+                continue
+            strength = numeric(competition.get("strength_factor"))
+            minutes = numeric(competition.get("minutes"))
+            if minutes <= 0:
+                continue
+            senior_competitions.append(
+                {
+                    "competition": str(competition.get("label", "")),
+                    "strength_factor": round(strength, 3),
+                    "minutes": int(minutes),
+                }
+            )
+            if strength >= target_strength:
+                higher_tier_minutes += minutes
+    source_level = max(
+        senior_competitions,
+        key=lambda item: (
+            float(item["strength_factor"]),
+            int(item["minutes"]),
+        ),
+        default=None,
+    )
+
+    talent_score = numeric(talent_profile.get("talent_score"))
+    readiness = numeric(talent_profile.get("readiness_score"))
+    early_senior_minutes = numeric(
+        talent_profile.get("early_senior_weighted_minutes")
+    )
+    lower_status = str(lower_league_profile.get("status", "none"))
+    parent_level = str(
+        transfer.get("parent_club_level", "unknown")
+    )
+    intent = str(transfer.get("loan_intent", "unclear"))
+    start_probability = numeric(
+        role_context.get("expected_start_probability")
+    )
+    role_evidenced = bool(role_context.get("evidence"))
+
+    maturity_signal = (
+        3.0
+        if age <= 18 and early_senior_minutes >= 1_200
+        else 2.0
+        if age <= 20 and early_senior_minutes >= 700
+        else 1.0
+        if age <= 22 and readiness >= 60
+        else 0.0
+    )
+    parent_signal = {
+        "top_five_first_division": 1.5,
+        "other_first_division": 0.75,
+        "lower_division": 0.25,
+        "unknown": 0.0,
+    }.get(parent_level, 0.0)
+    intent_signal = {
+        "immediate_help": 2.0,
+        "development_minutes": 1.25,
+        "squad_depth": -1.5,
+        "unclear": 0.0,
+    }.get(intent, 0.0)
+    role_signal = (
+        2.0
+        if role_evidenced and start_probability >= 75
+        else 1.0
+        if role_evidenced and start_probability >= 60
+        else 0.0
+    )
+    lower_signal = (
+        2.0
+        if lower_status == "standout_lower_league"
+        else 0.75
+        if lower_status == "lower_league_watch"
+        else 0.0
+    )
+    higher_level_signal = min(2.5, higher_tier_minutes / 600)
+    independent_signal = (
+        maturity_signal
+        + lower_signal
+        + higher_level_signal
+        + role_signal
+    )
+    # Parent-club reputation is only a small corroborating signal. It cannot
+    # create a qualified pathway without performance, maturity, or role proof.
+    qualified = (
+        age <= 23
+        and (
+            talent_score >= 68
+            or higher_tier_minutes >= 300
+            or (
+                lower_status == "standout_lower_league"
+                and readiness >= 58
+            )
+        )
+    )
+    pathway_increment = (
+        min(1.0, 0.33 * maturity_signal)
+        + min(0.75, 0.38 * lower_signal)
+        + min(0.75, 0.30 * higher_level_signal)
+        + role_signal
+        + min(parent_signal, max(0.0, independent_signal * 0.35))
+        + intent_signal
+    )
+    value_bonus = (
+        min(
+            5.0,
+            max(0.0, pathway_increment),
+        )
+        if qualified
+        else 0.0
+    )
+    upside_bonus = (
+        min(
+            6.0,
+            max(0.0, 0.9 * pathway_increment),
+        )
+        if qualified
+        else 0.0
+    )
+    minutes_floor = (
+        clamp(48 + 0.24 * start_probability)
+        if qualified and role_evidenced and start_probability >= 60
+        else 0.0
+    )
+    role_floor = (
+        clamp(50 + 0.24 * start_probability)
+        if qualified and role_evidenced and start_probability >= 60
+        else 0.0
+    )
+    return {
+        "model_version": "loan-pathway-v1",
+        "status": (
+            "qualified"
+            if qualified
+            else "loan_watch"
+        ),
+        "qualified_potential": qualified,
+        "parent_club": str(transfer.get("from_club", "")).strip(),
+        "parent_club_level": parent_level,
+        "loan_intent": intent,
+        "source_level": source_level,
+        "higher_tier_senior_minutes": int(higher_tier_minutes),
+        "parent_environment_signal": round(parent_signal, 2),
+        "independent_performance_signal": round(independent_signal, 2),
+        "value_bonus": round(value_bonus, 2),
+        "upside_bonus": round(upside_bonus, 2),
+        "minutes_floor": minutes_floor,
+        "role_floor": role_floor,
+        "evidence": [
+            {
+                "claim": str(item.get("claim", "")).strip(),
+                "source_url": str(item.get("source_url", "")).strip(),
+                "checked_at": str(item.get("observed_at", "")).strip(),
+            }
+            for item in transfer.get("evidence", [])
+            if isinstance(item, dict)
+            and str(item.get("claim", "")).strip()
+            and str(item.get("source_url", "")).startswith("https://")
+        ],
+    }
+
+
 def build_annotation(
     market_player: dict[str, Any],
     news_id: str,
@@ -2340,6 +2562,7 @@ def build_annotation(
     role_evidence: dict[str, Any] | None = None,
     manual_news_clearance: dict[str, Any] | None = None,
     preseason_player: dict[str, Any] | None = None,
+    transfer_profile: dict[str, Any] | None = None,
     *,
     competition: str,
     points_pct: float,
@@ -2634,6 +2857,19 @@ def build_annotation(
         role_evidence=resolved_role_evidence,
         club_changed=form_summary["club_changed"],
     )
+    loan_pathway = loan_pathway_profile(
+        history_player,
+        transfer_profile,
+        talent_profile=talent_profile,
+        lower_league_profile=lower_league_profile,
+        role_context=role_context,
+        target_strength=target_strength,
+        age=age,
+    )
+    minutes = max(minutes, float(loan_pathway["minutes_floor"]))
+    role = max(role, float(loan_pathway["role_floor"]))
+    upside = clamp(upside + float(loan_pathway["upside_bonus"]))
+    value = clamp(value + float(loan_pathway["value_bonus"]))
     role_adjustments = role_context["adjustments"]
     transfermarkt_scorer_metrics = transfermarkt_role_metrics(
         history_player
@@ -2857,6 +3093,8 @@ def build_annotation(
                 "checked_at": str(item["checked_at"]),
             }
         )
+    for item in loan_pathway["evidence"]:
+        evidence.append(dict(item))
     for item in (preseason_player or {}).get("observations", []):
         if (
             isinstance(item, dict)
@@ -2908,6 +3146,7 @@ def build_annotation(
         "editorial_talent_signal": round(editorial_talent_signal, 2),
         "talent_profile": talent_profile,
         "lower_league_translation": lower_league_profile,
+        "loan_pathway": loan_pathway,
     }
     return {
         "position": position,
@@ -2968,6 +3207,15 @@ def build_annotation(
                     if role_context["evidence"]
                     else ""
                 ),
+                (
+                    "Leihpfad: "
+                    f"{loan_pathway['status']}, "
+                    f"Stammvereinsniveau "
+                    f"{loan_pathway['parent_club_level']}, "
+                    f"Leihzweck {loan_pathway['loan_intent']}."
+                    if loan_pathway["status"] != "none"
+                    else ""
+                ),
                 str(talent_evidence.get("note", "")).strip(),
             )
             if part
@@ -2985,6 +3233,7 @@ def build_annotation(
             "rating_weight_in_api_confirmation": 0.08,
         },
         "role_context": role_context,
+        "loan_pathway": loan_pathway,
         "scorer_profile": scorer_profile,
         "role_research": role_research,
         "manual_news_clearance": manual_clearance,
@@ -3671,6 +3920,10 @@ def generate_snapshot(
                 preseason_payload.get("players", {}).get(
                     str(market_player["id"])
                 ),
+            ),
+            cached_transfer_profile(
+                news_payload,
+                str(market_player["id"]),
             ),
             competition=str(market_payload["competition"]),
             points_pct=percentile(

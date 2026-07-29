@@ -365,6 +365,128 @@ def validate_snapshot(
                 raise NewsSnapshotError(
                     f"invalid team profile evidence for {club!r}"
                 )
+    transfer_profiles = payload.get("transfer_profiles", {})
+    if not isinstance(transfer_profiles, dict):
+        raise NewsSnapshotError("news transfer_profiles must be an object")
+    for player_id, profile in transfer_profiles.items():
+        if (
+            not str(player_id).strip()
+            or not isinstance(profile, dict)
+            or profile.get("model_version") != "openai-transfer-watch-v1"
+            or profile.get("status") not in {"rumour", "advanced", "confirmed"}
+            or profile.get("stage")
+            not in {
+                "rumour",
+                "contact",
+                "negotiation",
+                "agreement",
+                "medical",
+                "official",
+            }
+            or profile.get("direction")
+            not in {"in", "out", "within_competition", "unknown"}
+            or profile.get("deal_type")
+            not in {"permanent", "loan", "loan_return", "unknown"}
+            or profile.get("confidence") not in CONFIDENCE_ORDER
+            or not isinstance(profile.get("fresh"), bool)
+            or not isinstance(profile.get("evidence"), list)
+            or not profile.get("evidence")
+        ):
+            raise NewsSnapshotError(
+                f"invalid transfer research profile for {player_id!r}"
+            )
+        observed_at = parse_timestamp(
+            profile.get("observed_at"),
+            "transfer_profile.observed_at",
+        )
+        refresh_after = parse_timestamp(
+            profile.get("refresh_after"),
+            "transfer_profile.refresh_after",
+        )
+        transfer_expires_at = parse_timestamp(
+            profile.get("expires_at"),
+            "transfer_profile.expires_at",
+        )
+        if not observed_at <= refresh_after < transfer_expires_at:
+            raise NewsSnapshotError(
+                f"invalid transfer profile expiry for {player_id!r}"
+            )
+        probability = profile.get("probability")
+        if (
+            isinstance(probability, bool)
+            or not isinstance(probability, (int, float))
+            or not 0 <= float(probability) <= 100
+        ):
+            raise NewsSnapshotError(
+                f"invalid transfer probability for {player_id!r}"
+            )
+        for item in profile["evidence"]:
+            if (
+                not isinstance(item, dict)
+                or not str(item.get("claim", "")).strip()
+                or not str(item.get("source_url", "")).startswith("https://")
+            ):
+                raise NewsSnapshotError(
+                    f"invalid transfer evidence for {player_id!r}"
+                )
+            parse_timestamp(
+                item.get("observed_at"),
+                "transfer_profile.evidence.observed_at",
+            )
+    transfer_abstentions = payload.get(
+        "transfer_research_abstentions",
+        {},
+    )
+    if not isinstance(transfer_abstentions, dict):
+        raise NewsSnapshotError(
+            "news transfer_research_abstentions must be an object"
+        )
+    for player_id, record in transfer_abstentions.items():
+        status = str(record.get("status", "")) if isinstance(record, dict) else ""
+        if (
+            not str(player_id).strip()
+            or not isinstance(record, dict)
+            or status
+            not in {
+                "no_grounded_transfer_signal",
+                "research_inconclusive",
+            }
+            or not str(record.get("model_version", "")).strip()
+            or not str(record.get("research_model", "")).strip()
+            or (
+                status == "research_inconclusive"
+                and not str(record.get("reason", "")).strip()
+            )
+        ):
+            raise NewsSnapshotError(
+                f"invalid transfer-research abstention for {player_id!r}"
+            )
+        checked_at = parse_timestamp(
+            record.get("checked_at"),
+            "transfer_research_abstention.checked_at",
+        )
+        refresh_after = parse_timestamp(
+            record.get("refresh_after"),
+            "transfer_research_abstention.refresh_after",
+        )
+        abstention_expires_at = parse_timestamp(
+            record.get("expires_at"),
+            "transfer_research_abstention.expires_at",
+        )
+        if not checked_at < refresh_after < abstention_expires_at:
+            raise NewsSnapshotError(
+                f"invalid transfer-research abstention expiry for {player_id!r}"
+            )
+    transfer_research = payload.get("transfer_research", {})
+    if not isinstance(transfer_research, dict):
+        raise NewsSnapshotError("news transfer_research must be an object")
+    if transfer_research and transfer_research.get("status") not in {
+        "ok",
+        "partial",
+        "unavailable",
+        "not_configured",
+    }:
+        raise NewsSnapshotError("news transfer_research status is invalid")
     role_research = payload.get("role_research", {})
     if not isinstance(role_research, dict):
         raise NewsSnapshotError("news role_research must be an object")
@@ -461,6 +583,10 @@ def snapshot_audit(payload: dict[str, Any]) -> dict[str, Any]:
         "role_research": dict(payload.get("role_research", {})),
         "role_research_abstention_count": len(
             payload.get("role_research_abstentions", {})
+        ),
+        "transfer_research": dict(payload.get("transfer_research", {})),
+        "transfer_research_abstention_count": len(
+            payload.get("transfer_research_abstentions", {})
         ),
         "player_count": len(player_entries),
         "signal_count": sum(

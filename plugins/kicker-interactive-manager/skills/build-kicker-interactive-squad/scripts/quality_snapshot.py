@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 
 SCHEMA_VERSION = 3
-GOALKEEPER_HIERARCHY_MODEL = "multi-season-v14-advanced-context"
+GOALKEEPER_HIERARCHY_MODEL = "multi-season-v15-loan-pathway"
 RECENCY_FORM_MODEL = "recency-context-v4-evidence-role-transfer"
 PRESEASON_READINESS_MODEL = "preseason-readiness-v3-role-responsibilities"
 EXPECTED_ROLE_MODEL = "expected-role-v3"
@@ -333,6 +333,37 @@ def validate_snapshot(
             raise QualitySnapshotError(
                 f"quality history youth_score is invalid for {player_id}"
             )
+        if hierarchy_model:
+            loan_pathway = annotation.get("loan_pathway")
+            if (
+                not isinstance(loan_pathway, dict)
+                or loan_pathway.get("model_version") != "loan-pathway-v1"
+                or loan_pathway.get("status")
+                not in {"none", "loan_watch", "qualified"}
+                or not isinstance(
+                    loan_pathway.get("qualified_potential"),
+                    bool,
+                )
+            ):
+                raise QualitySnapshotError(
+                    f"quality loan pathway is invalid for {player_id}"
+                )
+            for field_name in (
+                "value_bonus",
+                "upside_bonus",
+                "minutes_floor",
+                "role_floor",
+            ):
+                value = loan_pathway.get(field_name)
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not 0 <= float(value) <= 100
+                ):
+                    raise QualitySnapshotError(
+                        f"quality loan pathway {field_name} is invalid "
+                        f"for {player_id}"
+                    )
         if recency_form_model:
             form_summary = annotation.get("form_summary")
             if (
