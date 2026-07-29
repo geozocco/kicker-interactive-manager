@@ -2719,7 +2719,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             after["bench_usage_weights"]["FORWARD"],
         )
         self.assertEqual(
-            "joint-xi-bench-v11-elite-rebound",
+            "joint-xi-bench-v12-formation-flexibility",
             optimized.architecture_diagnostics["model_version"],
         )
         self.assertGreater(
@@ -3008,6 +3008,165 @@ class ReliableCorePolicyTests(unittest.TestCase):
         self.assertGreater(
             concentrated["architecture_objective"],
             flat["architecture_objective"],
+        )
+
+    def test_formation_flexibility_credits_only_legal_alternative_starters(
+        self,
+    ) -> None:
+        players: list[optimizer.Player] = []
+        scores: dict[str, float] = {}
+        for index, score in enumerate((100.0, 99.0, 98.0)):
+            item = player(
+                f"flex-g{index}",
+                "Flex Goalkeeper Club",
+                "GOALKEEPER",
+                100,
+            )
+            players.append(item)
+            scores[item.player_id] = score
+        for position, prefix, values in (
+            (
+                "DEFENDER",
+                "flex-d",
+                (100.0, 99.0, 98.0, 93.0, 20.0, 19.0, 18.0),
+            ),
+            (
+                "MIDFIELDER",
+                "flex-m",
+                (100.0, 99.0, 98.0, 97.0, 20.0, 19.0, 18.0),
+            ),
+            (
+                "FORWARD",
+                "flex-f",
+                (110.0, 109.0, 108.0, 90.0, 80.0),
+            ),
+        ):
+            for index, score in enumerate(values):
+                item = player(
+                    f"{prefix}{index}",
+                    f"Flex Club {prefix}{index}",
+                    position,
+                    100,
+                )
+                players.append(item)
+                scores[item.player_id] = score
+        formation, core_ids = optimizer.best_starting_lineup(
+            players,
+            scores,
+        )
+
+        audit = optimizer.formation_flexibility_audit(
+            optimizer.Squad(players, 0.0),
+            scores,
+            scores,
+            core_ids,
+        )
+
+        self.assertEqual("3-4-3", formation)
+        self.assertIn("flex-d3", audit["eligible_player_ids"])
+        self.assertNotIn("flex-f3", audit["eligible_player_ids"])
+        self.assertGreater(audit["adjustment"], 0.0)
+
+    def test_expensive_fourth_forward_must_beat_cross_position_upgrade(
+        self,
+    ) -> None:
+        selected: list[optimizer.Player] = []
+        scores: dict[str, float] = {}
+        for index, score in enumerate((100.0, 99.0, 98.0)):
+            item = player(
+                f"gate-g{index}",
+                "Gate Goalkeeper Club",
+                "GOALKEEPER",
+                100,
+            )
+            selected.append(item)
+            scores[item.player_id] = score
+        for position, prefix, values, starter_cost in (
+            (
+                "DEFENDER",
+                "gate-d",
+                (95.0, 94.0, 93.0, 40.0, 39.0, 38.0, 37.0),
+                200,
+            ),
+            (
+                "MIDFIELDER",
+                "gate-m",
+                (95.0, 94.0, 93.0, 92.0, 30.0, 29.0, 28.0),
+                200,
+            ),
+        ):
+            for index, score in enumerate(values):
+                item = player(
+                    f"{prefix}{index}",
+                    f"Gate Club {prefix}{index}",
+                    position,
+                    starter_cost if index < 3 else 50,
+                )
+                selected.append(item)
+                scores[item.player_id] = score
+        for index, (cost, score) in enumerate(
+            (
+                (300, 105.0),
+                (300, 104.0),
+                (300, 103.0),
+                (300, 80.0),
+                (50, 30.0),
+            )
+        ):
+            item = player(
+                f"gate-f{index}",
+                f"Gate Club f{index}",
+                "FORWARD",
+                cost,
+            )
+            selected.append(item)
+            scores[item.player_id] = score
+        cheap_forward = player(
+            "gate-f-cheap",
+            "Gate Cheap Forward Club",
+            "FORWARD",
+            50,
+        )
+        upgraded_midfielder = player(
+            "gate-m-upgrade",
+            "Gate Midfielder Upgrade Club",
+            "MIDFIELDER",
+            300,
+        )
+        scores[cheap_forward.player_id] = 20.0
+        scores[upgraded_midfielder.player_id] = 120.0
+        squad = optimizer.Squad(
+            selected,
+            sum(scores[item.player_id] for item in selected),
+        )
+
+        optimized = optimizer.optimize_joint_squad_architecture(
+            squad,
+            [*selected, cheap_forward, upgraded_midfielder],
+            scores,
+            scores,
+            budget=squad.cost,
+            club_cap=4,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.50,
+            target_core_budget_share=0.65,
+        )
+
+        self.assertNotIn("gate-f3", optimized.ids)
+        self.assertIn(cheap_forward.player_id, optimized.ids)
+        self.assertIn(upgraded_midfielder.player_id, optimized.ids)
+        self.assertGreater(
+            optimized.architecture_diagnostics[
+                "expensive_fourth_forward_counterfactuals_evaluated"
+            ],
+            0,
+        )
+        self.assertTrue(
+            optimized.architecture_diagnostics[
+                "expensive_fourth_forward_justified"
+            ]
         )
 
     def test_forward_package_search_escapes_two_swap_price_grid(self) -> None:

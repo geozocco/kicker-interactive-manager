@@ -205,6 +205,42 @@ class TransferNormalizationTests(unittest.TestCase):
         self.assertEqual("Bayer Leverkusen", report["from_club"])
         self.assertEqual("FC Energie Cottbus", report["to_club"])
 
+    def test_official_register_does_not_read_embedded_duplicate_as_outbound(
+        self,
+    ) -> None:
+        market = {
+            "players": [
+                {
+                    "id": "p1",
+                    "name": "Robert Beispiel",
+                    "club": "VfL Wolfsburg",
+                    "position": "FORWARD",
+                    "market_value": 900_000,
+                    "available": True,
+                }
+            ]
+        }
+        reports = transfer.parse_bundesliga_transfer_centre(
+            (
+                "Wolfsburg\n"
+                "In: Robert Beispiel (Hamburg), Zugang Zwei (Berlin)\n"
+                "Out: Abgang Eins (London)\n"
+                "<html>embedded article copy Robert Beispiel (Hamburg)</html>\n"
+                "Wolfsburg\n"
+                "In: Zugang Drei (Mainz)\n"
+                "Out: Abgang Zwei (Paris)"
+            ),
+            market=market,
+            source_url="https://www.bundesliga.com/transfer-centre",
+            now=NOW,
+            model="gpt-5.6-luna",
+        )
+
+        report = reports["p1"]
+        self.assertEqual("in", report["direction"])
+        self.assertEqual("Hamburg", report["from_club"])
+        self.assertEqual("VfL Wolfsburg", report["to_club"])
+
 
 class TransferResearchTests(unittest.TestCase):
     def test_no_signal_is_cached_for_one_day(self) -> None:

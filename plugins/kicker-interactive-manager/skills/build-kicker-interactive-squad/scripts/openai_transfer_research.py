@@ -350,11 +350,9 @@ def parse_bundesliga_transfer_centre(
     }
     blocks = re.finditer(
         r"(?:^|\n)(?P<club>[^\n]{2,80})\n"
-        r"In:\s*(?P<incoming>.*?)\n"
-        r"Out:\s*(?P<outgoing>.*?)"
-        r"(?=\n[^\n]{2,80}\nIn:|\Z)",
+        r"In:\s*(?P<incoming>[^\n]*)\n"
+        r"Out:\s*(?P<outgoing>[^\n]*)",
         decoded,
-        flags=re.DOTALL,
     )
     reports: dict[str, dict[str, Any]] = {}
     for block in blocks:

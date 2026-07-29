@@ -121,9 +121,9 @@ VARIATION_STATE_ENV = "KICKER_VARIATION_STATE"
 VARIATION_STATE_SCHEMA_VERSION = 2
 OPTIMIZER_CACHE_ENV = "KICKER_OPTIMIZER_CACHE"
 OPTIMIZER_CACHE_SCHEMA_VERSION = 1
-OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v5-marginal-bench"
+OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v6-formation-flexibility"
 ARCHITECTURE_MODEL_VERSION = (
-    "joint-xi-bench-v11-elite-rebound"
+    "joint-xi-bench-v12-formation-flexibility"
 )
 COMPETITION_BUDGETS = {
     "Bundesliga": 42_500_000,
@@ -2209,6 +2209,115 @@ def best_starting_lineup(
     return chosen[1], chosen[2]
 
 
+def formation_flexibility_audit(
+    squad: Squad,
+    lineup_scores: Mapping[str, float],
+    raw_scores: Mapping[str, float],
+    core_ids: AbstractSet[str],
+) -> dict[str, Any]:
+    """Credit reserves that can enter a near-equivalent legal formation."""
+
+    by_position = {
+        position: sorted(
+            (
+                player
+                for player in squad.players
+                if player.position == position
+            ),
+            key=lambda player: (
+                -lineup_scores[player.player_id],
+                player.player_id,
+            ),
+        )
+        for position in DEFAULT_SLOTS
+    }
+    if not by_position["GOALKEEPER"] or not core_ids:
+        return {
+            "adjustment": 0.0,
+            "eligible_player_ids": [],
+            "player_credits": {},
+            "near_equivalent_formations": [],
+        }
+    goalkeeper = expected_primary_goalkeeper(
+        by_position["GOALKEEPER"],
+        dict(lineup_scores),
+    )
+    reference_score = sum(
+        lineup_scores[player_id] for player_id in core_ids
+    )
+    players_by_id = {
+        player.player_id: player for player in squad.players
+    }
+    credits: dict[str, float] = {}
+    formation_options: list[dict[str, Any]] = []
+    for defenders, midfielders, forwards in FORMATIONS:
+        counts = {
+            "DEFENDER": defenders,
+            "MIDFIELDER": midfielders,
+            "FORWARD": forwards,
+        }
+        if any(
+            len(by_position[position]) < count
+            for position, count in counts.items()
+        ):
+            continue
+        alternative_ids = {goalkeeper.player_id}
+        for position, count in counts.items():
+            alternative_ids.update(
+                player.player_id
+                for player in by_position[position][:count]
+            )
+        added_ids = alternative_ids.difference(core_ids)
+        if not added_ids:
+            continue
+        alternative_score = sum(
+            lineup_scores[player_id] for player_id in alternative_ids
+        )
+        relative_gap = max(
+            0.0,
+            (reference_score - alternative_score)
+            / max(abs(reference_score), 1.0),
+        )
+        if relative_gap > FORMATION_FLEXIBILITY_MAX_GAP:
+            continue
+        closeness = max(
+            0.0,
+            1.0 - relative_gap / FORMATION_FLEXIBILITY_MAX_GAP,
+        )
+        credited_ids: list[str] = []
+        for player_id in added_ids:
+            player = players_by_id[player_id]
+            weight = FORMATION_FLEXIBILITY_WEIGHTS.get(
+                player.position,
+                0.0,
+            )
+            credit = max(
+                0.0,
+                raw_scores[player_id] * weight * closeness,
+            )
+            if credit <= 0.0:
+                continue
+            credits[player_id] = max(credits.get(player_id, 0.0), credit)
+            credited_ids.append(player_id)
+        if credited_ids:
+            formation_options.append(
+                {
+                    "formation": f"{defenders}-{midfielders}-{forwards}",
+                    "relative_gap": round(relative_gap, 6),
+                    "added_player_ids": sorted(credited_ids),
+                }
+            )
+    return {
+        "adjustment": sum(credits.values()),
+        "eligible_player_ids": sorted(credits),
+        "player_credits": {
+            player_id: round(value, 6)
+            for player_id, value in sorted(credits.items())
+        },
+        "near_equivalent_formations": formation_options,
+    }
+
+
 def reliable_core_audit(
     squad: Squad,
     scores: dict[str, float],
@@ -2380,6 +2489,12 @@ DEFENDER_MINIMUM_PRICE_STARTER_LIMITS = {
     "low": 1,
     "normal": 2,
     "active": 3,
+}
+FORMATION_FLEXIBILITY_MAX_GAP = 0.05
+FORMATION_FLEXIBILITY_WEIGHTS = {
+    "DEFENDER": 0.06,
+    "MIDFIELDER": 0.06,
+    "FORWARD": 0.04,
 }
 MIDFIELD_EXPENSIVE_ORDINARY_RESERVE_LIMITS = {
     "low": 1,
@@ -2923,6 +3038,12 @@ def squad_architecture_metrics(
             * player_usage_weights[player.player_id]
         )
     expected_contribution = sum(player_contributions.values())
+    formation_flexibility = formation_flexibility_audit(
+        squad,
+        lineup_scores,
+        raw_scores,
+        core_ids,
+    )
     target_gap = max(
         0.0,
         target_core_budget_share - audit["core_budget_share"],
@@ -3129,6 +3250,10 @@ def squad_architecture_metrics(
         "defensive_overspend_adjustment": (
             defensive_overspend_adjustment
         ),
+        "formation_flexibility_adjustment": (
+            formation_flexibility["adjustment"]
+        ),
+        "formation_flexibility": formation_flexibility,
         "qualified_potential_candidate_ids": sorted(
             qualified_potential_ids
         ),
@@ -3169,6 +3294,7 @@ def squad_architecture_metrics(
             + elite_rebound_reallocation_adjustment
             + potential_core_adjustment
             + defensive_overspend_adjustment
+            + formation_flexibility["adjustment"]
             - 50.0 * int(defender_audit["violation_score"])
             - 50.0 * int(midfield_audit["violation_score"])
         ),
@@ -3512,6 +3638,13 @@ def optimize_joint_squad_architecture(
         ]
         for position in positions
     }
+    candidate_lineup_scores = {
+        player.player_id: (
+            raw_scores[player.player_id]
+            + starting_scorer_leverage(player)
+        )
+        for player in candidates
+    }
     premium_starter_ids = premium_starter_candidate_ids(
         candidates,
         raw_scores,
@@ -3825,6 +3958,7 @@ def optimize_joint_squad_architecture(
     triple_swap_rosters_evaluated = 0
     four_swap_rosters_evaluated = 0
     cross_position_pair_rosters_evaluated = 0
+    expensive_fourth_forward_counterfactuals_evaluated = 0
     completed_iterations = 0
     marginal_search_complete = False
     position_packages_by_cost: dict[
@@ -3962,6 +4096,82 @@ def optimize_joint_squad_architecture(
             for player in current.players
             if player.position != "GOALKEEPER"
         ]
+        minimum_forward_cost = position_minimum_costs.get("FORWARD", 0)
+        ordered_forwards = sorted(
+            (
+                player
+                for player in current.players
+                if player.position == "FORWARD"
+            ),
+            key=lambda player: (
+                -candidate_lineup_scores[player.player_id],
+                player.player_id,
+            ),
+        )
+        expensive_fourth_forwards = [
+            player
+            for index, player in enumerate(ordered_forwards)
+            if (
+                index >= 3
+                and player.cost > minimum_forward_cost
+                and player.player_id
+                not in current_metrics["player_ids"]
+            )
+        ]
+        minimum_price_forwards = [
+            player
+            for player in candidate_by_position["FORWARD"]
+            if player.cost == minimum_forward_cost
+        ]
+        # A fourth or fifth forward can never join three other forwards in a
+        # legal XI. Exhaustively compare every such premium reserve with a
+        # minimum-price forward plus an exact-cost defender or midfielder
+        # upgrade before accepting the reserve spend.
+        for reserve in expensive_fourth_forwards:
+            for cheap_forward in minimum_price_forwards:
+                if cheap_forward.player_id in selected_ids:
+                    continue
+                saving = reserve.cost - cheap_forward.cost
+                if saving <= 0:
+                    continue
+                for incumbent in field_players:
+                    if incumbent.position not in {
+                        "DEFENDER",
+                        "MIDFIELDER",
+                    }:
+                        continue
+                    upgrade_cost = incumbent.cost + saving
+                    for upgrade in candidate_by_position[
+                        incumbent.position
+                    ]:
+                        if (
+                            upgrade.cost != upgrade_cost
+                            or upgrade.player_id in selected_ids
+                            or upgrade.player_id
+                            == cheap_forward.player_id
+                            or candidate_lineup_scores[
+                                upgrade.player_id
+                            ]
+                            <= candidate_lineup_scores[
+                                incumbent.player_id
+                            ]
+                        ):
+                            continue
+                        expensive_fourth_forward_counterfactuals_evaluated += 1
+                        consider(
+                            [
+                                (
+                                    cheap_forward
+                                    if player.player_id
+                                    == reserve.player_id
+                                    else upgrade
+                                    if player.player_id
+                                    == incumbent.player_id
+                                    else player
+                                )
+                                for player in current.players
+                            ]
+                        )
         for incumbent in field_players:
             for replacement in single_packages.get(
                 (incumbent.position, incumbent.cost),
@@ -4326,6 +4536,27 @@ def optimize_joint_squad_architecture(
         target_core_budget_share,
         maximum_reachable_core_share,
     )
+    final_ordered_forwards = sorted(
+        (
+            player
+            for player in current.players
+            if player.position == "FORWARD"
+        ),
+        key=lambda player: (
+            -candidate_lineup_scores[player.player_id],
+            player.player_id,
+        ),
+    )
+    final_expensive_fourth_forward_ids = sorted(
+        player.player_id
+        for index, player in enumerate(final_ordered_forwards)
+        if (
+            index >= 3
+            and player.cost
+            > position_minimum_costs.get("FORWARD", 0)
+            and player.player_id not in current_metrics["player_ids"]
+        )
+    )
     current.architecture_diagnostics = {
         "model_version": ARCHITECTURE_MODEL_VERSION,
         "passes": bool(
@@ -4470,6 +4701,12 @@ def optimize_joint_squad_architecture(
         "defensive_overspend_adjustment": current_metrics[
             "defensive_overspend_adjustment"
         ],
+        "formation_flexibility_adjustment": current_metrics[
+            "formation_flexibility_adjustment"
+        ],
+        "formation_flexibility": current_metrics[
+            "formation_flexibility"
+        ],
         "defender_architecture": current_metrics[
             "defender_architecture"
         ],
@@ -4492,6 +4729,15 @@ def optimize_joint_squad_architecture(
         "four_swap_rosters_evaluated": four_swap_rosters_evaluated,
         "cross_position_pair_rosters_evaluated": (
             cross_position_pair_rosters_evaluated
+        ),
+        "expensive_fourth_forward_ids": (
+            final_expensive_fourth_forward_ids
+        ),
+        "expensive_fourth_forward_counterfactuals_evaluated": (
+            expensive_fourth_forward_counterfactuals_evaluated
+        ),
+        "expensive_fourth_forward_justified": bool(
+            marginal_search_complete
         ),
         "architecture_metric_cache_hits": (
             architecture_metric_cache_hits
