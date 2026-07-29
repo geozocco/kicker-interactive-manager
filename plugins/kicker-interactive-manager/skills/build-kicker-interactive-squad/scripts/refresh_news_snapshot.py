@@ -31,6 +31,7 @@ from openai_role_research import (
 )
 from openai_team_research import research_team_profiles
 from openai_transfer_research import (
+    parse_bundesliga_transfer_centre,
     research_transfer_reports,
     select_transfer_targets,
 )
@@ -394,6 +395,33 @@ def request_json(
             if attempt + 1 < attempts:
                 time.sleep(1.0 * (2**attempt))
     raise RuntimeError(f"provider request failed for {base_url}: {last_error}")
+
+
+def request_text(
+    url: str,
+    *,
+    timeout: float = 20.0,
+    attempts: int = 3,
+) -> str:
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "Accept": "text/html,application/xhtml+xml",
+                    "User-Agent": USER_AGENT,
+                },
+            )
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.read().decode("utf-8", "replace")
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as error:
+            last_error = error
+            if attempt + 1 < attempts:
+                time.sleep(1.0 * (2**attempt))
+    raise RuntimeError(
+        f"editorial register request failed for {url}: {last_error}"
+    )
 
 
 def api_sports_pages(
@@ -1816,6 +1844,47 @@ def main() -> int:
                     + len(transfer_research_abstentions)
                 ),
             }
+        register_failures: list[str] = []
+        official_register_reports: dict[str, dict[str, Any]] = {}
+        for register in config.get("official_transfer_registers", []):
+            if not isinstance(register, dict):
+                register_failures.append("invalid register configuration")
+                continue
+            source_url = str(register.get("url", "")).strip()
+            try:
+                if (
+                    register.get("format")
+                    != "bundesliga_transfer_centre"
+                    or not source_url.startswith("https://")
+                ):
+                    raise RuntimeError(
+                        "unsupported official transfer register"
+                    )
+                parsed_reports = parse_bundesliga_transfer_centre(
+                    request_text(source_url),
+                    market=market_payload,
+                    source_url=source_url,
+                    now=datetime.now(timezone.utc),
+                    model=args.openai_role_model,
+                )
+                minimum_records = int(register.get("minimum_records", 1))
+                if len(parsed_reports) < minimum_records:
+                    raise RuntimeError(
+                        "official transfer register returned only "
+                        f"{len(parsed_reports)} matched records"
+                    )
+                official_register_reports.update(parsed_reports)
+            except (OSError, RuntimeError, ValueError) as error:
+                register_failures.append(str(error)[:240])
+        researched_transfer_reports.update(official_register_reports)
+        for player_id in official_register_reports:
+            transfer_research_abstentions.pop(player_id, None)
+        transfer_research_audit["official_register_reports"] = len(
+            official_register_reports
+        )
+        transfer_research_audit["official_register_failures"] = (
+            register_failures[:5]
+        )
         if api_key:
             (
                 researched_team_profiles,

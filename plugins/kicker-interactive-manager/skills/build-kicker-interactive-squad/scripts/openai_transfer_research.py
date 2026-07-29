@@ -9,7 +9,10 @@ affect availability in the current Kicker competition.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
+import re
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterable
@@ -304,6 +307,137 @@ def _same_club(left: Any, right: Any) -> bool:
     overlap = len(left_key & right_key)
     similarity = overlap / max(1, len(left_key | right_key))
     return bool(left_key and right_key and similarity >= 0.5)
+
+
+def _person_key(value: Any) -> str:
+    decomposed = unicodedata.normalize("NFKD", str(value or "").casefold())
+    return "".join(
+        character
+        for character in decomposed
+        if character.isalnum() and not unicodedata.combining(character)
+    )
+
+
+def _register_entries(value: str) -> list[tuple[str, str]]:
+    return [
+        (match.group("name").strip(), match.group("details").strip())
+        for match in re.finditer(
+            r"(?:^|,\s)(?P<name>[^,()]+?)\s*"
+            r"\((?P<details>[^()]*)\)(?=,\s|$)",
+            value.strip(),
+        )
+    ]
+
+
+def parse_bundesliga_transfer_centre(
+    page_text: str,
+    *,
+    market: dict[str, Any],
+    source_url: str,
+    now: datetime,
+    model: str,
+) -> dict[str, dict[str, Any]]:
+    """Parse Bundesliga's official living transfer register deterministically."""
+    decoded = html.unescape(page_text).replace("\\n", "\n").replace("\\u00a0", " ")
+    decoded = decoded.replace("\r", "").replace("\xa0", " ")
+    market_players = _available_market_players(market)
+    competition_clubs = {
+        str(player["club"]).strip() for player in market_players
+    }
+    players_by_club_and_name = {
+        (str(player["club"]).strip(), _person_key(player["name"])): player
+        for player in market_players
+    }
+    blocks = re.finditer(
+        r"(?:^|\n)(?P<club>[^\n]{2,80})\n"
+        r"In:\s*(?P<incoming>.*?)\n"
+        r"Out:\s*(?P<outgoing>.*?)"
+        r"(?=\n[^\n]{2,80}\nIn:|\Z)",
+        decoded,
+        flags=re.DOTALL,
+    )
+    reports: dict[str, dict[str, Any]] = {}
+    for block in blocks:
+        register_club = block.group("club").strip()
+        current_club = next(
+            (
+                club
+                for club in competition_clubs
+                if _same_club(register_club, club)
+            ),
+            "",
+        )
+        if not current_club:
+            continue
+        for direction, entries in (
+            ("in", _register_entries(block.group("incoming"))),
+            ("out", _register_entries(block.group("outgoing"))),
+        ):
+            for player_name, details in entries:
+                player = players_by_club_and_name.get(
+                    (current_club, _person_key(player_name))
+                )
+                if not player:
+                    continue
+                detail_parts = [
+                    part.strip() for part in details.split(",") if part.strip()
+                ]
+                counterpart = detail_parts[0] if detail_parts else ""
+                qualifiers = " ".join(detail_parts[1:]).casefold()
+                if "end of loan" in qualifiers:
+                    deal_type = "loan_return"
+                elif "loan made permanent" in qualifiers:
+                    deal_type = "permanent"
+                elif re.search(r"\bloan\b", qualifiers):
+                    deal_type = "loan"
+                else:
+                    deal_type = "permanent"
+                from_club = counterpart if direction == "in" else current_club
+                to_club = current_club if direction == "in" else counterpart
+                raw = {
+                    "player_id": str(player["id"]),
+                    "has_transfer_signal": True,
+                    "stage": "official",
+                    "from_club": from_club,
+                    "to_club": to_club,
+                    "deal_type": deal_type,
+                    "loan_intent": "unclear",
+                    "parent_club_level": "unknown",
+                    "probability": 100,
+                    "contradiction": False,
+                    "note": (
+                        "Deterministically parsed from the official "
+                        "Bundesliga transfer centre."
+                    ),
+                    "evidence": [
+                        {
+                            "claim": (
+                                f"Official transfer register: {player_name}, "
+                                f"{direction}, {details}."
+                            ),
+                            "source_url": source_url,
+                            "observed_at": iso_timestamp(now),
+                            "source_authority": "official_league",
+                        }
+                    ],
+                }
+                normalized = normalize_report(
+                    raw,
+                    target={
+                        "player_id": str(player["id"]),
+                        "name": str(player["name"]),
+                        "club": current_club,
+                        "position": str(player["position"]),
+                        "market_value": int(float(player["market_value"])),
+                    },
+                    competition_clubs=competition_clubs,
+                    grounded_urls={source_url},
+                    now=now,
+                    model=model,
+                )
+                if normalized:
+                    reports[str(player["id"])] = normalized
+    return reports
 
 
 def normalize_report(

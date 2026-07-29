@@ -8,5 +8,12 @@
     "auto_discover_players": true,
     "transfer_lookback_days": 120
   },
+  "official_transfer_registers": [
+    {
+      "format": "bundesliga_transfer_centre",
+      "url": "https://www.bundesliga.com/en/2bundesliga/news/official-bundesliga-2-second-division-transfer-centre-summer-2026-37052",
+      "minimum_records": 20
+    }
+  ],
   "players": {}
 }

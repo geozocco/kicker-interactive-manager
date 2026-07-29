@@ -169,6 +169,42 @@ class TransferNormalizationTests(unittest.TestCase):
         )
         self.assertIsNone(report)
 
+    def test_official_transfer_centre_parses_chained_inbound_loan(
+        self,
+    ) -> None:
+        market = {
+            "players": [
+                {
+                    "id": "p1",
+                    "name": "Luca Beispiel",
+                    "club": "FC Energie Cottbus",
+                    "position": "DEFENDER",
+                    "market_value": 400_000,
+                    "available": True,
+                }
+            ]
+        }
+        reports = transfer.parse_bundesliga_transfer_centre(
+            (
+                "Intro\\nEnergie Cottbus\\n"
+                "In: Luca Beispiel (Bayer Leverkusen, loan), "
+                "Anderer Spieler (Verein)\\n"
+                "Out: Abgang (Zielverein)\\n"
+                "Greuther Fürth\\nIn: Neuzugang (Verein)\\n"
+                "Out: Abgang Zwei (Zielverein)"
+            ),
+            market=market,
+            source_url="https://www.bundesliga.com/transfer-centre",
+            now=NOW,
+            model="gpt-5.6-luna",
+        )
+        report = reports["p1"]
+        self.assertEqual("confirmed", report["status"])
+        self.assertEqual("in", report["direction"])
+        self.assertEqual("loan", report["deal_type"])
+        self.assertEqual("Bayer Leverkusen", report["from_club"])
+        self.assertEqual("FC Energie Cottbus", report["to_club"])
+
 
 class TransferResearchTests(unittest.TestCase):
     def test_no_signal_is_cached_for_one_day(self) -> None:
