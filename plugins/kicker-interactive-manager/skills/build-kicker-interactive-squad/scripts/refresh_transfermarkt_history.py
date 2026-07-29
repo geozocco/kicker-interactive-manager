@@ -772,10 +772,11 @@ def load_identity_seed(
 def load_performance_seed(
     path: Path | None,
     *,
-    competition: str,
+    competition: str | None,
     season: str,
     strength_sha256: str,
-    target_strength: float,
+    target_strength: float | None,
+    reaggregate: bool = False,
 ) -> dict[int, dict[str, Any]]:
     if path is None:
         return {}
@@ -787,12 +788,18 @@ def load_performance_seed(
     if (
         not isinstance(payload, dict)
         or payload.get("schema_version") != 1
-        or payload.get("competition") != competition
+        or (
+            competition is not None
+            and payload.get("competition") != competition
+        )
         or payload.get("season") != season
         or payload.get("strength_model_sha256") != strength_sha256
-        or not math.isclose(
-            float(payload.get("target_strength", 0)),
-            target_strength,
+        or (
+            target_strength is not None
+            and not math.isclose(
+                float(payload.get("target_strength", 0)),
+                target_strength,
+            )
         )
         or not isinstance(payload.get("players"), list)
     ):
@@ -816,11 +823,60 @@ def load_performance_seed(
             raise RuntimeError(
                 "Transfermarkt performance seed contains an invalid history"
             )
-        players[player_id] = {
-            "retrieved_at": str(player["retrieved_at"]),
-            "seasons": player["seasons"],
-            "career": player["career"],
-        }
+        if reaggregate:
+            appearances: list[dict[str, Any]] = []
+            for season_entry in player["seasons"]:
+                if not isinstance(season_entry, dict):
+                    raise RuntimeError(
+                        "Transfermarkt performance seed contains an invalid season"
+                    )
+                for competition_entry in season_entry.get("competitions", []):
+                    if not isinstance(competition_entry, dict):
+                        raise RuntimeError(
+                            "Transfermarkt performance seed contains an invalid "
+                            "competition"
+                        )
+                    appearance_count = int(
+                        competition_entry.get("appearances", 0)
+                    )
+                    if appearance_count < 1:
+                        continue
+                    start_count = int(competition_entry.get("starts", 0))
+                    for index in range(appearance_count):
+                        appearances.append(
+                            {
+                                "season": int(season_entry["season"]),
+                                "competition_id": str(
+                                    competition_entry["competition_id"]
+                                ),
+                                "starts": int(index < start_count),
+                                "minutes": (
+                                    int(competition_entry.get("minutes", 0))
+                                    if index == 0
+                                    else 0
+                                ),
+                                "goals": (
+                                    int(competition_entry.get("goals", 0))
+                                    if index == 0
+                                    else 0
+                                ),
+                                "assists": (
+                                    int(competition_entry.get("assists", 0))
+                                    if index == 0
+                                    else 0
+                                ),
+                            }
+                        )
+            players[player_id] = {
+                "retrieved_at": str(player["retrieved_at"]),
+                "appearances": appearances,
+            }
+        else:
+            players[player_id] = {
+                "retrieved_at": str(player["retrieved_at"]),
+                "seasons": player["seasons"],
+                "career": player["career"],
+            }
     return players
 
 
@@ -1146,6 +1202,16 @@ def parse_args() -> argparse.Namespace:
         help="validated same-season identity catalog from another competition",
     )
     parser.add_argument("--performance-seed", type=Path)
+    parser.add_argument(
+        "--additional-performance-seed",
+        type=Path,
+        action="append",
+        default=[],
+        help=(
+            "validated same-season performance bootstrap from another "
+            "competition; raw competition totals are reweighted for this target"
+        ),
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--previous")
     parser.add_argument("--ttl-hours", type=int, default=192)
@@ -1191,6 +1257,22 @@ def main() -> int:
         strength_sha256=current_strength_sha,
         target_strength=float(config["target_strength"]),
     )
+    additional_performances = {
+        player_id: history
+        for path in args.additional_performance_seed
+        for player_id, history in load_performance_seed(
+            path,
+            competition=None,
+            season=str(config["season"]),
+            strength_sha256=current_strength_sha,
+            target_strength=None,
+            reaggregate=True,
+        ).items()
+    }
+    performance_seed = {
+        **additional_performances,
+        **performance_seed,
+    }
     payload = build_snapshot(
         market_payload,
         config,

@@ -140,6 +140,35 @@ class TransfermarktHistoryTests(unittest.TestCase):
             all("seasons" in value and "career" in value for value in values.values())
         )
 
+    def test_cross_competition_performance_is_reaggregated_for_target(
+        self,
+    ) -> None:
+        strength_sha = transfermarkt.strength_model_sha256(STRENGTH_MODEL)
+        values = transfermarkt.load_performance_seed(
+            REPOSITORY_ROOT
+            / "config"
+            / "history"
+            / "performance"
+            / "3-liga.json.gz",
+            competition=None,
+            season="2026/27",
+            strength_sha256=strength_sha,
+            target_strength=None,
+            reaggregate=True,
+        )
+        erlein = values[1009442]
+        seasons, career = transfermarkt.aggregate_history(
+            erlein["appearances"],
+            position="DEFENDER",
+            target_strength=0.8,
+            strength_model=STRENGTH_MODEL,
+            maximum_seasons=8,
+        )
+        self.assertEqual(2386, seasons[0]["competitions"][0]["minutes"])
+        self.assertEqual(0.0, seasons[0]["comparable_minutes"])
+        self.assertLess(career["level_adjusted_minutes"], 2504.8)
+        self.assertGreater(career["youth_adjusted_minutes"], 6_000)
+
     def test_same_output_is_weighted_by_league_level(self) -> None:
         second_seasons, second_career = transfermarkt.aggregate_history(
             appearances("L2", season=2025),

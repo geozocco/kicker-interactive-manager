@@ -132,6 +132,7 @@ jobs:
             --identity-seed config/history/identities/2-bundesliga.json \
             --additional-identity-seed config/history/identities/3-liga.json \
             --performance-seed config/history/performance/2-bundesliga.json.gz \
+            --additional-performance-seed config/history/performance/3-liga.json.gz \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/history/2-bundesliga.json \
             --output public/v1/history/2-bundesliga.json
 
@@ -144,6 +145,7 @@ jobs:
             --identity-seed config/history/identities/3-liga.json \
             --additional-identity-seed config/history/identities/2-bundesliga.json \
             --performance-seed config/history/performance/3-liga.json.gz \
+            --additional-performance-seed config/history/performance/2-bundesliga.json.gz \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/history/3-liga.json \
             --output public/v1/history/3-liga.json
 

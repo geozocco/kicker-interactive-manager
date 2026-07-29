@@ -152,6 +152,23 @@ class TransferNormalizationTests(unittest.TestCase):
         )
         self.assertIsNone(report)
 
+    def test_historical_move_not_involving_current_club_is_rejected(
+        self,
+    ) -> None:
+        historical = raw_report()
+        historical["from_club"] = "TSG Hoffenheim"
+        historical["to_club"] = "Bayer 04 Leverkusen"
+        historical["deal_type"] = "permanent"
+        report = transfer.normalize_report(
+            historical,
+            target=target(),
+            competition_clubs={"Energie Cottbus"},
+            grounded_urls={"https://www.fcenergie.de/news/leihe"},
+            now=NOW,
+            model="gpt-5.6-luna",
+        )
+        self.assertIsNone(report)
+
 
 class TransferResearchTests(unittest.TestCase):
     def test_no_signal_is_cached_for_one_day(self) -> None:
@@ -196,6 +213,34 @@ class TransferResearchTests(unittest.TestCase):
             ),
         )
         self.assertEqual(1, cached_audit["cache_hits"])
+
+    def test_old_prompt_cache_is_researched_again(self) -> None:
+        cached = {
+            "p1": {
+                "status": "no_grounded_transfer_signal",
+                "model_version": transfer.MODEL_VERSION,
+                "prompt_version": "older-prompt",
+                "research_model": "gpt-5.6-luna",
+                "refresh_after": "2026-07-30T10:00:00Z",
+                "expires_at": "2026-08-05T10:00:00Z",
+            }
+        }
+        no_signal = raw_report()
+        no_signal["has_transfer_signal"] = False
+        no_signal["evidence"] = []
+        _, _, audit = transfer.research_transfer_reports(
+            [target()],
+            competition="2. Bundesliga",
+            season="2026/27",
+            competition_clubs={"Energie Cottbus"},
+            previous_reports={},
+            previous_abstentions=cached,
+            api_key="secret",
+            now=NOW,
+            requester=lambda *_args, **_kwargs: response_for([no_signal]),
+        )
+        self.assertEqual(0, audit["cache_hits"])
+        self.assertEqual(1, audit["requests"])
 
     def test_new_market_player_is_prioritized(self) -> None:
         market = {

@@ -27,7 +27,7 @@ from openai_role_research import (
 
 
 MODEL_VERSION = "openai-transfer-watch-v1"
-PROMPT_VERSION = "transfer-watch-2026-07-29-v1"
+PROMPT_VERSION = "transfer-watch-2026-07-29-v2"
 TRANSFER_STAGES = {
     "rumour",
     "contact",
@@ -227,7 +227,13 @@ def build_request(
         "official. 'Official' requires an actual club or league confirmation, not a "
         "headline saying a deal is expected. Medical, broad agreement and 'transfer "
         "fix' without primary confirmation remain advanced. A rumour never proves a "
-        "departure. Capture both clubs, permanent/loan/loan-return deal type and, for "
+        "departure. The supplied club is the player's current Kicker club: explicitly "
+        "search the exact player name together with that club and reconstruct chained "
+        "moves in chronological order. If a player first transfers to a parent club "
+        "and is then loaned to the supplied club, report the newer loan; the earlier "
+        "permanent transfer is context, not the current signal. Never return a move "
+        "that involves neither the supplied current club as origin nor destination. "
+        "Capture both clubs, permanent/loan/loan-return deal type and, for "
         "loans, whether cited statements describe immediate help, development minutes "
         "or squad depth. Parent-club level describes its current senior competition; "
         "ownership by a famous club does not prove that the player performed there. "
@@ -381,7 +387,7 @@ def normalize_report(
     elif _same_club(from_club, current_club):
         direction = "within_competition" if league_destination else "out"
     else:
-        direction = "unknown"
+        return None
 
     deal_type = str(raw.get("deal_type", "unknown"))
     if deal_type not in DEAL_TYPES:
@@ -495,6 +501,7 @@ def _reusable(value: Any, *, now: datetime, model: str) -> bool:
     if (
         not isinstance(value, dict)
         or value.get("model_version") != MODEL_VERSION
+        or value.get("prompt_version") != PROMPT_VERSION
         or value.get("research_model") != model
     ):
         return False
