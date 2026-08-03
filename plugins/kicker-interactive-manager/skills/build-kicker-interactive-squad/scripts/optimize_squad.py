@@ -121,9 +121,9 @@ VARIATION_STATE_ENV = "KICKER_VARIATION_STATE"
 VARIATION_STATE_SCHEMA_VERSION = 2
 OPTIMIZER_CACHE_ENV = "KICKER_OPTIMIZER_CACHE"
 OPTIMIZER_CACHE_SCHEMA_VERSION = 1
-OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v6-formation-flexibility"
+OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v7-depth-diversity"
 ARCHITECTURE_MODEL_VERSION = (
-    "joint-xi-bench-v12-formation-flexibility"
+    "joint-xi-bench-v13-depth-diversity"
 )
 COMPETITION_BUDGETS = {
     "Bundesliga": 42_500_000,
@@ -406,6 +406,54 @@ def automatic_variation_exposure(
     )
 
 
+def automatic_variation_recent_squads(
+    *,
+    state_path: Path,
+    competition: str | None,
+    season: str | None,
+    profile: str,
+    maintenance: str,
+    variation: str,
+    budget: int,
+    slots: Mapping[str, int],
+    generation: int,
+) -> list[frozenset[str]]:
+    """Return completed recent rosters, newest first, for overlap checks."""
+
+    context = json.dumps(
+        {
+            "competition": competition or "unspecified",
+            "season": season or "unspecified",
+            "profile": profile,
+            "maintenance": maintenance,
+            "variation": variation,
+            "budget": budget,
+            "slots": dict(sorted(slots.items())),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    context_key = hashlib.sha256(context.encode("utf-8")).hexdigest()[:24]
+    state = _load_variation_state(state_path)
+    context_state = state["contexts"].get(
+        context_key,
+        {"generation": generation, "squads": {}},
+    )
+    completed = [
+        (int(stored_generation), frozenset(player_ids))
+        for stored_generation, player_ids in context_state.get(
+            "squads",
+            {},
+        ).items()
+        if int(stored_generation) < generation
+    ]
+    return [
+        player_ids
+        for _, player_ids in sorted(completed, reverse=True)
+    ]
+
+
 def record_automatic_variation_squad(
     *,
     state_path: Path,
@@ -515,10 +563,38 @@ RISK_WEIGHTS = {
     },
 }
 VARIATION_CONFIG = {
-    "none": {"noise": 0.0, "gap": 0.0, "distance": 0, "avoid": 0.0},
-    "low": {"noise": 1.5, "gap": 0.02, "distance": 2, "avoid": 0.8},
-    "medium": {"noise": 3.5, "gap": 0.05, "distance": 4, "avoid": 1.8},
-    "high": {"noise": 6.0, "gap": 0.08, "distance": 6, "avoid": 3.0},
+    "none": {
+        "noise": 0.0,
+        "gap": 0.0,
+        "distance": 0,
+        "avoid": 0.0,
+        "history_distance": 0,
+        "history_strength": 0.0,
+    },
+    "low": {
+        "noise": 2.0,
+        "gap": 0.025,
+        "distance": 3,
+        "avoid": 1.2,
+        "history_distance": 2,
+        "history_strength": 1.5,
+    },
+    "medium": {
+        "noise": 4.5,
+        "gap": 0.07,
+        "distance": 5,
+        "avoid": 3.0,
+        "history_distance": 4,
+        "history_strength": 2.5,
+    },
+    "high": {
+        "noise": 7.5,
+        "gap": 0.10,
+        "distance": 8,
+        "avoid": 5.0,
+        "history_distance": 7,
+        "history_strength": 4.0,
+    },
 }
 DEFAULT_CLUB_CAP = {"reliable": 4, "balanced": 4, "breakout": 3}
 OFFENSIVE_PREMIUM_ANCHOR_MINIMUM = 14.0
@@ -2501,6 +2577,11 @@ MIDFIELD_EXPENSIVE_ORDINARY_RESERVE_LIMITS = {
     "normal": 2,
     "active": 3,
 }
+FORWARD_EXPENSIVE_RESERVE_LIMITS = {
+    "low": 1,
+    "normal": 2,
+    "active": 2,
+}
 
 
 def bench_player_usage_weights(
@@ -2624,6 +2705,20 @@ def defender_is_direct_backup_ready(player: Player) -> bool:
     )
 
 
+def midfielder_is_direct_backup_ready(player: Player) -> bool:
+    """Return whether a midfielder is credible as the first substitute."""
+
+    return (
+        player.components["minutes"] >= 60
+        and player.components["role"] >= 60
+        and player.components["fitness"] >= 65
+        and player.risks["transfer"] <= 45
+        and player.risks["injury"] <= 45
+        and player.risks["rotation"] <= 45
+        and player.risks["unknown_role"] <= 45
+    )
+
+
 def midfield_architecture_audit(
     squad: Squad,
     core_ids: AbstractSet[str],
@@ -2631,17 +2726,32 @@ def midfield_architecture_audit(
     maintenance: str,
     enforce: bool,
     qualified_potential_ids: AbstractSet[str] = frozenset(),
+    raw_scores: Mapping[str, float] | None = None,
     position_minimum_costs: Mapping[str, int] | None = None,
     floor_available_count: int | None = None,
+    ready_reserve_available_count: int | None = None,
 ) -> dict[str, Any]:
     """Keep low-maintenance midfield budget in starters, not ordinary depth."""
 
     midfielders = [
         player for player in squad.players if player.position == "MIDFIELDER"
     ]
-    reserves = [
-        player for player in midfielders if player.player_id not in core_ids
-    ]
+    reserves = sorted(
+        (
+            player
+            for player in midfielders
+            if player.player_id not in core_ids
+        ),
+        key=lambda player: (
+            -(raw_scores or {}).get(player.player_id, 0.0),
+            player.player_id,
+        ),
+    )
+    direct_backup = reserves[0] if reserves else None
+    direct_backup_ready = bool(
+        direct_backup
+        and midfielder_is_direct_backup_ready(direct_backup)
+    )
     inferred_minimum = min(
         (player.cost for player in midfielders),
         default=0,
@@ -2678,7 +2788,23 @@ def midfield_architecture_audit(
     )
     effective_enforcement = enforce and enough_floor_options
     excess = max(0, len(expensive_ordinary_reserves) - limit)
-    violation_score = excess if effective_enforcement else 0
+    direct_backup_required = bool(
+        reserves
+        and (
+            ready_reserve_available_count is None
+            or ready_reserve_available_count > 0
+        )
+    )
+    direct_backup_deficit = int(
+        effective_enforcement
+        and direct_backup_required
+        and not direct_backup_ready
+    )
+    violation_score = (
+        excess + direct_backup_deficit
+        if effective_enforcement
+        else 0
+    )
     return {
         "enforced": effective_enforcement,
         "minimum_cost": minimum_cost,
@@ -2694,9 +2820,128 @@ def midfield_architecture_audit(
         "qualified_potential_reserve_ids": sorted(
             player.player_id for player in qualified_potential_reserves
         ),
+        "direct_backup_player_id": (
+            direct_backup.player_id if direct_backup else None
+        ),
+        "direct_backup_ready": direct_backup_ready,
+        "direct_backup_required": direct_backup_required,
+        "direct_backup_available_count": ready_reserve_available_count,
+        "direct_backup_deficit": direct_backup_deficit,
         "floor_candidate_count": floor_available_count,
         "violation_score": violation_score,
         "passes": not effective_enforcement or violation_score == 0,
+    }
+
+
+def forward_reserve_architecture_audit(
+    squad: Squad,
+    core_ids: AbstractSet[str],
+    *,
+    maintenance: str,
+    enforce: bool,
+    position_minimum_costs: Mapping[str, int] | None = None,
+    midfield_direct_backup_ready: bool = True,
+    defender_direct_backup_ready: bool = True,
+) -> dict[str, Any]:
+    """Prioritize playable midfield/defense cover over surplus forwards."""
+
+    forwards = [
+        player for player in squad.players if player.position == "FORWARD"
+    ]
+    reserves = [
+        player for player in forwards if player.player_id not in core_ids
+    ]
+    inferred_minimum = min(
+        (player.cost for player in forwards),
+        default=0,
+    )
+    minimum_cost = int(
+        (position_minimum_costs or {}).get("FORWARD", inferred_minimum)
+    )
+    expensive_reserves = [
+        player for player in reserves if player.cost > minimum_cost
+    ]
+    limit = FORWARD_EXPENSIVE_RESERVE_LIMITS.get(
+        maintenance,
+        FORWARD_EXPENSIVE_RESERVE_LIMITS["normal"],
+    )
+    expensive_reserve_excess = max(
+        0,
+        len(expensive_reserves) - limit,
+    )
+    maximum_reserve_cost = (
+        minimum_cost + 100_000
+        if maintenance == "low"
+        else None
+    )
+    overpriced_reserves = [
+        player
+        for player in reserves
+        if (
+            maximum_reserve_cost is not None
+            and player.cost > maximum_reserve_cost
+        )
+    ]
+    total_spend = sum(player.cost for player in forwards)
+    core_spend = sum(
+        player.cost
+        for player in forwards
+        if player.player_id in core_ids
+    )
+    core_budget_share = core_spend / total_spend if total_spend else 0.0
+    core_budget_target = POSITION_CORE_BUDGET_TARGETS.get(
+        maintenance,
+        POSITION_CORE_BUDGET_TARGETS["normal"],
+    )["FORWARD"]
+    core_budget_deficit = int(
+        enforce
+        and bool(expensive_reserves)
+        and core_budget_share + 1e-9 < core_budget_target
+    )
+    coverage_deficit = int(
+        enforce
+        and bool(expensive_reserves)
+        and (
+            not midfield_direct_backup_ready
+            or not defender_direct_backup_ready
+        )
+    )
+    violation_score = (
+        expensive_reserve_excess
+        + len(overpriced_reserves)
+        + core_budget_deficit
+        + coverage_deficit
+        if enforce
+        else 0
+    )
+    return {
+        "enforced": enforce,
+        "minimum_cost": minimum_cost,
+        "reserve_count": len(reserves),
+        "expensive_reserve_count": len(expensive_reserves),
+        "expensive_reserve_limit": limit,
+        "expensive_reserve_excess": expensive_reserve_excess,
+        "expensive_reserve_ids": sorted(
+            player.player_id for player in expensive_reserves
+        ),
+        "maximum_reserve_cost": maximum_reserve_cost,
+        "overpriced_reserve_count": len(overpriced_reserves),
+        "overpriced_reserve_ids": sorted(
+            player.player_id for player in overpriced_reserves
+        ),
+        "core_spend": core_spend,
+        "reserve_spend": total_spend - core_spend,
+        "core_budget_share": core_budget_share,
+        "core_budget_target": core_budget_target,
+        "core_budget_target_met": (
+            core_budget_share + 1e-9 >= core_budget_target
+        ),
+        "core_budget_deficit": core_budget_deficit,
+        "midfield_direct_backup_ready": midfield_direct_backup_ready,
+        "defender_direct_backup_ready": defender_direct_backup_ready,
+        "coverage_deficit": coverage_deficit,
+        "violation_score": violation_score,
+        "passes": not enforce or violation_score == 0,
     }
 
 
@@ -2886,6 +3131,14 @@ def squad_architecture_metrics(
     position_minimum_costs: Mapping[str, int] | None = None,
     defender_ready_reserve_available_count: int | None = None,
     midfield_floor_available_count: int | None = None,
+    midfield_ready_reserve_available_count: int | None = None,
+    variation_exposure: Mapping[str, int] | None = None,
+    variation_exposure_strength: float = 0.0,
+    protected_variation_ids: AbstractSet[str] = frozenset(),
+    variation_reference_squads: Sequence[AbstractSet[str]] = (),
+    minimum_variation_distance: int = 0,
+    maximum_variation_distance: int | None = None,
+    variation_preferences: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
     """Value starters at full use and reserves at expected positional use."""
 
@@ -2972,8 +3225,28 @@ def squad_architecture_metrics(
             and min_core_budget_share > 0
         ),
         qualified_potential_ids=qualified_potential_ids,
+        raw_scores=raw_scores,
         position_minimum_costs=position_minimum_costs,
         floor_available_count=midfield_floor_available_count,
+        ready_reserve_available_count=(
+            midfield_ready_reserve_available_count
+        ),
+    )
+    forward_audit = forward_reserve_architecture_audit(
+        squad,
+        core_ids,
+        maintenance=maintenance,
+        enforce=(
+            maintenance == "low"
+            and min_core_budget_share > 0
+        ),
+        position_minimum_costs=position_minimum_costs,
+        midfield_direct_backup_ready=bool(
+            midfield_audit["direct_backup_ready"]
+        ),
+        defender_direct_backup_ready=bool(
+            defender_audit["direct_backup_ready"]
+        ),
     )
     reliable_anchor_deficit = max(
         0,
@@ -3002,6 +3275,25 @@ def squad_architecture_metrics(
         0,
         effective_potential_minimum - len(selected_potential_core_ids),
     )
+    variation_distances = [
+        len(squad.ids.symmetric_difference(frozenset(reference_ids))) // 2
+        for reference_ids in variation_reference_squads
+    ]
+    variation_distance_deficit = sum(
+        max(0, minimum_variation_distance - distance)
+        for distance in variation_distances
+    )
+    variation_distance_excess = (
+        max(
+            0,
+            variation_distances[0] - maximum_variation_distance,
+        )
+        if (
+            variation_distances
+            and maximum_variation_distance is not None
+        )
+        else 0
+    )
     hard_violation_score = (
         reliable_anchor_deficit
         + attacking_anchor_deficit
@@ -3010,6 +3302,7 @@ def squad_architecture_metrics(
         + potential_core_deficit
         + int(defender_audit["violation_score"])
         + int(midfield_audit["violation_score"])
+        + int(forward_audit["violation_score"])
     )
     potential_core_adjustment = -8.0 * max(
         0,
@@ -3184,6 +3477,35 @@ def squad_architecture_metrics(
         and potential_core_deficit == 0
         and bool(defender_audit["passes"])
         and bool(midfield_audit["passes"])
+        and bool(forward_audit["passes"])
+    )
+    diversity_adjustment = -max(0.0, variation_exposure_strength) * sum(
+        int((variation_exposure or {}).get(player.player_id, 0))
+        * (2.0 if player.player_id in core_ids else 0.5)
+        for player in squad.players
+        if player.player_id not in protected_variation_ids
+    )
+    variation_distance_adjustment = -25.0 * (
+        variation_distance_deficit + variation_distance_excess
+    )
+    variation_preference_adjustment = sum(
+        float((variation_preferences or {}).get(player.player_id, 0.0))
+        * (2.0 if player.player_id in core_ids else 0.5)
+        for player in squad.players
+        if player.player_id not in protected_variation_ids
+    )
+    architecture_objective = (
+        expected_contribution
+        + concentration_adjustment
+        + position_concentration_adjustment
+        + premium_starter_adjustment
+        + elite_rebound_reallocation_adjustment
+        + potential_core_adjustment
+        + defensive_overspend_adjustment
+        + formation_flexibility["adjustment"]
+        - 50.0 * int(defender_audit["violation_score"])
+        - 50.0 * int(midfield_audit["violation_score"])
+        - 50.0 * int(forward_audit["violation_score"])
     )
     return {
         **audit,
@@ -3191,6 +3513,7 @@ def squad_architecture_metrics(
         "hard_violation_score": hard_violation_score,
         "defender_architecture": defender_audit,
         "midfield_architecture": midfield_audit,
+        "forward_reserve_architecture": forward_audit,
         "expected_contribution": expected_contribution,
         "concentration_adjustment": concentration_adjustment,
         "position_concentration_adjustment": (
@@ -3286,17 +3609,26 @@ def squad_architecture_metrics(
             and (player_age(player) or 99) <= 22
             for player in squad.players
         ),
-        "architecture_objective": (
-            expected_contribution
-            + concentration_adjustment
-            + position_concentration_adjustment
-            + premium_starter_adjustment
-            + elite_rebound_reallocation_adjustment
-            + potential_core_adjustment
-            + defensive_overspend_adjustment
-            + formation_flexibility["adjustment"]
-            - 50.0 * int(defender_audit["violation_score"])
-            - 50.0 * int(midfield_audit["violation_score"])
+        "architecture_objective": architecture_objective,
+        "variation_exposure_adjustment": diversity_adjustment,
+        "variation_distances": variation_distances,
+        "minimum_variation_distance": minimum_variation_distance,
+        "maximum_variation_distance": maximum_variation_distance,
+        "variation_distance_deficit": variation_distance_deficit,
+        "variation_distance_excess": variation_distance_excess,
+        "variation_distance_target_met": (
+            variation_distance_deficit == 0
+            and variation_distance_excess == 0
+        ),
+        "variation_distance_adjustment": variation_distance_adjustment,
+        "variation_preference_adjustment": (
+            variation_preference_adjustment
+        ),
+        "architecture_search_objective": (
+            architecture_objective
+            + diversity_adjustment
+            + variation_distance_adjustment
+            + variation_preference_adjustment
         ),
         "player_contributions": player_contributions,
         "player_usage_weights": player_usage_weights,
@@ -3382,6 +3714,11 @@ def finalized_squad_objective(
             player.position == "MIDFIELDER"
             and player.cost
             <= candidate_minimum_costs.get("MIDFIELDER", 0)
+            for player in candidates
+        ),
+        midfield_ready_reserve_available_count=sum(
+            player.position == "MIDFIELDER"
+            and midfielder_is_direct_backup_ready(player)
             for player in candidates
         ),
     )
@@ -3614,6 +3951,12 @@ def optimize_joint_squad_architecture(
     max_iterations: int = 10,
     same_club_goalkeepers: bool = True,
     protected_player_ids: AbstractSet[str] = frozenset(),
+    variation_exposure: Mapping[str, int] | None = None,
+    variation_exposure_strength: float = 0.0,
+    variation_reference_squads: Sequence[AbstractSet[str]] = (),
+    minimum_variation_distance: int = 0,
+    maximum_variation_distance: int | None = None,
+    variation_preferences: Mapping[str, float] | None = None,
 ) -> Squad:
     """Jointly improve the legal XI and its reserves at exact total spend."""
 
@@ -3664,6 +4007,11 @@ def optimize_joint_squad_architecture(
     midfield_floor_available_count = sum(
         player.position == "MIDFIELDER"
         and player.cost <= position_minimum_costs.get("MIDFIELDER", 0)
+        for player in candidates
+    )
+    midfield_ready_reserve_available_count = sum(
+        player.position == "MIDFIELDER"
+        and midfielder_is_direct_backup_ready(player)
         for player in candidates
     )
     single_packages: dict[tuple[str, int], list[Player]] = {}
@@ -3948,6 +4296,16 @@ def optimize_joint_squad_architecture(
             midfield_floor_available_count=(
                 midfield_floor_available_count
             ),
+            midfield_ready_reserve_available_count=(
+                midfield_ready_reserve_available_count
+            ),
+            variation_exposure=variation_exposure,
+            variation_exposure_strength=variation_exposure_strength,
+            protected_variation_ids=protected_player_ids,
+            variation_reference_squads=variation_reference_squads,
+            minimum_variation_distance=minimum_variation_distance,
+            maximum_variation_distance=maximum_variation_distance,
+            variation_preferences=variation_preferences,
         )
         metric_cache[cache_key] = metrics
         return metrics
@@ -4019,7 +4377,7 @@ def optimize_joint_squad_architecture(
             )
             alternatives.append(
                 (
-                    metrics["architecture_objective"],
+                    metrics["architecture_search_objective"],
                     metrics["expected_contribution"],
                     metrics["core_budget_share"],
                     replacement,
@@ -4513,7 +4871,7 @@ def optimize_joint_squad_architecture(
             and (
                 not best[4]["passes"]
                 or best[0]
-                <= current_metrics["architecture_objective"] + 1e-9
+                <= current_metrics["architecture_search_objective"] + 1e-9
             )
         ):
             marginal_search_complete = True
@@ -4573,6 +4931,14 @@ def optimize_joint_squad_architecture(
         ),
         "architecture_objective": round(
             current_metrics["architecture_objective"],
+            6,
+        ),
+        "architecture_search_objective": round(
+            current_metrics["architecture_search_objective"],
+            6,
+        ),
+        "variation_exposure_adjustment": round(
+            current_metrics["variation_exposure_adjustment"],
             6,
         ),
         "requested_core_budget_share_target": (
@@ -4713,6 +5079,9 @@ def optimize_joint_squad_architecture(
         "midfield_architecture": current_metrics[
             "midfield_architecture"
         ],
+        "forward_reserve_architecture": current_metrics[
+            "forward_reserve_architecture"
+        ],
         "squad_average_age": current_metrics["squad_average_age"],
         "starting_xi_average_age": current_metrics[
             "starting_xi_average_age"
@@ -4738,6 +5107,7 @@ def optimize_joint_squad_architecture(
         ),
         "expensive_fourth_forward_justified": bool(
             marginal_search_complete
+            and current_metrics["forward_reserve_architecture"]["passes"]
         ),
         "architecture_metric_cache_hits": (
             architecture_metric_cache_hits
@@ -5186,6 +5556,12 @@ def finalize_reliable_core_architecture(
     same_club_goalkeepers: bool = True,
     protected_player_ids: AbstractSet[str] = frozenset(),
     search_premium_restarts: bool = False,
+    variation_exposure: Mapping[str, int] | None = None,
+    variation_exposure_strength: float = 0.0,
+    variation_reference_squads: Sequence[AbstractSet[str]] = (),
+    minimum_variation_distance: int = 0,
+    maximum_variation_distance: int | None = None,
+    variation_preferences: Mapping[str, float] | None = None,
 ) -> Squad:
     """Apply the same core-first architecture to a squad and its reference."""
 
@@ -5267,6 +5643,12 @@ def finalize_reliable_core_architecture(
         target_qualified_potential_core=target_qualified_potential_core,
         same_club_goalkeepers=same_club_goalkeepers,
         protected_player_ids=protected_player_ids,
+        variation_exposure=variation_exposure,
+        variation_exposure_strength=variation_exposure_strength,
+        variation_reference_squads=variation_reference_squads,
+        minimum_variation_distance=minimum_variation_distance,
+        maximum_variation_distance=maximum_variation_distance,
+        variation_preferences=variation_preferences,
     )
     if not search_premium_restarts:
         return optimized
@@ -5323,8 +5705,11 @@ def finalize_reliable_core_architecture(
     best = optimized
     best_objective = float(
         optimized.architecture_diagnostics.get(
-            "architecture_objective",
-            float("-inf"),
+            "architecture_search_objective",
+            optimized.architecture_diagnostics.get(
+                "architecture_objective",
+                float("-inf"),
+            ),
         )
     )
     evaluated_restarts = 0
@@ -5357,11 +5742,20 @@ def finalize_reliable_core_architecture(
             target_qualified_potential_core=target_qualified_potential_core,
             same_club_goalkeepers=same_club_goalkeepers,
             protected_player_ids=protected_player_ids,
+            variation_exposure=variation_exposure,
+            variation_exposure_strength=variation_exposure_strength,
+            variation_reference_squads=variation_reference_squads,
+            minimum_variation_distance=minimum_variation_distance,
+            maximum_variation_distance=maximum_variation_distance,
+            variation_preferences=variation_preferences,
         )
         restarted_objective = float(
             restarted.architecture_diagnostics.get(
-                "architecture_objective",
-                float("-inf"),
+                "architecture_search_objective",
+                restarted.architecture_diagnostics.get(
+                    "architecture_objective",
+                    float("-inf"),
+                ),
             )
         )
         if restarted_objective > best_objective + 1e-9:
@@ -6639,11 +7033,7 @@ def prepare_variation_context(
     if variation == "none":
         return {"optimum": optimum}
 
-    profile_factor = (
-        0.75
-        if profile == "reliable"
-        else (1.20 if profile == "breakout" else 1.0)
-    )
+    profile_factor = 1.20 if profile == "breakout" else 1.0
     allowed_gap = config["gap"] * profile_factor
     target_distance = int(config["distance"])
     variation_players = (
@@ -9684,6 +10074,7 @@ def main() -> int:
     )
     avoid_exposure = load_avoid_exposure(args.avoid_roster)
     local_variation_exposure: Counter[str] = Counter()
+    recent_variation_squads: list[frozenset[str]] = []
     if (
         variation_source == "automatic_local"
         and variation_generation is not None
@@ -9691,6 +10082,17 @@ def main() -> int:
     ):
         try:
             local_variation_exposure = automatic_variation_exposure(
+                state_path=variation_state_path,
+                competition=args.competition,
+                season=args.season,
+                profile=args.profile,
+                maintenance=args.maintenance,
+                variation=args.variation,
+                budget=args.budget,
+                slots=args.slots,
+                generation=variation_generation,
+            )
+            recent_variation_squads = automatic_variation_recent_squads(
                 state_path=variation_state_path,
                 competition=args.competition,
                 season=args.season,
@@ -9797,6 +10199,15 @@ def main() -> int:
                 technical_smoke=args.allow_unannotated,
                 prepared_context=prepared_context,
                 protected_ids=initial_protected_premium_ids,
+                exposure_strength=max(
+                    1.0,
+                    float(
+                        VARIATION_CONFIG[args.variation].get(
+                            "history_strength",
+                            0.0,
+                        )
+                    ),
+                ),
                 optimizer_cache=args.optimizer_cache,
             )
             if args.min_core_budget_share > 0:
@@ -9825,24 +10236,45 @@ def main() -> int:
                     ),
                     maintenance=args.maintenance,
                     same_club_goalkeepers=not args.mixed_goalkeepers,
-                    protected_player_ids=frozenset(),
+                    protected_player_ids=initial_protected_premium_ids,
                     search_premium_restarts=True,
                 )
-                protected_premium_ids = (
-                    protected_reliable_premium_anchor_ids(
-                        eligible_players,
-                        eligible_raw_scores,
-                        optimum.ids,
-                    )
-                    if (
-                        args.profile == "reliable"
-                        and args.maintenance == "low"
-                        and not args.allow_unannotated
-                    )
-                    else frozenset()
+                # Keep the premium-protection contract stable across both
+                # optimization phases. Recomputing it from the finalized
+                # optimum could turn a newly selected player into a surprise
+                # mandatory anchor after the variant had already been formed.
+                protected_premium_ids = initial_protected_premium_ids
+                variation_distance_target = int(
+                    VARIATION_CONFIG[args.variation]["distance"]
                 )
+                variation_reference_optimum_ids = optimum.ids
+                variation_reference_squads = [
+                    variation_reference_optimum_ids,
+                    *recent_variation_squads,
+                ]
+                variation_reference_squads = list(
+                    dict.fromkeys(variation_reference_squads)
+                )
+                architecture_variation_rng = random.Random(
+                    seed ^ 0x6B69636B6572
+                )
+                architecture_variation_preferences = {
+                    player.player_id: architecture_variation_rng.uniform(
+                        -1.75,
+                        1.75,
+                    )
+                    for player in sorted(
+                        eligible_players,
+                        key=lambda item: (item.player_id, item.name),
+                    )
+                }
                 squad = finalize_reliable_core_architecture(
-                    squad,
+                    # Branch only from the already legal reference
+                    # architecture. A random raw squad can contain several
+                    # simultaneous structural violations and force the local
+                    # repair search back to the optimum. Seeded preferences
+                    # and exposure history now choose among legal swap paths.
+                    optimum,
                     eligible_players,
                     eligible_utility_scores,
                     eligible_raw_scores,
@@ -9867,6 +10299,33 @@ def main() -> int:
                     maintenance=args.maintenance,
                     same_club_goalkeepers=not args.mixed_goalkeepers,
                     protected_player_ids=protected_premium_ids,
+                    variation_exposure=avoid_exposure,
+                    variation_exposure_strength=float(
+                        VARIATION_CONFIG[args.variation].get(
+                            "history_strength",
+                            0.0,
+                        )
+                    ),
+                    variation_reference_squads=(
+                        variation_reference_squads
+                        if args.variation != "none"
+                        else ()
+                    ),
+                    minimum_variation_distance=(
+                        max(0, variation_distance_target - 1)
+                        if args.variation != "none"
+                        else 0
+                    ),
+                    maximum_variation_distance=(
+                        variation_distance_target + 1
+                        if args.variation != "none"
+                        else None
+                    ),
+                    variation_preferences=(
+                        architecture_variation_preferences
+                        if args.variation != "none"
+                        else None
+                    ),
                 )
                 squad_final_objective, squad_final_valid = (
                     finalized_squad_objective(
@@ -9897,23 +10356,9 @@ def main() -> int:
                     optimum = squad
                     optimum_final_objective = squad_final_objective
                     optimum_final_valid = True
-                    protected_premium_ids = (
-                        protected_reliable_premium_anchor_ids(
-                            eligible_players,
-                            eligible_raw_scores,
-                            optimum.ids,
-                        )
-                        if (
-                            args.profile == "reliable"
-                            and args.maintenance == "low"
-                            and not args.allow_unannotated
-                        )
-                        else frozenset()
-                    )
+                    protected_premium_ids = initial_protected_premium_ids
                 profile_factor = (
-                    0.75
-                    if args.profile == "reliable"
-                    else (1.20 if args.profile == "breakout" else 1.0)
+                    1.20 if args.profile == "breakout" else 1.0
                 )
                 final_quality_floor = optimum_final_objective * (
                     1.0
@@ -9928,7 +10373,9 @@ def main() -> int:
                     < final_quality_floor
                     or (
                         len(
-                            optimum.ids.symmetric_difference(squad.ids)
+                            variation_reference_optimum_ids.symmetric_difference(
+                                squad.ids
+                            )
                         )
                         // 2
                         > int(
@@ -9939,9 +10386,35 @@ def main() -> int:
                         + 1
                     )
                 ):
+                    rejection_reasons = []
+                    if not squad_final_valid:
+                        rejection_reasons.append("architecture")
+                    if not optimum_final_valid:
+                        rejection_reasons.append("reference-architecture")
+                    if not protected_premium_ids.issubset(squad.ids):
+                        rejection_reasons.append("premium-protection")
+                    if squad_final_objective + 1e-9 < final_quality_floor:
+                        rejection_reasons.append("quality-corridor")
+                    if (
+                        len(
+                            variation_reference_optimum_ids.symmetric_difference(
+                                squad.ids
+                            )
+                        )
+                        // 2
+                        > int(VARIATION_CONFIG[args.variation]["distance"]) + 1
+                    ):
+                        rejection_reasons.append("maximum-distance")
+                    print(
+                        "Variant finalization fell back to the reference "
+                        f"roster: {', '.join(rejection_reasons)}.",
+                        file=sys.stderr,
+                    )
                     squad = optimum
                 distance = len(
-                    optimum.ids.symmetric_difference(squad.ids)
+                    variation_reference_optimum_ids.symmetric_difference(
+                        squad.ids
+                    )
                 ) // 2
                 variation_target_met = variation_distance_met(
                     args.variation,
@@ -9992,12 +10465,23 @@ def main() -> int:
                 "defender_architecture",
                 {},
             )
+            midfield_audit = squad.architecture_diagnostics.get(
+                "midfield_architecture",
+                {},
+            )
+            forward_audit = squad.architecture_diagnostics.get(
+                "forward_reserve_architecture",
+                {},
+            )
             print(
                 "Optimization stopped: the final squad violates a hard "
                 "architecture gate. The optimizer must repair the starting "
-                "core, qualified-potential floor and defender playability "
+                "core, qualified-potential floor and positional reserve "
+                "playability "
                 "before a recommendation can be published. "
-                f"Defender audit={defender_audit}.",
+                f"Defender audit={defender_audit}; "
+                f"midfield audit={midfield_audit}; "
+                f"forward audit={forward_audit}.",
                 file=sys.stderr,
             )
             return 2
@@ -10089,6 +10573,27 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
+    recent_variant_distances = [
+        len(squad.ids.symmetric_difference(previous_ids)) // 2
+        for previous_ids in recent_variation_squads
+    ]
+    minimum_recent_variant_distance = (
+        min(recent_variant_distances)
+        if recent_variant_distances
+        else None
+    )
+    recent_variant_distance_target = int(
+        VARIATION_CONFIG[args.variation].get("history_distance", 0)
+    )
+    recent_variant_distance_target_met = (
+        minimum_recent_variant_distance is None
+        or minimum_recent_variant_distance
+        >= recent_variant_distance_target
+    )
+    variation_target_met = (
+        variation_target_met
+        and recent_variant_distance_target_met
+    )
     payload = output_payload(
         squad=squad,
         optimum=optimum,
@@ -10117,6 +10622,18 @@ def main() -> int:
         "private_installation_id_exposed": False,
         "prior_local_variant_exposure_count": sum(
             local_variation_exposure.values()
+        ),
+        "recent_completed_variant_count": len(
+            recent_variation_squads
+        ),
+        "minimum_distance_to_recent_variants": (
+            minimum_recent_variant_distance
+        ),
+        "recent_variant_distance_target": (
+            recent_variant_distance_target
+        ),
+        "recent_variant_distance_target_met": (
+            recent_variant_distance_target_met
         ),
     }
     if (

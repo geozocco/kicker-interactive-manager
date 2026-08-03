@@ -372,9 +372,9 @@ class DistanceOptimizerTests(unittest.TestCase):
     def test_postprocessing_variation_corridor_is_narrow(self) -> None:
         self.assertTrue(optimizer.variation_distance_met("medium", 4))
         self.assertTrue(optimizer.variation_distance_met("medium", 5))
-        self.assertTrue(optimizer.variation_distance_met("medium", 3))
-        self.assertFalse(optimizer.variation_distance_met("medium", 2))
-        self.assertFalse(optimizer.variation_distance_met("medium", 6))
+        self.assertTrue(optimizer.variation_distance_met("medium", 6))
+        self.assertFalse(optimizer.variation_distance_met("medium", 7))
+        self.assertFalse(optimizer.variation_distance_met("medium", 8))
         self.assertTrue(optimizer.variation_distance_met("none", 0))
         self.assertFalse(optimizer.variation_distance_met("none", 1))
 
@@ -916,7 +916,7 @@ class DistanceOptimizerTests(unittest.TestCase):
         self.assertEqual(squad.ids, second[0].ids)
         self.assertEqual(distance, second[2])
         self.assertTrue(target_met)
-        self.assertEqual(4, distance)
+        self.assertEqual(5, distance)
         self.assertEqual(900, squad.cost)
         self.assertEqual(
             slots,
@@ -1179,10 +1179,10 @@ class DistanceOptimizerTests(unittest.TestCase):
         self.assertIn("common_starting_player_count", audit)
         self.assertIn("common_reliable_anchor_ids", audit)
         self.assertIn("common_benchmark_ids", audit)
-        self.assertEqual(4, distance)
+        self.assertEqual(5, distance)
         self.assertTrue(target_met)
         for slot in audit["slots"]:
-            self.assertEqual(4, slot["distance_from_optimum"])
+            self.assertEqual(5, slot["distance_from_optimum"])
             self.assertTrue(slot["variation_target_met"])
 
     def test_group_portfolio_uses_disjoint_league_wide_anchor_cores(
@@ -1427,8 +1427,11 @@ class DistanceOptimizerTests(unittest.TestCase):
         optimum_score = sum(scores[item.player_id] for item in optimum.players)
         squad_score = sum(scores[item.player_id] for item in squad.players)
         self.assertFalse(target_met)
-        self.assertLess(distance, 4)
-        self.assertGreaterEqual(squad_score, optimum_score * (1.0 - 0.05 * 0.75))
+        self.assertLess(distance, 5)
+        self.assertGreaterEqual(
+            squad_score,
+            optimum_score * (1.0 - 0.07),
+        )
 
     def test_seed_is_emitted_on_stderr_without_polluting_json_stdout(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -1584,11 +1587,20 @@ class DistanceOptimizerTests(unittest.TestCase):
                     **arguments,
                 )
             )
+            recent_squads = optimizer.automatic_variation_recent_squads(
+                state_path=state_path,
+                generation=next_generation,
+                **arguments,
+            )
 
         self.assertEqual(Counter(), same_generation_exposure)
         self.assertEqual(
             Counter({"repeat-a": 1, "repeat-b": 1}),
             next_generation_exposure,
+        )
+        self.assertEqual(
+            [frozenset({"repeat-a", "repeat-b"})],
+            recent_squads,
         )
 
     def test_five_installations_receive_five_controlled_synthetic_squads(self) -> None:
@@ -2719,7 +2731,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             after["bench_usage_weights"]["FORWARD"],
         )
         self.assertEqual(
-            "joint-xi-bench-v12-formation-flexibility",
+            "joint-xi-bench-v13-depth-diversity",
             optimized.architecture_diagnostics["model_version"],
         )
         self.assertGreater(
@@ -3376,6 +3388,123 @@ class ReliableCorePolicyTests(unittest.TestCase):
             audit["qualified_potential_reserve_ids"],
         )
 
+    def test_low_maintenance_requires_a_playable_midfield_backup(self) -> None:
+        midfielders = [
+            player(
+                f"ready-bank-m{index}",
+                f"Ready Midfield Club {index}",
+                "MIDFIELDER",
+                250 if index < 4 else 50,
+            )
+            for index in range(7)
+        ]
+        midfielders[3] = optimizer.replace(
+            midfielders[3],
+            components={
+                **midfielders[3].components,
+                "minutes": 40.0,
+                "role": 45.0,
+            },
+        )
+        scores = {
+            item.player_id: 100.0 - index
+            for index, item in enumerate(midfielders)
+        }
+
+        audit = optimizer.midfield_architecture_audit(
+            optimizer.Squad(midfielders, 0.0),
+            {item.player_id for item in midfielders[:3]},
+            maintenance="low",
+            enforce=True,
+            raw_scores=scores,
+            position_minimum_costs={"MIDFIELDER": 50},
+            floor_available_count=10,
+            ready_reserve_available_count=5,
+        )
+
+        self.assertFalse(audit["passes"])
+        self.assertEqual("ready-bank-m3", audit["direct_backup_player_id"])
+        self.assertEqual(1, audit["direct_backup_deficit"])
+
+    def test_paid_forward_depth_requires_cross_position_cover(self) -> None:
+        forwards = [
+            player(
+                f"depth-f{index}",
+                f"Depth Forward Club {index}",
+                "FORWARD",
+                cost,
+            )
+            for index, cost in enumerate((600, 550, 500, 250, 200))
+        ]
+        core_ids = {item.player_id for item in forwards[:3]}
+
+        audit = optimizer.forward_reserve_architecture_audit(
+            optimizer.Squad(forwards, 0.0),
+            core_ids,
+            maintenance="low",
+            enforce=True,
+            position_minimum_costs={"FORWARD": 50},
+            midfield_direct_backup_ready=False,
+            defender_direct_backup_ready=True,
+        )
+
+        self.assertFalse(audit["passes"])
+        self.assertEqual(2, audit["expensive_reserve_count"])
+        self.assertEqual(1, audit["expensive_reserve_excess"])
+        self.assertEqual(1, audit["coverage_deficit"])
+
+    def test_one_paid_forward_backup_is_allowed_after_other_cover(self) -> None:
+        forwards = [
+            player(
+                f"covered-f{index}",
+                f"Covered Forward Club {index}",
+                "FORWARD",
+                cost,
+            )
+            for index, cost in enumerate((600, 550, 500, 200, 50))
+        ]
+
+        audit = optimizer.forward_reserve_architecture_audit(
+            optimizer.Squad(forwards, 0.0),
+            {item.player_id for item in forwards[:3]},
+            maintenance="low",
+            enforce=True,
+            position_minimum_costs={"FORWARD": 50},
+            midfield_direct_backup_ready=True,
+            defender_direct_backup_ready=True,
+        )
+
+        self.assertTrue(audit["passes"])
+        self.assertEqual(1, audit["expensive_reserve_count"])
+        self.assertGreaterEqual(audit["core_budget_share"], 0.75)
+
+    def test_low_maintenance_caps_paid_forward_backup_price(self) -> None:
+        forwards = [
+            player(
+                f"capped-f{index}",
+                f"Capped Forward Club {index}",
+                "FORWARD",
+                cost,
+            )
+            for index, cost in enumerate(
+                (600_000, 450_000, 350_000, 350_000, 50_000)
+            )
+        ]
+
+        audit = optimizer.forward_reserve_architecture_audit(
+            optimizer.Squad(forwards, 0.0),
+            {item.player_id for item in forwards[:3]},
+            maintenance="low",
+            enforce=True,
+            position_minimum_costs={"FORWARD": 50_000},
+            midfield_direct_backup_ready=True,
+            defender_direct_backup_ready=True,
+        )
+
+        self.assertFalse(audit["passes"])
+        self.assertEqual(150_000, audit["maximum_reserve_cost"])
+        self.assertEqual(1, audit["overpriced_reserve_count"])
+
     def test_premium_starter_requires_price_and_performance(self) -> None:
         candidates: list[optimizer.Player] = []
         scores: dict[str, float] = {}
@@ -3613,6 +3742,142 @@ class ReliableCorePolicyTests(unittest.TestCase):
         )
         self.assertEqual(3, defender_audit["minimum_price_filler_limit"])
         self.assertTrue(defender_audit["direct_backup_ready"])
+
+    def test_recent_roster_exposure_penalizes_core_more_than_bench(self) -> None:
+        squad_players: list[optimizer.Player] = []
+        scores: dict[str, float] = {}
+        for position, prefix, count in (
+            ("GOALKEEPER", "vxg", 3),
+            ("DEFENDER", "vxd", 7),
+            ("MIDFIELDER", "vxm", 7),
+            ("FORWARD", "vxf", 5),
+        ):
+            for index in range(count):
+                item = player(
+                    f"{prefix}{index}",
+                    (
+                        "Variation Goalkeepers"
+                        if position == "GOALKEEPER"
+                        else f"Variation Club {prefix}{index}"
+                    ),
+                    position,
+                    100,
+                )
+                squad_players.append(item)
+                scores[item.player_id] = 100.0 - index
+        squad = optimizer.Squad(squad_players, 0.0)
+        baseline = optimizer.squad_architecture_metrics(
+            squad,
+            scores,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.10,
+            target_core_budget_share=0.10,
+            position_minimum_costs={
+                "DEFENDER": 100,
+                "MIDFIELDER": 100,
+                "FORWARD": 100,
+            },
+        )
+        core_id = next(iter(baseline["player_ids"]))
+        bench_id = next(
+            player.player_id
+            for player in squad_players
+            if player.player_id not in baseline["player_ids"]
+        )
+        exposed = optimizer.squad_architecture_metrics(
+            squad,
+            scores,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.10,
+            target_core_budget_share=0.10,
+            position_minimum_costs={
+                "DEFENDER": 100,
+                "MIDFIELDER": 100,
+                "FORWARD": 100,
+            },
+            variation_exposure={core_id: 1, bench_id: 1},
+            variation_exposure_strength=2.0,
+        )
+
+        self.assertEqual(-5.0, exposed["variation_exposure_adjustment"])
+        self.assertEqual(
+            baseline["architecture_objective"],
+            exposed["architecture_objective"],
+        )
+        self.assertLess(
+            exposed["architecture_search_objective"],
+            exposed["architecture_objective"],
+        )
+        preferred = optimizer.squad_architecture_metrics(
+            squad,
+            scores,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.10,
+            target_core_budget_share=0.10,
+            position_minimum_costs={
+                "DEFENDER": 100,
+                "MIDFIELDER": 100,
+                "FORWARD": 100,
+            },
+            variation_preferences={core_id: 1.0, bench_id: 1.0},
+        )
+        self.assertEqual(
+            2.5,
+            preferred["variation_preference_adjustment"],
+        )
+
+    def test_final_architecture_enforces_variant_distance(self) -> None:
+        squad_players = []
+        scores = {}
+        for position, count, prefix in (
+            ("GOALKEEPER", 3, "g"),
+            ("DEFENDER", 7, "d"),
+            ("MIDFIELDER", 7, "m"),
+            ("FORWARD", 5, "f"),
+        ):
+            for index in range(count):
+                item = player(
+                    f"{prefix}{index}",
+                    (
+                        "Distance Goalkeepers"
+                        if position == "GOALKEEPER"
+                        else f"Distance Club {prefix}{index}"
+                    ),
+                    position,
+                    100,
+                )
+                squad_players.append(item)
+                scores[item.player_id] = 100.0 - index
+        squad = optimizer.Squad(squad_players, 0.0)
+        metrics = optimizer.squad_architecture_metrics(
+            squad,
+            scores,
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.10,
+            target_core_budget_share=0.10,
+            position_minimum_costs={
+                "DEFENDER": 100,
+                "MIDFIELDER": 100,
+                "FORWARD": 100,
+            },
+            variation_reference_squads=(squad.ids,),
+            minimum_variation_distance=5,
+            maximum_variation_distance=7,
+        )
+
+        self.assertTrue(metrics["passes"])
+        self.assertEqual([0], metrics["variation_distances"])
+        self.assertEqual(5, metrics["variation_distance_deficit"])
+        self.assertFalse(metrics["variation_distance_target_met"])
+        self.assertEqual(-125.0, metrics["variation_distance_adjustment"])
 
     def test_defender_floor_requires_a_playable_first_reserve(self) -> None:
         defenders = [
@@ -4185,7 +4450,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             3,
         )
         self.assertTrue(target_met)
-        self.assertEqual(4, distance)
+        self.assertEqual(5, distance)
 
     def test_infeasible_anchor_floor_reports_required_eligible_and_reachable(
         self,
