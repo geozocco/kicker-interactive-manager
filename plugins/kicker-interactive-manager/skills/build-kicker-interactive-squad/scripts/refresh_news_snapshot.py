@@ -243,6 +243,8 @@ def is_api_sports_rate_limit(value: Any) -> bool:
         or "rate limit" in details
         or "too many requests" in details
         or "http error 429" in details
+        or "request limit for the day" in details
+        or "daily request limit" in details
     )
 
 

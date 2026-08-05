@@ -165,6 +165,11 @@ class RefreshNewsSnapshotTests(unittest.TestCase):
                 "You have reached the request limit for the day"
             )
         )
+        self.assertTrue(
+            refresh.is_api_sports_rate_limit(
+                "requests: You have reached the request limit for the day"
+            )
+        )
         self.assertFalse(
             refresh.is_api_sports_daily_limit(
                 "Too many requests per minute"
