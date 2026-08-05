@@ -91,6 +91,24 @@ def response_for(reports: list[dict]) -> dict:
 
 
 class TransferNormalizationTests(unittest.TestCase):
+    def test_date_only_evidence_never_refreshes_before_observation(self) -> None:
+        current = datetime(2026, 8, 5, 5, 20, tzinfo=timezone.utc)
+        report_data = raw_report(stage="agreement", authority="transfermarkt")
+        report_data["evidence"][0]["observed_at"] = "2026-08-05"
+        report = transfer.normalize_report(
+            report_data,
+            target=target(),
+            competition_clubs={"Energie Cottbus"},
+            grounded_urls={"https://www.fcenergie.de/news/leihe"},
+            now=current,
+            model="gpt-5.6-luna",
+        )
+        assert report is not None
+        self.assertGreaterEqual(
+            transfer.parsed_timestamp(report["refresh_after"]),
+            transfer.parsed_timestamp(report["observed_at"]),
+        )
+
     def test_club_matching_does_not_confuse_two_eintracht_clubs(self) -> None:
         self.assertFalse(
             transfer._same_club(

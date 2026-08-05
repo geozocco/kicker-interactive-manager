@@ -576,7 +576,7 @@ def normalize_report(
     if expires_at <= now + timedelta(minutes=1):
         return None
     refresh_after = min(
-        now + timedelta(hours=refresh_hours),
+        max(now, observed_at) + timedelta(hours=refresh_hours),
         expires_at - timedelta(minutes=1),
     )
     fingerprint = hashlib.sha256(
