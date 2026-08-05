@@ -134,7 +134,7 @@ VARIATION_STATE_SCHEMA_VERSION = 2
 OPTIMIZER_CACHE_ENV = "KICKER_OPTIMIZER_CACHE"
 OPTIMIZER_CACHE_SCHEMA_VERSION = 1
 OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v7-depth-diversity"
-ARCHITECTURE_MODEL_VERSION = "joint-xi-bench-v14-youth-start"
+ARCHITECTURE_MODEL_VERSION = "joint-xi-bench-v15-package-gates"
 COMPETITION_BUDGETS = {
     "Bundesliga": 42_500_000,
     "2. Bundesliga": 10_000_000,
@@ -3825,6 +3825,7 @@ def position_roster_packages(
     total_cost: int,
     maintenance: str,
     limit: int = 300,
+    qualified_potential_ids: AbstractSet[str] = frozenset(),
 ) -> list[tuple[Player, ...]]:
     """Find strong full-position packages without brute-forcing the market."""
 
@@ -3943,9 +3944,45 @@ def position_roster_packages(
                 ]
                 for index, player in enumerate(reserves)
             )
-            proxy = expected_contribution - concentration_weight * max(
-                0.0,
-                target - core_share,
+            hard_violation_proxy = 0
+            minimum_cost = costs[0]
+            if maintenance == "low" and position == "MIDFIELDER":
+                expensive_ordinary_reserves = sum(
+                    player.cost > minimum_cost
+                    and player.player_id not in qualified_potential_ids
+                    for player in reserves
+                )
+                hard_violation_proxy += max(
+                    0,
+                    expensive_ordinary_reserves
+                    - MIDFIELD_EXPENSIVE_ORDINARY_RESERVE_LIMITS["low"],
+                )
+                if reserves and not midfielder_is_direct_backup_ready(
+                    reserves[0]
+                ):
+                    hard_violation_proxy += 1
+            elif maintenance == "low" and position == "FORWARD":
+                expensive_reserves = [
+                    player
+                    for player in reserves
+                    if player.cost > minimum_cost
+                ]
+                hard_violation_proxy += max(
+                    0,
+                    len(expensive_reserves)
+                    - FORWARD_EXPENSIVE_RESERVE_LIMITS["low"],
+                )
+                maximum_reserve_cost = minimum_cost + 100_000
+                hard_violation_proxy += sum(
+                    player.cost > maximum_reserve_cost
+                    for player in reserves
+                )
+                if expensive_reserves and core_share + 1e-9 < target:
+                    hard_violation_proxy += 1
+            proxy = (
+                expected_contribution
+                - concentration_weight * max(0.0, target - core_share)
+                - 10_000.0 * hard_violation_proxy
             )
             package_ids = tuple(
                 sorted(player.player_id for player in package)
@@ -4407,14 +4444,28 @@ def optimize_joint_squad_architecture(
                 quality_scores[player.player_id]
                 for player in replacement_players
             )
-            if replacement_quality < quality_floor:
-                return
             replacement = Squad(
                 replacement_players,
                 replacement_quality,
             )
             metrics = architecture_metrics(replacement)
             evaluated_rosters += 1
+            # A quality corridor may rank two legal squads, but it must never
+            # make every hard-gate-compliant architecture unreachable. This
+            # matters especially in the Bundesliga, where replacing two
+            # costly reserves with price-floor players can create a larger
+            # additive 22-player score drop while improving the usable XI.
+            repairs_hard_gate = (
+                not current_metrics["passes"]
+                and metrics["hard_violation_score"]
+                < current_metrics["hard_violation_score"]
+            )
+            if (
+                replacement_quality < quality_floor
+                and not metrics["passes"]
+                and not repairs_hard_gate
+            ):
+                return
             if (
                 not metrics["passes"]
                 and current_metrics["passes"]
@@ -4890,6 +4941,7 @@ def optimize_joint_squad_architecture(
                             if position == "MIDFIELDER"
                             else 200
                         ),
+                        qualified_potential_ids=qualified_potential_ids,
                     )
                 )
             current_position_ids = {

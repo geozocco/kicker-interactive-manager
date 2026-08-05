@@ -2773,7 +2773,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             after["bench_usage_weights"]["FORWARD"],
         )
         self.assertEqual(
-            "joint-xi-bench-v14-youth-start",
+            "joint-xi-bench-v15-package-gates",
             optimized.architecture_diagnostics["model_version"],
         )
         self.assertGreater(
@@ -3562,6 +3562,78 @@ class ReliableCorePolicyTests(unittest.TestCase):
         self.assertEqual(150_000, audit["maximum_reserve_cost"])
         self.assertEqual(1, audit["overpriced_reserve_count"])
 
+    def test_midfield_package_search_retains_hard_gate_compliant_shape(
+        self,
+    ) -> None:
+        candidates = [
+            player("mid-premium", "Mid Club 0", "MIDFIELDER", 1_800_000),
+            player("mid-1", "Mid Club 1", "MIDFIELDER", 1_400_000),
+            player("mid-2", "Mid Club 2", "MIDFIELDER", 1_300_000),
+            player("mid-3", "Mid Club 3", "MIDFIELDER", 1_200_000),
+            player("mid-bank-1", "Mid Club 4", "MIDFIELDER", 800_000),
+            player("mid-bank-2", "Mid Club 5", "MIDFIELDER", 700_000),
+            player("mid-floor-1", "Mid Club 6", "MIDFIELDER", 500_000),
+            player("mid-floor-2", "Mid Club 7", "MIDFIELDER", 500_000),
+        ]
+        scores = {
+            item.player_id: score
+            for item, score in zip(
+                candidates,
+                (101.0, 99.0, 98.0, 97.0, 96.0, 95.0, 94.0, 93.0),
+            )
+        }
+
+        packages = optimizer.position_roster_packages(
+            candidates,
+            scores,
+            position="MIDFIELDER",
+            count=7,
+            total_cost=7_400_000,
+            maintenance="low",
+            limit=1,
+        )
+
+        self.assertEqual(1, len(packages))
+        selected = {item.player_id for item in packages[0]}
+        self.assertIn("mid-premium", selected)
+        self.assertIn("mid-floor-1", selected)
+        self.assertIn("mid-floor-2", selected)
+
+    def test_forward_package_search_retains_affordable_reserves(self) -> None:
+        candidates = [
+            player("fwd-premium", "Forward Club 0", "FORWARD", 4_100_000),
+            player("fwd-1", "Forward Club 1", "FORWARD", 3_000_000),
+            player("fwd-2", "Forward Club 2", "FORWARD", 2_500_000),
+            player("fwd-3", "Forward Club 3", "FORWARD", 2_000_000),
+            player("fwd-bank", "Forward Club 4", "FORWARD", 1_600_000),
+            player("fwd-floor-1", "Forward Club 5", "FORWARD", 500_000),
+            player("fwd-floor-2", "Forward Club 6", "FORWARD", 500_000),
+        ]
+        scores = {
+            item.player_id: score
+            for item, score in zip(
+                candidates,
+                (101.0, 100.0, 99.0, 98.0, 97.0, 96.0, 95.0),
+            )
+        }
+
+        packages = optimizer.position_roster_packages(
+            candidates,
+            scores,
+            position="FORWARD",
+            count=5,
+            total_cost=9_600_000,
+            maintenance="low",
+            limit=1,
+        )
+
+        self.assertEqual(1, len(packages))
+        selected = {item.player_id for item in packages[0]}
+        self.assertIn("fwd-premium", selected)
+        self.assertIn("fwd-floor-1", selected)
+        self.assertIn("fwd-floor-2", selected)
+        self.assertNotIn("fwd-bank", selected)
+
     def test_premium_starter_requires_price_and_performance(self) -> None:
         candidates: list[optimizer.Player] = []
         scores: dict[str, float] = {}
@@ -4055,7 +4127,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
                 200,
             )
             candidates.extend((upgraded, balancing))
-            scores[upgraded.player_id] = 95.0 - index
+            scores[upgraded.player_id] = 40.0 - index
             scores[balancing.player_id] = 75.0 - index
 
         initial = optimizer.Squad(
@@ -4074,19 +4146,20 @@ class ReliableCorePolicyTests(unittest.TestCase):
             min_attacking_anchors=0,
             min_core_budget_share=0.10,
             target_core_budget_share=0.10,
-            quality_loss_limit=0.20,
+            quality_loss_limit=0.0,
         )
 
         defender_audit = optimized.architecture_diagnostics[
             "defender_architecture"
         ]
         self.assertTrue(optimized.architecture_diagnostics["passes"])
+        self.assertLess(optimized.objective_score, initial.objective_score)
         self.assertLessEqual(
-            defender_audit["minimum_price_count"],
-            defender_audit["minimum_price_limit"],
+            defender_audit["minimum_price_filler_count"],
+            defender_audit["minimum_price_filler_limit"],
         )
         self.assertLessEqual(
-            defender_audit["minimum_price_starter_count"],
+            defender_audit["nonfunctional_minimum_price_starter_count"],
             defender_audit["minimum_price_starter_limit"],
         )
         self.assertGreaterEqual(
