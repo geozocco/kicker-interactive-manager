@@ -399,6 +399,7 @@ class TransferResearchTests(unittest.TestCase):
         selected = transfer.select_transfer_targets(market, quality, news)
 
         self.assertEqual("critical", selected[0]["research_priority"])
+        self.assertTrue(selected[0]["individual_research"])
 
     def test_critical_targets_are_researched_individually(self) -> None:
         targets = []
@@ -408,6 +409,7 @@ class TransferResearchTests(unittest.TestCase):
             item["player_id"] = f"critical-{index}"
             item["name"] = f"Critical {index}"
             item["research_priority"] = "critical"
+            item["individual_research"] = True
             targets.append(item)
 
         def requester(payload, *, api_key):
@@ -436,6 +438,30 @@ class TransferResearchTests(unittest.TestCase):
         )
 
         self.assertEqual([1, 1, 1], sorted(observed_batch_sizes))
+
+    def test_unannotated_critical_targets_remain_batched(self) -> None:
+        market = {
+            "players": [
+                {
+                    "id": f"new-{index}",
+                    "name": f"New Player {index}",
+                    "club": "FC Beispiel",
+                    "position": "MIDFIELDER",
+                    "market_value": 1_000_000,
+                    "available": True,
+                }
+                for index in range(3)
+            ]
+        }
+
+        selected = transfer.select_transfer_targets(market, {}, {})
+
+        self.assertTrue(
+            all(item["research_priority"] == "critical" for item in selected)
+        )
+        self.assertTrue(
+            all(not item["individual_research"] for item in selected)
+        )
 
     def test_multiple_batches_use_bounded_workers(self) -> None:
         targets = []

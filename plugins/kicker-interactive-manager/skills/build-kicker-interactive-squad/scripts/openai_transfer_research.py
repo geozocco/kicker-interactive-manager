@@ -116,36 +116,52 @@ def select_transfer_targets(
         role_profiles = {}
 
     priority_scores: dict[str, float] = {}
+    individual_research: dict[str, bool] = {}
 
     def priority(player: dict[str, Any]) -> tuple[float, int, str]:
         player_id = str(player["id"])
         annotation = annotations.get(player_id, {})
         score = 0.0
+        transfer_risk = 0.0
         if not isinstance(annotation, dict) or not annotation:
             score += 1_000.0
         else:
-            score += float(
+            transfer_risk = float(
                 (annotation.get("risks", {}) or {}).get("transfer", 0) or 0
-            ) * 4.0
+            )
+            score += transfer_risk * 4.0
             if annotation.get("role_research", {}).get("required"):
                 score += 350.0
             if annotation.get("reliable_anchor"):
                 score += 150.0
         news = news_players.get(player_id, {})
-        if isinstance(news, dict) and any(
+        existing_transfer_signal = isinstance(news, dict) and any(
             str(signal.get("kind", "")).startswith("transfer")
             for signal in news.get("signals", [])
             if isinstance(signal, dict)
-        ):
+        )
+        if existing_transfer_signal:
             score += 800.0
         role_profile = role_profiles.get(player_id, {})
+        open_competition = False
+        external_signing_risk = 0.0
         if isinstance(role_profile, dict):
-            if role_profile.get("designation") == "open_competition":
-                score += 550.0
-            score += 5.0 * max(
+            open_competition = (
+                role_profile.get("designation") == "open_competition"
+            )
+            external_signing_risk = max(
                 0.0,
                 float(role_profile.get("external_signing_risk", 0) or 0),
             )
+            if open_competition:
+                score += 550.0
+            score += 5.0 * external_signing_risk
+        individual_research[player_id] = bool(
+            existing_transfer_signal
+            or open_competition
+            or external_signing_risk >= 35.0
+            or transfer_risk >= 50.0
+        )
         score += min(200.0, float(player.get("market_value", 0)) / 10_000)
         priority_scores[player_id] = score
         return (-score, -int(float(player.get("market_value", 0))), player_id)
@@ -165,6 +181,10 @@ def select_transfer_targets(
                 else "elevated"
                 if priority_scores.get(str(player["id"]), 0.0) >= 300.0
                 else "routine"
+            ),
+            "individual_research": individual_research.get(
+                str(player["id"]),
+                False,
             ),
         }
         for player in selected
@@ -269,7 +289,7 @@ def build_request(
         "loans, whether cited statements describe immediate help, development minutes "
         "or squad depth. Parent-club level describes its current senior competition; "
         "ownership by a famous club does not prove that the player performed there. "
-        "For critical targets, search the player separately with the supplied current "
+        "For individually researched targets, search the player separately with the supplied current "
         "club before concluding that no report exists; do not let other players in the "
         "request consume that search. Return has_transfer_signal=false with empty "
         "evidence if there is no grounded report from the last 31 days. Every evidence "
@@ -897,22 +917,22 @@ def research_transfer_reports(
     failures: list[str] = []
     requests = researched = no_signal = inconclusive = 0
     usage = empty_usage(model)
-    critical_pending = [
+    individual_pending = [
         target
         for target in pending
-        if target.get("research_priority") == "critical"
+        if target.get("individual_research") is True
     ]
-    noncritical_pending = [
+    batched_pending = [
         target
         for target in pending
-        if target.get("research_priority") != "critical"
+        if target.get("individual_research") is not True
     ]
     # A batch-level web search can miss a concrete transfer when seven other
-    # names compete for the same search budget. Critical cases are deliberately
-    # isolated; routine coverage stays batched to preserve the cost advantage.
-    pending_batches = [[target] for target in critical_pending]
+    # names compete for the same search budget. Concretely risk-flagged cases
+    # are isolated; merely new or otherwise high-priority names stay batched.
+    pending_batches = [[target] for target in individual_pending]
     pending_batches.extend(
-        chunks(noncritical_pending, max(1, min(8, batch_size)))
+        chunks(batched_pending, max(1, min(8, batch_size)))
     )
     worker_count = max(1, min(8, max_workers, len(pending_batches) or 1))
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
