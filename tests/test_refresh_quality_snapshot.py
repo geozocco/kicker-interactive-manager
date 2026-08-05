@@ -21,6 +21,49 @@ import refresh_quality_snapshot as quality
 
 
 class QualityProviderRetryTests(unittest.TestCase):
+    def test_kicker_editorial_gate_merges_into_provider_identity(self) -> None:
+        provider = {
+            "mapping": {
+                "confidence": "verified",
+                "api_sports_player_id": 123,
+            },
+            "signals": [],
+            "consensus": {
+                "injury": 0,
+                "transfer": 0,
+                "rotation": 0,
+                "fitness_cap": 100,
+                "exclude": False,
+            },
+        }
+        direct = {
+            "signals": [
+                {
+                    "kind": "transfer_rumour",
+                    "source_provider": "central_editorial_transfer_evidence",
+                }
+            ],
+            "consensus": {
+                "injury": 0,
+                "transfer": 72,
+                "rotation": 0,
+                "fitness_cap": 100,
+                "exclude": False,
+                "selection_blocked": True,
+                "selection_reason": "advanced outbound report",
+            },
+        }
+
+        merged = quality.merge_kicker_news_entry(provider, direct)
+
+        self.assertEqual(72, merged["consensus"]["transfer"])
+        self.assertTrue(merged["consensus"]["selection_blocked"])
+        self.assertEqual(1, len(merged["signals"]))
+        self.assertEqual(
+            123,
+            merged["mapping"]["api_sports_player_id"],
+        )
+
     def test_matching_previous_quality_history_is_reused_by_season(
         self,
     ) -> None:

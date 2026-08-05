@@ -307,6 +307,21 @@ def merge_role_research_into_previous_snapshot(
             "failures": [],
         }
     )
+    editorial_report_count = sum(
+        isinstance(report, dict)
+        and report.get("source_channel")
+        == "central_editorial_transfer_evidence"
+        for report in (transfer_reports or {}).values()
+    )
+    if editorial_report_count:
+        merged.setdefault("providers", {})[
+            "central_editorial_transfer_evidence"
+        ] = {
+            "status": "ok",
+            "fetched_at": iso_now(),
+            "records": editorial_report_count,
+            "requests": 0,
+        }
     merged["openai_usage"] = combined_openai_usage(
         role_research_audit,
         team_research_audit,

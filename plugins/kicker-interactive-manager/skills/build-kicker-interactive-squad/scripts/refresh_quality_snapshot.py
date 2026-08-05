@@ -217,6 +217,69 @@ def match_news_player(
     return None
 
 
+def merge_kicker_news_entry(
+    primary: dict[str, Any],
+    direct: Any,
+) -> dict[str, Any]:
+    """Merge Kicker-keyed editorial gates into the provider identity entry."""
+
+    if not isinstance(direct, dict) or direct is primary:
+        return primary
+    merged = dict(primary)
+    primary_consensus = primary.get("consensus", {})
+    direct_consensus = direct.get("consensus", {})
+    if not isinstance(primary_consensus, dict):
+        primary_consensus = {}
+    if not isinstance(direct_consensus, dict):
+        direct_consensus = {}
+    merged["consensus"] = {
+        **primary_consensus,
+        "injury": max(
+            clamp(primary_consensus.get("injury"), 0),
+            clamp(direct_consensus.get("injury"), 0),
+        ),
+        "transfer": max(
+            clamp(primary_consensus.get("transfer"), 0),
+            clamp(direct_consensus.get("transfer"), 0),
+        ),
+        "rotation": max(
+            clamp(primary_consensus.get("rotation"), 0),
+            clamp(direct_consensus.get("rotation"), 0),
+        ),
+        "fitness_cap": min(
+            clamp(primary_consensus.get("fitness_cap"), 100),
+            clamp(direct_consensus.get("fitness_cap"), 100),
+        ),
+        "exclude": bool(primary_consensus.get("exclude", False))
+        or bool(direct_consensus.get("exclude", False)),
+        "selection_blocked": bool(
+            primary_consensus.get("selection_blocked", False)
+        )
+        or bool(direct_consensus.get("selection_blocked", False)),
+        "selection_reason": str(
+            direct_consensus.get("selection_reason", "")
+            or primary_consensus.get("selection_reason", "")
+        ),
+    }
+    signals: list[dict[str, Any]] = []
+    fingerprints: set[str] = set()
+    for item in (*primary.get("signals", []), *direct.get("signals", [])):
+        if not isinstance(item, dict):
+            continue
+        fingerprint = json.dumps(
+            item,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        if fingerprint in fingerprints:
+            continue
+        fingerprints.add(fingerprint)
+        signals.append(item)
+    merged["signals"] = signals
+    return merged
+
+
 def youth_talent_profile(
     history_player: dict[str, Any],
     age: int | None,
@@ -564,6 +627,13 @@ def select_candidates(
             }
         else:
             news_id, news_player = match
+        direct_news_player = news_payload.get("players", {}).get(
+            str(player["id"])
+        )
+        news_player = merge_kicker_news_entry(
+            news_player,
+            direct_news_player,
+        )
         history_player = history_payload["players"].get(
             str(player["id"]),
             {
