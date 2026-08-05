@@ -144,6 +144,83 @@ class SnapshotValidationTests(unittest.TestCase):
 
 
 class ConsensusTests(unittest.TestCase):
+    def test_editorial_evidence_loader_blocks_advanced_outbound_case(
+        self,
+    ) -> None:
+        market = {
+            "players": [
+                {
+                    "id": "p1",
+                    "name": "Dimitrios Beispiel",
+                    "club": "FC Augsburg",
+                    "position": "DEFENDER",
+                    "market_value": 1_600_000,
+                }
+            ]
+        }
+        evidence = {
+            "schema_version": 1,
+            "entries": [
+                {
+                    "competition": "Bundesliga",
+                    "season": "2026/27",
+                    "player_id": "p1",
+                    "name": "Dimitrios Beispiel",
+                    "club": "FC Augsburg",
+                    "stage": "agreement",
+                    "from_club": "FC Augsburg",
+                    "to_club": "PAOK Thessaloniki",
+                    "deal_type": "permanent",
+                    "loan_intent": "unclear",
+                    "parent_club_level": "unknown",
+                    "probability": 88,
+                    "contradiction": False,
+                    "evidence": [
+                        {
+                            "claim": "Kicker berichtet vom Verkauf.",
+                            "source_url": "https://www.kicker.de/transfer",
+                            "observed_at": "2026-08-04T12:00:00Z",
+                            "source_authority": "kicker",
+                        }
+                    ],
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "editorial.json"
+            path.write_text(json.dumps(evidence), encoding="utf-8")
+            reports, audit = refresh.load_editorial_transfer_evidence(
+                path,
+                market=market,
+                competition="Bundesliga",
+                season="2026/27",
+                now=datetime(2026, 8, 5, 12, tzinfo=timezone.utc),
+                model="gpt-5.6-luna",
+            )
+
+        signal = refresh.transfer_report_signal(
+            "p1",
+            reports["p1"],
+            observed_at="2026-08-05T12:00:00Z",
+        )
+        assert signal is not None
+        consensus = refresh.consensus_for([signal])
+        self.assertEqual(1, audit["records"])
+        self.assertTrue(consensus["selection_blocked"])
+        self.assertFalse(consensus["exclude"])
+
+    def test_critical_inconclusive_research_is_not_zero_risk(self) -> None:
+        consensus = refresh.apply_transfer_research_caution(
+            refresh.consensus_for([]),
+            {
+                "status": "research_inconclusive",
+                "research_priority": "critical",
+                "verification_passes": 2,
+            },
+        )
+        self.assertEqual(45, consensus["transfer"])
+        self.assertTrue(consensus["selection_blocked"])
+
     @patch.dict("os.environ", {}, clear=True)
     def test_optional_sportsmonks_provider_never_blocks_primary_feed(self) -> None:
         payload = refresh.build_snapshot(

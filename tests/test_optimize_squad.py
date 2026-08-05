@@ -5248,6 +5248,60 @@ class NewsHardeningIntegrationTests(unittest.TestCase):
         self.assertEqual(1, audit["hard_exclusions"])
         self.assertEqual("f1", exclusions[0]["annotation_key"])
 
+    def test_advanced_outbound_editorial_case_is_removed_before_optimization(
+        self,
+    ) -> None:
+        candidate = player("d1", "FC Augsburg", "DEFENDER", 100)
+        snapshot = {
+            "schema_version": 1,
+            "generated_at": "2026-08-05T10:00:00Z",
+            "expires_at": "2026-08-06T04:00:00Z",
+            "competition": "Bundesliga",
+            "season": "2026/27",
+            "providers": {
+                "central_editorial_transfer_evidence": {"status": "ok"}
+            },
+            "players": {
+                "d1": {
+                    "name": candidate.name,
+                    "club": candidate.club,
+                    "mapping": {"confidence": "unverified"},
+                    "signals": [
+                        {
+                            "kind": "transfer_rumour",
+                            "status": "rumour",
+                            "severity": 72,
+                            "source_provider": "central_editorial_transfer_evidence",
+                            "source_url": "https://www.kicker.de/transfer",
+                            "observed_at": "2026-08-05T10:00:00Z",
+                            "detail": "Augsburg -> PAOK (agreement)",
+                        }
+                    ],
+                    "consensus": {
+                        "injury": 0,
+                        "transfer": 72,
+                        "rotation": 0,
+                        "fitness_cap": 100,
+                        "exclude": False,
+                        "selection_blocked": True,
+                        "selection_reason": "advanced outbound report",
+                        "confidence": "low",
+                        "conflicts": [],
+                    },
+                }
+            },
+        }
+
+        updated, audit, exclusions = optimizer.apply_news_snapshot(
+            [candidate],
+            snapshot,
+        )
+
+        self.assertEqual([], updated)
+        self.assertEqual(["d1"], audit["selection_blocked_player_ids"])
+        self.assertTrue(audit["automatic_reoptimization"])
+        self.assertTrue(exclusions[0]["automatic_reoptimization"])
+
 
 if __name__ == "__main__":
     unittest.main()

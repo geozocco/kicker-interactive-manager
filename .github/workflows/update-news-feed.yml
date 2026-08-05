@@ -84,6 +84,7 @@ jobs:
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_news_snapshot.py \
             --mapping config/news/bundesliga.json \
             --role-evidence-config config/quality/bundesliga.json \
+            --editorial-transfer-evidence config/news/editorial-transfer-evidence.json \
             --market public/v1/market/bundesliga.json \
             --previous-quality https://geozocco.github.io/kicker-interactive-manager/v1/quality/bundesliga.json \
             --openai-role-max-players 0 \
@@ -109,6 +110,7 @@ jobs:
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_news_snapshot.py \
             --mapping config/news/2-bundesliga.json \
             --role-evidence-config config/quality/2-bundesliga.json \
+            --editorial-transfer-evidence config/news/editorial-transfer-evidence.json \
             --market public/v1/market/2-bundesliga.json \
             --previous-quality https://geozocco.github.io/kicker-interactive-manager/v1/quality/2-bundesliga.json \
             --openai-role-max-players 0 \
@@ -134,6 +136,7 @@ jobs:
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_news_snapshot.py \
             --mapping config/news/3-liga.json \
             --role-evidence-config config/quality/3-liga.json \
+            --editorial-transfer-evidence config/news/editorial-transfer-evidence.json \
             --market public/v1/market/3-liga.json \
             --previous-quality https://geozocco.github.io/kicker-interactive-manager/v1/quality/3-liga.json \
             --openai-role-max-players 0 \

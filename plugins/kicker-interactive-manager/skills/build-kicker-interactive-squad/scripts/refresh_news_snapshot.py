@@ -31,6 +31,7 @@ from openai_role_research import (
 )
 from openai_team_research import research_team_profiles
 from openai_transfer_research import (
+    normalize_report,
     parse_bundesliga_transfer_centre,
     research_transfer_reports,
     select_transfer_targets,
@@ -51,6 +52,109 @@ ROLE_RESPONSIBILITIES = {
     "aerial_set_piece_target",
     "captain",
 }
+
+
+def load_editorial_transfer_evidence(
+    path: Path,
+    *,
+    market: dict[str, Any],
+    competition: str,
+    season: str,
+    now: datetime,
+    model: str,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Normalize centrally curated reports independently of web interpretation."""
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        raise RuntimeError("editorial transfer evidence schema_version must be 1")
+    entries = payload.get("entries", [])
+    if not isinstance(entries, list):
+        raise RuntimeError("editorial transfer evidence entries must be a list")
+    market_players = {
+        str(player.get("id", "")): player
+        for player in market.get("players", [])
+        if isinstance(player, dict) and str(player.get("id", "")).strip()
+    }
+    competition_clubs = {
+        str(player.get("club", "")).strip()
+        for player in market_players.values()
+        if str(player.get("club", "")).strip()
+    }
+    reports: dict[str, dict[str, Any]] = {}
+    ignored = 0
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise RuntimeError(f"editorial transfer evidence entry {index} is invalid")
+        if (
+            str(entry.get("competition", "")) != competition
+            or str(entry.get("season", "")) != season
+        ):
+            ignored += 1
+            continue
+        player_id = str(entry.get("player_id", "")).strip()
+        target_player = market_players.get(player_id)
+        if target_player is None:
+            raise RuntimeError(
+                f"editorial transfer evidence player {player_id!r} is not in the market"
+            )
+        if (
+            str(entry.get("name", "")).strip() != str(target_player.get("name", "")).strip()
+            or str(entry.get("club", "")).strip() != str(target_player.get("club", "")).strip()
+        ):
+            raise RuntimeError(
+                f"editorial transfer evidence identity mismatch for {player_id!r}"
+            )
+        evidence = entry.get("evidence", [])
+        if not isinstance(evidence, list) or not evidence:
+            raise RuntimeError(
+                f"editorial transfer evidence is missing for {player_id!r}"
+            )
+        grounded_urls = {
+            str(item.get("source_url", "")).strip()
+            for item in evidence
+            if isinstance(item, dict)
+            and str(item.get("source_url", "")).startswith("https://")
+        }
+        normalized = normalize_report(
+            {
+                **entry,
+                "has_transfer_signal": True,
+                "evidence": evidence,
+            },
+            target={
+                "player_id": player_id,
+                "name": str(target_player.get("name", "")),
+                "club": str(target_player.get("club", "")),
+                "position": str(target_player.get("position", "")),
+                "market_value": int(float(target_player.get("market_value", 0))),
+            },
+            competition_clubs=competition_clubs,
+            grounded_urls=grounded_urls,
+            now=now,
+            model=model,
+        )
+        if normalized is None:
+            raise RuntimeError(
+                f"editorial transfer evidence could not be normalized for {player_id!r}"
+            )
+        normalized["source_channel"] = "central_editorial_transfer_evidence"
+        previous = reports.get(player_id)
+        ranking = {"rumour": 1, "advanced": 2, "confirmed": 3}
+        if previous is None or (
+            ranking.get(str(normalized.get("status", "")), 0),
+            float(normalized.get("probability", 0) or 0),
+        ) > (
+            ranking.get(str(previous.get("status", "")), 0),
+            float(previous.get("probability", 0) or 0),
+        ):
+            reports[player_id] = normalized
+    return reports, {
+        "status": "ok",
+        "source": str(path),
+        "records": len(reports),
+        "ignored_other_competitions": ignored,
+    }
 
 
 def combined_openai_usage(*audits: dict[str, Any] | None) -> dict[str, Any]:
@@ -248,17 +352,27 @@ def merge_role_research_into_previous_snapshot(
         )
         if editorial_signal is None:
             continue
+        source_provider = str(editorial_signal.get("source_provider", ""))
         retained = [
             item
             for item in player.get("signals", [])
             if not (
                 isinstance(item, dict)
-                and item.get("source_provider")
-                == "openai_transfer_watcher"
+                and item.get("source_provider") == source_provider
             )
         ]
         player["signals"] = [*retained, editorial_signal]
         player["consensus"] = consensus_for(player["signals"])
+    for player_id, player in merged_players.items():
+        if not isinstance(player, dict):
+            continue
+        abstention = (transfer_research_abstentions or {}).get(str(player_id))
+        if not isinstance(abstention, dict):
+            continue
+        player["consensus"] = apply_transfer_research_caution(
+            dict(player.get("consensus", {})),
+            abstention,
+        )
     merged.pop("content_sha256", None)
     merged["content_sha256"] = canonical_sha256(merged)
     return merged
@@ -1278,6 +1392,10 @@ def consensus_for(signals: list[dict[str, Any]]) -> dict[str, Any]:
         and item.get("availability_impact") == "out"
         for item in current_confirmed_transfers
     )
+    selection_blocked = any(
+        item.get("selection_blocking") is True
+        for item in active_for_consensus
+    )
     return {
         "injury": injury,
         "transfer": transfer,
@@ -1286,6 +1404,12 @@ def consensus_for(signals: list[dict[str, Any]]) -> dict[str, Any]:
         "exclude": bool(
             (injury >= 90 or confirmed_transfer_out)
             and confidence in {"medium", "high"}
+        ),
+        "selection_blocked": selection_blocked,
+        "selection_reason": (
+            "current advanced outbound transfer evidence requires verification"
+            if selection_blocked
+            else ""
         ),
         "confidence": confidence,
         "conflicts": conflicts,
@@ -1371,11 +1495,13 @@ def transfer_report_signal(
         f"{report.get('from_club', '?')} -> {report.get('to_club', '?')} "
         f"({stage}, {report.get('deal_type', 'unknown')})"
     )
-    return signal(
+    output = signal(
         kind=kind,
         status=signal_status,
         severity=severity,
-        provider="openai_transfer_watcher",
+        provider=str(
+            report.get("source_channel", "openai_transfer_watcher")
+        ),
         observed_at=observed_at,
         record_id=str(report.get("research_fingerprint", player_id)),
         detail=detail,
@@ -1383,6 +1509,44 @@ def transfer_report_signal(
         effective_from=report.get("observed_at", observed_at),
         availability_impact=impact,
     )
+    output["selection_blocking"] = bool(
+        status == "advanced"
+        and direction == "out"
+        and stage in {"agreement", "medical", "official"}
+        and str(report.get("confidence", "low")) in {"medium", "high"}
+    )
+    return output
+
+
+def apply_transfer_research_caution(
+    consensus: dict[str, Any],
+    abstention: Any,
+) -> dict[str, Any]:
+    """Prevent uncertain critical research from looking like zero risk."""
+
+    if not isinstance(abstention, dict):
+        return consensus
+    priority = str(abstention.get("research_priority", "routine"))
+    status = str(abstention.get("status", ""))
+    if priority != "critical":
+        return consensus
+    cautious = dict(consensus)
+    if status == "research_inconclusive":
+        cautious["transfer"] = max(float(cautious.get("transfer", 0)), 45.0)
+        cautious["selection_blocked"] = True
+        cautious["selection_reason"] = (
+            "critical transfer research remained inconclusive"
+        )
+    elif status == "no_grounded_transfer_signal":
+        cautious["transfer"] = max(float(cautious.get("transfer", 0)), 15.0)
+        cautious["selection_reason"] = (
+            "critical transfer search found no signal after independent verification"
+        )
+    cautious["transfer_research_status"] = status
+    cautious["transfer_verification_passes"] = int(
+        abstention.get("verification_passes", 1) or 1
+    )
+    return cautious
 
 
 def build_snapshot(
@@ -1486,6 +1650,19 @@ def build_snapshot(
                 (transfer_research_audit or {}).get("requests", 0)
             ),
         }
+    editorial_reports = [
+        report
+        for report in (researched_transfer_reports or {}).values()
+        if isinstance(report, dict)
+        and report.get("source_channel") == "central_editorial_transfer_evidence"
+    ]
+    if editorial_reports:
+        provider_audit["central_editorial_transfer_evidence"] = {
+            "status": "ok",
+            "fetched_at": observed_at,
+            "records": len(editorial_reports),
+            "requests": 0,
+        }
     for kicker_id, report in (researched_transfer_reports or {}).items():
         if not isinstance(report, dict) or not report.get("fresh", False):
             continue
@@ -1519,6 +1696,10 @@ def build_snapshot(
                 item["provider_record_id"],
             ),
         )
+        consensus = apply_transfer_research_caution(
+            consensus_for(signals),
+            (transfer_research_abstentions or {}).get(str(kicker_id)),
+        )
         players[str(kicker_id)] = {
             "name": str(mapping.get("name", "")),
             "club": str(mapping.get("club", "")),
@@ -1532,7 +1713,7 @@ def build_snapshot(
                 "confidence": str(mapping.get("mapping_confidence", "unverified")),
             },
             "signals": signals,
-            "consensus": consensus_for(signals),
+            "consensus": consensus,
         }
 
     generated = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
@@ -1608,6 +1789,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mapping", type=Path, required=True)
     parser.add_argument("--role-evidence-config", type=Path)
+    parser.add_argument("--editorial-transfer-evidence", type=Path)
     parser.add_argument("--market")
     parser.add_argument("--previous-quality")
     parser.add_argument("--openai-role-model", default=DEFAULT_OPENAI_ROLE_MODEL)
@@ -1670,6 +1852,10 @@ def parse_args() -> argparse.Namespace:
     if bool(args.market) != bool(args.previous_quality):
         parser.error(
             "--market and --previous-quality must be provided together"
+        )
+    if args.editorial_transfer_evidence and not args.market:
+        parser.error(
+            "--editorial-transfer-evidence requires --market and --previous-quality"
         )
     if not args.providers:
         args.providers = ["api_sports"]
@@ -1883,6 +2069,22 @@ def main() -> int:
         # Players already confirmed there do not need an OpenAI transfer query.
         register_failures: list[str] = []
         official_register_reports: dict[str, dict[str, Any]] = {}
+        editorial_reports: dict[str, dict[str, Any]] = {}
+        editorial_audit: dict[str, Any] = {
+            "status": "not_configured",
+            "records": 0,
+        }
+        if args.editorial_transfer_evidence:
+            editorial_reports, editorial_audit = (
+                load_editorial_transfer_evidence(
+                    args.editorial_transfer_evidence,
+                    market=market_payload,
+                    competition=str(config["competition"]),
+                    season=str(config["season"]),
+                    now=datetime.now(timezone.utc),
+                    model=args.openai_role_model,
+                )
+            )
         for register in config.get("official_transfer_registers", []):
             if not isinstance(register, dict):
                 register_failures.append("invalid register configuration")
@@ -1923,6 +2125,7 @@ def main() -> int:
             target
             for target in all_transfer_targets
             if str(target["player_id"]) not in official_register_reports
+            and str(target["player_id"]) not in editorial_reports
         ]
         if api_key:
             (
@@ -1995,7 +2198,8 @@ def main() -> int:
                 ),
             }
         researched_transfer_reports.update(official_register_reports)
-        for player_id in official_register_reports:
+        researched_transfer_reports.update(editorial_reports)
+        for player_id in {*official_register_reports, *editorial_reports}:
             transfer_research_abstentions.pop(player_id, None)
         transfer_research_audit["official_register_reports"] = len(
             official_register_reports
@@ -2005,11 +2209,12 @@ def main() -> int:
                 str(target["player_id"])
                 for target in all_transfer_targets
             }
-            & set(official_register_reports)
+            & {*official_register_reports, *editorial_reports}
         )
         transfer_research_audit["official_register_failures"] = (
             register_failures[:5]
         )
+        transfer_research_audit["editorial_evidence"] = editorial_audit
         if api_key:
             (
                 researched_team_profiles,

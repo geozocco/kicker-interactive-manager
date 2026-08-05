@@ -1210,6 +1210,21 @@ def merge_snapshot_entries(
         ),
         "exclude": bool(primary_consensus.get("exclude", False))
         or bool(supplemental_consensus.get("exclude", False)),
+        "selection_blocked": bool(
+            primary_consensus.get("selection_blocked", False)
+        )
+        or bool(supplemental_consensus.get("selection_blocked", False)),
+        "selection_reason": next(
+            (
+                str(value)
+                for value in (
+                    primary_consensus.get("selection_reason", ""),
+                    supplemental_consensus.get("selection_reason", ""),
+                )
+                if str(value).strip()
+            ),
+            "",
+        ),
         "confidence": confidence,
         "conflicts": sorted(
             {
@@ -1306,6 +1321,7 @@ def apply_news_snapshot(
     provider_mapped_ids: list[str] = []
     manually_cleared_ids: list[str] = []
     conflicts: dict[str, list[str]] = {}
+    selection_blocked_ids: list[str] = []
     identity_bindings: dict[str, str] = {}
     matched_snapshot_keys: set[str] = set()
     csv_ids = {player.player_id for player in players}
@@ -1431,7 +1447,30 @@ def apply_news_snapshot(
         )
         applied_ids.append(player.player_id)
         should_exclude = bool(consensus.get("exclude", False))
+        selection_blocked = bool(consensus.get("selection_blocked", False))
         confidence = str(consensus.get("confidence", "low"))
+        if selection_blocked and not entry_conflicts:
+            selection_blocked_ids.append(player.player_id)
+            excluded.append(
+                {
+                    "annotation_key": player.player_id,
+                    "player": player.name,
+                    "reason": (
+                        "Finaler News-Gate: "
+                        + str(
+                            consensus.get(
+                                "selection_reason",
+                                "aktuelle Transferlage ist nicht freigegeben",
+                            )
+                        )
+                    ),
+                    "benchmark": player.benchmark,
+                    "evidence": signal_evidence,
+                    "source": "central_news_final_gate",
+                    "automatic_reoptimization": True,
+                }
+            )
+            continue
         if (
             should_exclude
             and confidence in {"medium", "high"}
@@ -1472,6 +1511,8 @@ def apply_news_snapshot(
             "identity_bindings": identity_bindings,
             "conflicts": conflicts,
             "hard_exclusions": len(excluded),
+            "selection_blocked_player_ids": sorted(selection_blocked_ids),
+            "automatic_reoptimization": bool(selection_blocked_ids),
         }
     )
     return updated, audit, excluded
@@ -10694,6 +10735,25 @@ def main() -> int:
             )
             return 2
     selected_ids = squad.ids
+    selected_news_blockers = sorted(
+        selected_ids
+        & set(news_audit.get("selection_blocked_player_ids", []))
+    )
+    news_audit["final_selection_gate"] = {
+        "status": "passed" if not selected_news_blockers else "blocked",
+        "checked_players": len(selected_ids),
+        "blocked_player_ids": selected_news_blockers,
+        "automatic_reoptimization": bool(
+            news_audit.get("automatic_reoptimization", False)
+        ),
+    }
+    if selected_news_blockers:
+        print(
+            "News hardening stopped optimization: the final 22-player gate "
+            f"still contains blocked transfer cases: {selected_news_blockers}.",
+            file=sys.stderr,
+        )
+        return 2
     news_conflicts = {
         player_id: reasons
         for player_id, reasons in news_audit.get("conflicts", {}).items()

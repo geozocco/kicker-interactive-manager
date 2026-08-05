@@ -437,7 +437,79 @@ class TransferResearchTests(unittest.TestCase):
             requester=requester,
         )
 
-        self.assertEqual([1, 1, 1], sorted(observed_batch_sizes))
+        self.assertEqual([1, 1, 1, 1, 1, 1], sorted(observed_batch_sizes))
+
+    def test_critical_no_signal_requires_independent_second_pass(self) -> None:
+        critical = target()
+        critical["research_priority"] = "critical"
+        critical["individual_research"] = True
+        calls: list[dict] = []
+
+        def requester(payload, *, api_key):
+            calls.append(payload)
+            no_signal = raw_report()
+            no_signal["has_transfer_signal"] = False
+            no_signal["evidence"] = []
+            return response_for([no_signal])
+
+        _, abstentions, audit = transfer.research_transfer_reports(
+            [critical],
+            competition="2. Bundesliga",
+            season="2026/27",
+            competition_clubs={"Energie Cottbus"},
+            previous_reports={},
+            previous_abstentions={},
+            api_key="secret",
+            now=NOW,
+            requester=requester,
+        )
+
+        self.assertEqual(2, len(calls))
+        self.assertEqual(2, audit["requests"])
+        self.assertEqual(2, abstentions["p1"]["verification_passes"])
+        self.assertEqual(
+            "2026-07-29T12:00:00Z",
+            abstentions["p1"]["refresh_after"],
+        )
+        second_request = json.loads(calls[1]["input"][1]["content"])
+        self.assertTrue(second_request["verification_pass"])
+
+    def test_second_pass_can_recover_a_critical_transfer(self) -> None:
+        critical = target()
+        critical["research_priority"] = "critical"
+        critical["individual_research"] = True
+        responses = []
+        no_signal = raw_report()
+        no_signal["has_transfer_signal"] = False
+        no_signal["evidence"] = []
+        responses.append(response_for([no_signal]))
+        responses.append(
+            response_for(
+                [
+                    raw_report(
+                        stage="agreement",
+                        authority="kicker",
+                        source_url="https://www.kicker.de/transfer-gefunden",
+                    )
+                ]
+            )
+        )
+
+        reports, abstentions, audit = transfer.research_transfer_reports(
+            [critical],
+            competition="2. Bundesliga",
+            season="2026/27",
+            competition_clubs={"Energie Cottbus"},
+            previous_reports={},
+            previous_abstentions={},
+            api_key="secret",
+            now=NOW,
+            requester=lambda *_args, **_kwargs: responses.pop(0),
+        )
+
+        self.assertIn("p1", reports)
+        self.assertEqual({}, abstentions)
+        self.assertEqual(2, audit["requests"])
 
     def test_unannotated_critical_targets_remain_batched(self) -> None:
         market = {

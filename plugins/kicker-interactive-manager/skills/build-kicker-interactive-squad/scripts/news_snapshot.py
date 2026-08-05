@@ -195,6 +195,16 @@ def validate_snapshot(
             raise NewsSnapshotError(
                 f"news conflicts for player {kicker_id!r} must be a list"
             )
+        if not isinstance(consensus.get("selection_blocked", False), bool):
+            raise NewsSnapshotError(
+                f"news selection_blocked for player {kicker_id!r} must be boolean"
+            )
+        if consensus.get("selection_blocked") and not str(
+            consensus.get("selection_reason", "")
+        ).strip():
+            raise NewsSnapshotError(
+                f"news selection reason for player {kicker_id!r} is missing"
+            )
     role_profiles = payload.get("role_profiles", {})
     if not isinstance(role_profiles, dict):
         raise NewsSnapshotError("news role_profiles must be an object")
@@ -476,6 +486,15 @@ def validate_snapshot(
         if not checked_at < refresh_after < abstention_expires_at:
             raise NewsSnapshotError(
                 f"invalid transfer-research abstention expiry for {player_id!r}"
+            )
+        verification_passes = record.get("verification_passes", 1)
+        if (
+            isinstance(verification_passes, bool)
+            or not isinstance(verification_passes, int)
+            or verification_passes not in {1, 2}
+        ):
+            raise NewsSnapshotError(
+                f"invalid transfer verification count for {player_id!r}"
             )
     transfer_research = payload.get("transfer_research", {})
     if not isinstance(transfer_research, dict):

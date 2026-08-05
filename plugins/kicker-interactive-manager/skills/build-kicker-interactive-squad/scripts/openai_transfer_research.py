@@ -33,7 +33,7 @@ from openai_usage import empty_usage, merge_usage, response_usage
 
 
 MODEL_VERSION = "openai-transfer-watch-v1"
-PROMPT_VERSION = "transfer-watch-2026-08-05-v3"
+PROMPT_VERSION = "transfer-watch-2026-08-05-v4"
 TRANSFER_STAGES = {
     "rumour",
     "contact",
@@ -268,6 +268,7 @@ def build_request(
     model: str,
     current_date: str,
     reasoning_effort: str = "low",
+    verification_pass: bool = False,
 ) -> dict[str, Any]:
     instructions = (
         "Research current transfer developments for every listed football player. "
@@ -296,6 +297,16 @@ def build_request(
         "URL must be returned by web "
         "search and every claim must be player-specific."
     )
+    if verification_pass:
+        instructions += (
+            " This is an independent verification pass after a first search "
+            "found no grounded signal. Search this single player again using "
+            "at least two distinct query formulations: exact player plus "
+            "current club plus Transfer/Wechsel, and exact player plus current "
+            "club plus destination/medical/agreement. Inspect at least two "
+            "independent result domains when available. Do not reuse the first "
+            "pass conclusion as evidence."
+        )
     payload = {
         "model": model,
         "reasoning": {"effort": reasoning_effort},
@@ -315,6 +326,7 @@ def build_request(
                         "season": season,
                         "current_date": current_date,
                         "maximum_source_age_days": 31,
+                        "verification_pass": verification_pass,
                         "players": targets,
                     },
                     ensure_ascii=False,
@@ -663,10 +675,11 @@ def _cache_record(
     model: str,
     status: str,
     reason: str = "",
+    verification_passes: int = 1,
 ) -> dict[str, Any]:
     priority = str(target.get("research_priority", "routine"))
     no_signal_hours = (
-        12 if priority == "critical" else 24 if priority == "elevated" else 72
+        2 if priority == "critical" else 24 if priority == "elevated" else 72
     )
     refresh_after = (
         now + timedelta(hours=no_signal_hours)
@@ -685,6 +698,7 @@ def _cache_record(
         "research_model": model,
         "target_fingerprint": target_fingerprint(target),
         "research_priority": priority,
+        "verification_passes": max(1, min(2, int(verification_passes))),
         "checked_at": iso_timestamp(now),
         "refresh_after": iso_timestamp(refresh_after),
         "expires_at": iso_timestamp(expires_at),
@@ -819,6 +833,7 @@ def research_transfer_reports(
         int,
         int,
         int,
+        int,
         dict[str, Any],
     ]:
         batch_reports: dict[str, dict[str, Any]] = {}
@@ -827,6 +842,7 @@ def research_transfer_reports(
         raw_by_id: dict[str, Any] = {}
         failure = ""
         researched_count = no_signal_count = inconclusive_count = 0
+        request_count = 1
         batch_usage = empty_usage(model)
         try:
             response = requester(
@@ -859,11 +875,92 @@ def research_transfer_reports(
                 player_id = str(target["player_id"])
                 raw = raw_by_id.get(player_id)
                 if isinstance(raw, dict) and not raw.get("has_transfer_signal"):
+                    verification_passes = 1
+                    if (
+                        target.get("research_priority") == "critical"
+                        and target.get("individual_research") is True
+                    ):
+                        request_count += 1
+                        verification_passes = 2
+                        verification_response = requester(
+                            build_request(
+                                [target],
+                                competition=competition,
+                                season=season,
+                                model=model,
+                                current_date=current.date().isoformat(),
+                                reasoning_effort="low",
+                                verification_pass=True,
+                            ),
+                            api_key=api_key,
+                        )
+                        merge_usage(
+                            batch_usage,
+                            response_usage(verification_response, model=model),
+                        )
+                        verification_urls = response_source_urls(
+                            verification_response
+                        )
+                        verification_payload = json.loads(
+                            response_output_text(verification_response)
+                        )
+                        verification_raw = next(
+                            (
+                                item
+                                for item in verification_payload.get(
+                                    "reports", []
+                                )
+                                if isinstance(item, dict)
+                                and str(item.get("player_id", "")) == player_id
+                            ),
+                            None,
+                        )
+                        if (
+                            isinstance(verification_raw, dict)
+                            and verification_raw.get("has_transfer_signal")
+                        ):
+                            normalized = normalize_report(
+                                verification_raw,
+                                target=target,
+                                competition_clubs=competition_clubs,
+                                grounded_urls=verification_urls,
+                                now=current,
+                                model=model,
+                            )
+                            if normalized:
+                                batch_reports[player_id] = normalized
+                                completed.add(player_id)
+                                researched_count += 1
+                                continue
+                            batch_abstentions[player_id] = _cache_record(
+                                target,
+                                now=current,
+                                model=model,
+                                status="research_inconclusive",
+                                reason="invalid_or_ungrounded_verification_output",
+                                verification_passes=verification_passes,
+                            )
+                            completed.add(player_id)
+                            inconclusive_count += 1
+                            continue
+                        if not isinstance(verification_raw, dict):
+                            batch_abstentions[player_id] = _cache_record(
+                                target,
+                                now=current,
+                                model=model,
+                                status="research_inconclusive",
+                                reason="omitted_from_verification_output",
+                                verification_passes=verification_passes,
+                            )
+                            completed.add(player_id)
+                            inconclusive_count += 1
+                            continue
                     batch_abstentions[player_id] = _cache_record(
                         target,
                         now=current,
                         model=model,
                         status="no_grounded_transfer_signal",
+                        verification_passes=verification_passes,
                     )
                     completed.add(player_id)
                     no_signal_count += 1
@@ -911,6 +1008,7 @@ def research_transfer_reports(
             researched_count,
             no_signal_count,
             inconclusive_count,
+            request_count,
             batch_usage,
         )
 
@@ -943,9 +1041,10 @@ def research_transfer_reports(
             researched_count,
             no_signal_count,
             inconclusive_count,
+            request_count,
             batch_usage,
         ) in executor.map(research_batch, pending_batches):
-            requests += 1
+            requests += request_count
             researched += researched_count
             no_signal += no_signal_count
             inconclusive += inconclusive_count

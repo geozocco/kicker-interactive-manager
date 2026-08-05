@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "competition": "Bundesliga",
+      "season": "2026/27",
+      "player_id": "pl-k00097350",
+      "name": "Dimitrios Giannoulis",
+      "club": "FC Augsburg",
+      "stage": "agreement",
+      "from_club": "FC Augsburg",
+      "to_club": "PAOK Thessaloniki",
+      "deal_type": "permanent",
+      "loan_intent": "unclear",
+      "parent_club_level": "unknown",
+      "probability": 88,
+      "contradiction": false,
+      "note": "Fortgeschrittener Abgangsbericht; bis zur Primärquellenbestätigung nicht als offiziell, aber als Auswahlblocker behandeln.",
+      "evidence": [
+        {
+          "claim": "Kicker berichtet, dass Augsburg Giannoulis für mehr als vier Millionen Euro an PAOK verkauft.",
+          "source_url": "https://www.kicker.de/ueber-vier-millionen-euro-fca-verkauft-giannoulis-an-paok-1240710/artikel",
+          "observed_at": "2026-08-04T12:00:00Z",
+          "source_authority": "kicker"
+        },
+        {
+          "claim": "Die Augsburger Allgemeine berichtete zuvor von einer weitgehenden Einigung des Spielers mit PAOK.",
+          "source_url": "https://www.augsburger-allgemeine.de/sport/fc-augsburg/fc-augsburg-transferpoker-um-giannoulis-spitzt-sich-zwischen-paok-und-olympiakos-zu-1-114415531",
+          "observed_at": "2026-07-03T12:00:00Z",
+          "source_authority": "reputable_editorial"
+        }
+      ]
+    }
+  ]
+}
