@@ -8,6 +8,10 @@ Wenn der Nutzer nach Funktionen, Modi oder Beispielprompts fragt, die folgenden 
 
 ## Kader aufstellen
 
+Bundesliga verlässlich und wartungsarm:
+
+> Stelle meinen Bundesliga-Kader verlässlich und wartungsarm auf. Nutze das Budget von 42,50 Mio. und konzentriere die Qualität auf die Startelf.
+
 Verlässlich und wartungsarm:
 
 > Stelle meinen Kader für die 2. Bundesliga verlässlich und wartungsarm auf. Setze auf mehrjährig bestätigte Leistung und einen starken Kern.
@@ -72,4 +76,4 @@ Vorbereitung und Talente:
 
 > Prüfe [Spielername] anhand seiner Jugendhistorie und der aktuellen Vorbereitung. Erkläre getrennt Talentpotenzial, momentane Einsatzreife und Stammplatzrisiko.
 
-Unterstützte Ligen sind Bundesliga, 2. Bundesliga und 3. Liga, sofern der jeweilige kicker-Transfermarkt geöffnet ist. Die WM und andere Turniere nicht anbieten.
+Unterstützte Ligen sind Bundesliga, 2. Bundesliga und 3. Liga. Sobald der offizielle Spieler-Daten-Export vorhanden ist, dürfen read-only Kader geplant, bewertet und verglichen werden. Käufe und Verkäufe in Chrome erst ausführen, wenn kicker den jeweiligen Transfermarkt geöffnet hat. Die WM und andere Turniere nicht anbieten.

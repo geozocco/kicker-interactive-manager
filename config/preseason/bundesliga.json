@@ -1,0 +1,19 @@
+{
+  "competition": "Bundesliga",
+  "season": "2026/27",
+  "api_sports": {
+    "season": 2026
+  },
+  "window": {
+    "from": "2026-06-15",
+    "to": "2026-09-30",
+    "season_start": "2026-08-28",
+    "decay_days": 28,
+    "post_start_decay_days": 35
+  },
+  "included_competition_patterns": [
+    "friendly",
+    "friendlies"
+  ],
+  "players": {}
+}

@@ -1,6 +1,6 @@
 {
   "name": "kicker-interactive-manager",
-  "version": "0.1.0+codex.20260805101839",
+  "version": "0.1.0+codex.20260805115723",
   "description": "Plant, bewertet und optimiert news-gepr\u00fcfte Kader f\u00fcr Bundesliga, 2. Bundesliga oder 3. Liga im kicker Managerspiel Interactive.",
   "author": {
     "name": "Jan Pies"
@@ -26,7 +26,7 @@
     "defaultPrompt": [
       "Zeige mir die unterst\u00fctzten Modi und Beispielprompts f\u00fcr meinen kicker-Interactive-Kader.",
       "Bewerte meinen aktuell in Chrome ge\u00f6ffneten Kader und ver\u00e4ndere nichts.",
-      "Hilf beim Aufstellen und frage nach Liga, Strategie, Variabilit\u00e4t und Betreuung. Nutze automatisch meine pers\u00f6nliche Variante."
+      "Hilf beim Aufstellen und frage nach Liga, Strategie, Variabilit\u00e4t und Betreuung. Bundesliga-Budget: 42,50 Mio."
     ]
   }
 }

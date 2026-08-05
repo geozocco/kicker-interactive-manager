@@ -2,7 +2,7 @@
 
 ## Zweck und Grenze
 
-Für 2. Bundesliga und 3. Liga 2026/27 einen gemeinsamen, nur lesbaren Marktbestand, einen getrennten Transfermarkt-Historienbestand und einen Qualitätsbestand verwenden. Der Markt enthält ausschließlich öffentliche Kicker-Fakten. Die Historie enthält normalisierte öffentliche Transfermarkt-Einsatzdaten. Der Qualitätsbestand enthält breit recherchierte, reproduzierbare Mehrjahres-, Rollen-, Fitness- und Transfereinschätzungen. Persönliche Präferenzen, lokale Variantenkennungen, Kollegenkader und Kaderbelegungen niemals zentral speichern.
+Für Bundesliga, 2. Bundesliga und 3. Liga 2026/27 je einen gemeinsamen, nur lesbaren Marktbestand, einen getrennten Transfermarkt-Historienbestand und einen Qualitätsbestand verwenden. Der Markt enthält ausschließlich öffentliche Kicker-Fakten. Die Historie enthält normalisierte öffentliche Transfermarkt-Einsatzdaten. Der Qualitätsbestand enthält breit recherchierte, reproduzierbare Mehrjahres-, Rollen-, Fitness- und Transfereinschätzungen. Persönliche Präferenzen, lokale Variantenkennungen, Kollegenkader und Kaderbelegungen niemals zentral speichern.
 
 Der gemeinsame Marktbestand beschleunigt und vereinheitlicht die Recherche. Er garantiert keine kollisionsfreien Kader bei unabhängig gestarteten Kollegen. Überschneidungsfreie Ankerkerne nur über ein gemeinsam erzeugtes Gruppenportfolio koordinieren.
 
@@ -19,14 +19,19 @@ Das Budget nicht aus dem Marktwertniveau ableiten und niemals zwischen Ligen üb
 ## Öffentliche Endpunkte
 
 ```text
+https://geozocco.github.io/kicker-interactive-manager/v1/market/bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/market/2-bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/market/3-liga.json
+https://geozocco.github.io/kicker-interactive-manager/v1/quality/bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/quality/2-bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/quality/3-liga.json
+https://geozocco.github.io/kicker-interactive-manager/v1/history/bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/history/2-bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/history/3-liga.json
+https://geozocco.github.io/kicker-interactive-manager/v1/kicker-history/bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/kicker-history/2-bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/kicker-history/3-liga.json
+https://geozocco.github.io/kicker-interactive-manager/v1/preseason/bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/preseason/2-bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/preseason/3-liga.json
 ```

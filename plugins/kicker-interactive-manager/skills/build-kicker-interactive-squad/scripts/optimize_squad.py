@@ -76,6 +76,10 @@ COMPONENTS = (
 )
 RISKS = ("transfer", "injury", "rotation", "outlier", "unknown_role")
 DEFAULT_NEWS_FEEDS = {
+    ("Bundesliga", "2026/27"): (
+        "https://geozocco.github.io/kicker-interactive-manager/"
+        "v1/news/bundesliga.json"
+    ),
     ("2. Bundesliga", "2026/27"): (
         "https://geozocco.github.io/kicker-interactive-manager/"
         "v1/news/2-bundesliga.json"
@@ -86,6 +90,10 @@ DEFAULT_NEWS_FEEDS = {
     ),
 }
 DEFAULT_MARKET_FEEDS = {
+    ("Bundesliga", "2026/27"): (
+        "https://geozocco.github.io/kicker-interactive-manager/"
+        "v1/market/bundesliga.json"
+    ),
     ("2. Bundesliga", "2026/27"): (
         "https://geozocco.github.io/kicker-interactive-manager/"
         "v1/market/2-bundesliga.json"
@@ -96,6 +104,10 @@ DEFAULT_MARKET_FEEDS = {
     ),
 }
 DEFAULT_QUALITY_FEEDS = {
+    ("Bundesliga", "2026/27"): (
+        "https://geozocco.github.io/kicker-interactive-manager/"
+        "v1/quality/bundesliga.json"
+    ),
     ("2. Bundesliga", "2026/27"): (
         "https://geozocco.github.io/kicker-interactive-manager/"
         "v1/quality/2-bundesliga.json"

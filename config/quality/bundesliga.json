@@ -1,0 +1,20 @@
+{
+  "competition": "Bundesliga",
+  "season": "2026/27",
+  "history_seasons": [
+    2026,
+    2025,
+    2024
+  ],
+  "candidate_quotas": {
+    "GOALKEEPER": 18,
+    "DEFENDER": 35,
+    "MIDFIELDER": 42,
+    "FORWARD": 32
+  },
+  "minimum_candidates": 60,
+  "minimum_anchors": 20,
+  "minimum_attacking_anchors": 15,
+  "minimum_goalkeeper_blocks": 6,
+  "minimum_history_resolved_percent": 75
+}

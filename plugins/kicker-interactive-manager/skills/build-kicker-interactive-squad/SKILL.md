@@ -10,7 +10,7 @@ description: Plane, optimiere, bewerte und ändere Kader im kicker Managerspiel 
 - Ausschließlich die bereits angemeldete Chrome-Sitzung verwenden. Keine Passwörter, Cookies, Tokens oder Browser-Speicher lesen oder exportieren.
 - Vor jeder Browsersteuerung den verfügbaren Chrome-Control-Skill vollständig laden und dessen Interaktions- und Finalisierungsregeln befolgen.
 - Aktuelle Informationen zu Transfers, Verletzungen, Vorbereitung, Trainer und Rollen im Web verifizieren. Offizielle Vereins- und Ligaseiten bevorzugen. Den zentralen redaktionellen Transfer-Watcher für Transfermarkt-, kicker-, Sky-, Vereins- und Zielvereinsmeldungen auswerten: Gerüchte nie automatisch ausschließen, fortgeschrittene Meldungen kurzfristig primär prüfen und bestätigte Abgänge sofort berücksichtigen.
-- Für die 2. Bundesliga und 3. Liga 2026/27 die im Optimierer hinterlegten zentralen Markt-, Transfermarkt-Historien-, Vorbereitungs-, Qualitäts- und News-Feeds als erstes maschinenlesbares Gate verwenden. Der Qualitätsbestand ist nur gültig, wenn er zu den aktuellen Markt-, News-, Vorbereitungs- und Historien-Prüfsummen gehört. Lokale Feed-URLs dürfen diesen Standard für Tests oder einen internen Spiegel überschreiben. Zentraldaten ersetzen die gezielte Prüfung von Lücken, Konflikten und folgenreichen Meldungen in Primärquellen nicht.
+- Für Bundesliga, 2. Bundesliga und 3. Liga 2026/27 die im Optimierer hinterlegten zentralen Markt-, Transfermarkt-Historien-, Vorbereitungs-, Qualitäts-, News- und Spieltagsfeeds als erstes maschinenlesbares Gate verwenden. Der Qualitätsbestand ist nur gültig, wenn er zu den aktuellen Markt-, News-, Vorbereitungs- und Historien-Prüfsummen gehört. Lokale Feed-URLs dürfen diesen Standard für Tests oder einen internen Spiegel überschreiben. Zentraldaten ersetzen die gezielte Prüfung von Lücken, Konflikten und folgenreichen Meldungen in Primärquellen nicht.
 - Keine Vorjahrespunkte als Prognose behandeln. Wiederholbarkeit, Rolle, Einsatzwahrscheinlichkeit, Umfeld und Preis getrennt bewerten. Historische Minuten und Scorer stets im Niveau der damaligen Liga bewerten; unterklassige Produktion nicht eins zu eins auf die Zielliga übertragen. Die österreichische Bundesliga und die Schweizer Super League im Modell ungefähr auf deutschem Drittliganiveau einordnen.
 - Berücksichtigen, dass nur die am Spieltag aufgestellte Elf Punkte sammelt. Reservequalität ist Absicherung und darf insbesondere bei geringem Betreuungsaufwand nicht genauso viel Budgetgewicht erhalten wie der wahrscheinliche Kern.
 - Nie „Alle verkaufen“ verwenden. Änderungen einzeln ausführen und nach jeder Phase Kadergröße, Positionen und Budget prüfen.
@@ -34,7 +34,7 @@ Den Wettbewerb sowie die drei Strategieparameter aus der Anfrage übernehmen.
    - die WM und andere Turniere sind ausdrücklich ausgeschlossen
    - fehlt die Spielklasse bei einer Zusammenstellung oder Änderung, vor Recherche oder Browseränderungen nachfragen; nicht aus einem zufällig geöffneten Tab raten
    - bei einer ausdrücklich read-only angeforderten Bewertung darf die Liga aus genau einem geöffneten, eindeutig erkennbaren kicker-Interactive-Kadertab übernommen werden; bei mehreren passenden Tabs oder uneindeutiger Seite nachfragen
-   - ist der kicker-Transfermarkt der gewählten Liga noch nicht geöffnet oder fehlt der Spieler-Daten-Export, keine andere Liga auswählen und keinen Kader erfinden; den Nutzer knapp auf den noch geschlossenen Markt hinweisen
+   - fehlt der Spieler-Daten-Export, keine andere Liga auswählen und keinen Kader erfinden; ist der Export bereits vorhanden, aber der Transfermarkt noch geschlossen, read-only planen, bewerten und Varianten erzeugen, jedoch keine Käufe oder Verkäufe in Chrome versuchen
 
 1. Strategie:
    - `verlässlich` (Default): bestätigte, wiederholbare Leistung und sichere Minuten
@@ -74,7 +74,7 @@ Zusätzlich Elite-Rebound-Stürmer ohne Namensliste erkennen: mindestens vier be
 ### 1. Ist-Zustand erfassen
 
 - Prüfen, dass die sichtbare Kicker-Seite zur ausdrücklich gewählten Spielklasse gehört. Wettbewerb, Saison-ID, Budget, Positionsvorgaben, aktuellen Kader und offene Plätze erfassen.
-- Für 2. Bundesliga und 3. Liga den frischen zentralen Marktbestand als maßgeblichen Preis-/Positionsbestand verwenden und gegen die sichtbare Saison prüfen. Die offizielle Roh-CSV nicht unnötig in einem Chrome-Tab öffnen.
+- Für Bundesliga, 2. Bundesliga und 3. Liga den frischen zentralen Marktbestand als maßgeblichen Preis-/Positionsbestand verwenden und gegen die sichtbare Saison prüfen. Die offizielle Roh-CSV nicht unnötig in einem Chrome-Tab öffnen.
 - Standardmäßig alle Torhüter aus demselben Verein wählen. Nur auf ausdrücklichen Wunsch mit `--mixed-goalkeepers` abweichen.
 - Einen vollständigen Torwartblock nicht mit einem sicheren Block verwechseln. Der zentrale Qualitätsstand bewertet jeden verfügbaren Vereinsblock anhand aktueller Einsatz- und Rollenwerte, Abstand zur internen Konkurrenz, relativem Kicker-Preis und Provider-Kader-/Transferlage. Ein drohender neuer Stammkeeper oder ein offenes Duell sperrt den Block abhängig vom Betreuungsprofil.
 - Vor dem finalen Browserumbau die in Frage kommenden Torwartvereine zusätzlich gezielt in aktuellen offiziellen Vereinsmeldungen, Trainerzitaten und belastbaren Transfermeldungen prüfen. Provider-Kader erkennen bestätigte oder bereits geführte Neuzugänge gut, aber nicht jedes frühe Gerücht oder jede öffentlich angekündigte Kaderplanung. Solche Belege als `goalkeeper_evidence` dokumentieren; bei angekündigter Suche nach einer neuen Nummer eins den Block für `gering` sperren.
@@ -86,7 +86,7 @@ Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüf
 
 - Aktuellen Kader zweimal aus dem sichtbaren Chrome-Zustand erfassen und eindeutig gegen den zentralen Marktbestand auflösen.
 - Jeden gewählten Spieler vollständig und aktuell annotieren. Für Verbesserungsvorschläge zusätzlich bezahlbare Alternativen recherchieren; für eine reine Sicherheitsprüfung reicht der vollständig geprüfte Zielkader.
-- Bei 2. Bundesliga und 3. Liga den frischen zentralen Feed mit `--require-news-snapshot --require-news-coverage` verlangen. Fehlende oder widersprüchliche Daten verhindern eine grüne Bestätigung.
+- Bei Bundesliga, 2. Bundesliga und 3. Liga den frischen zentralen Feed mit `--require-news-snapshot --require-news-coverage` verlangen. Fehlende oder widersprüchliche Daten verhindern eine grüne Bestätigung.
 - `scripts/evaluate_squad.py` mit sichtbarem Budget, Positionszahlen, Strategie und Betreuungsaufwand ausführen.
 - `avoidable_error_free: true` als einzige grüne Bestätigung behandeln. Bei `blocked` keine numerische Scheinsicherheit erzeugen, sondern die fehlenden Prüfungen nennen.
 - Verletzungs-, Transfer- und Rollenwarnungen mit spielerbezogenen aktuellen Quellen nennen. Bezahlbare Alternativen als Prüfhinweise behandeln.
@@ -99,6 +99,8 @@ Wenn der Nutzer den vorhandenen Kader bewerten oder auf vermeidbare Fehler prüf
 ```text
 <python-3-command> scripts/optimize_squad.py --competition "2. Bundesliga" --season "2026/27" --profile reliable --budget 10000000 --shortlist-only
 ```
+
+Für die Bundesliga denselben Ablauf mit `--competition "Bundesliga"` und dem automatisch gesetzten Budget `42500000` verwenden.
 
 - Je Position etablierte Kandidaten, Neuzugänge, höherklassig erprobte Spieler, Jugendtalente und Rebound-Kandidaten aufnehmen.
 - Leihspieler über das `loan_pathway_profile` differenzieren: tatsächliche Herrenminuten im Herkunftsniveau, altersrelative Reife, Stammvereinsniveau, Leihzweck, Zielvereinsrolle und Konkurrenz getrennt bewerten. Der Name oder die Ligazugehörigkeit des Stammvereins allein ist niemals ein Leistungsnachweis.

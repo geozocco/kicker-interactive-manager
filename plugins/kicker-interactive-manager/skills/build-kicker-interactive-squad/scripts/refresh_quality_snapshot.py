@@ -59,6 +59,11 @@ MODEL_VERSION = "multi-season-v16-loan-pathway-shortlist"
 PRESEASON_MODEL_VERSION = "preseason-readiness-v3-role-responsibilities"
 FORM_MODEL_VERSION = "recency-context-v4-evidence-role-transfer"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
+COMPETITION_SLUGS = {
+    "Bundesliga": "bundesliga",
+    "2. Bundesliga": "2-bundesliga",
+    "3. Liga": "3-liga",
+}
 ROLE_CONTINUITY = {"unknown", "confirmed", "expanded", "reduced"}
 ROLE_RESPONSIBILITIES = {
     "penalties",
@@ -3152,7 +3157,8 @@ def build_annotation(
             "claim": "Aktuelle Verletzungs-, Transfer- und Rollenprüfung",
             "source_url": (
                 "https://geozocco.github.io/kicker-interactive-manager/"
-                f"v1/news/{'2-bundesliga' if competition == '2. Bundesliga' else '3-liga'}.json"
+                "v1/news/"
+                f"{COMPETITION_SLUGS[competition]}.json"
             ),
             "checked_at": generated_at,
         },

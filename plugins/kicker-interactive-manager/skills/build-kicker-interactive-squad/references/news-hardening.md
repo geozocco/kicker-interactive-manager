@@ -9,7 +9,7 @@ Die News-Prüfung ist hybrid:
 3. Der zentrale Qualitätslauf verbindet dieses Snapshot mit einem getrennten, ebenfalls frischen Vorbereitungssnapshot und prüft Alter, Wettbewerb, Saison, Prüfsummen, Spielerzuordnung und Provider-Konflikte.
 4. Offizielle Vereins-, Liga- und Transfermeldungen bleiben der gezielte Fallback für fehlende Zuordnungen, Konflikte und besonders folgenreiche Meldungen.
 
-Provider-Schlüssel niemals in das Plugin, in Annotationen, in das Snapshot, in Browseraktionen oder in eine Antwort an den Nutzer schreiben. Die offiziellen Team-Feeds für 2. Bundesliga und 3. Liga 2026/27 sind im Optimierer hinterlegt; Kollegen benötigen weder Provider-Schlüssel noch lokale Feed-Konfiguration.
+Provider-Schlüssel niemals in das Plugin, in Annotationen, in das Snapshot, in Browseraktionen oder in eine Antwort an den Nutzer schreiben. Die offiziellen Team-Feeds für Bundesliga, 2. Bundesliga und 3. Liga 2026/27 sind im Optimierer hinterlegt; Kollegen benötigen weder Provider-Schlüssel noch lokale Feed-Konfiguration.
 
 Vorbereitung nicht als gewöhnliche News-Risikomeldung modellieren. Testspiele besitzen eigene Stichproben-, Quellen- und Verfallsregeln nach [preseason-evidence.md](preseason-evidence.md). Der News-Gate bleibt für Verletzung, Transfer und Verfügbarkeit maßgeblich.
 
@@ -37,6 +37,7 @@ Vorbereitung nicht als gewöhnliche News-Risikomeldung modellieren. Testspiele b
 Der Workflow `.github/workflows/update-news-feed.yml` läuft um 02:17, 08:17, 14:17 und 20:17 UTC sowie manuell. Die Läufe um 02:17 und 14:17 verwenden `standard`; die Zwischenläufe um 08:17 und 20:17 verwenden `urgent` und recherchieren nur neue, in ihrer Kaderidentität geänderte oder als besonders transfer-/rollenrelevant eingestufte Spieler. Manuell kann zusätzlich `full` gewählt werden; dieser Modus umgeht die OpenAI-Profilcaches bewusst und ist nur für kontrollierte Vollabgleiche gedacht. Der API-Sports-Schlüssel liegt ausschließlich als Repository-Secret `API_SPORTS_KEY` vor. Der OpenAI-Schlüssel liegt als Repository-Secret `OPENAI_APIKEY` vor und wird im Workflow nur für den Prozess als `OPENAI_API_KEY` bereitgestellt. `SPORTMONKS_API_TOKEN` ist optional: Fehlt er, veröffentlicht das Provider-Audit `not_configured`; fehlen bei vorhandenem Token noch verifizierte Zuordnungen, erscheint `configuration_required`. Beides blockiert den bewährten API-Sports-Lauf nicht. GitHub Pages veröffentlicht danach:
 
 ```text
+https://geozocco.github.io/kicker-interactive-manager/v1/news/bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/news/2-bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/news/3-liga.json
 ```

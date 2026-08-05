@@ -42,6 +42,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Refresh Bundesliga market
+        run: |
+          python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_market_snapshot.py \
+            --mapping config/market/bundesliga.json \
+            --output public/v1/market/bundesliga.json
+
       - name: Refresh 2. Bundesliga market
         run: |
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_market_snapshot.py \
@@ -57,6 +63,10 @@ jobs:
       - name: Extend longitudinal Kicker history
         run: |
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_kicker_history_snapshot.py \
+            --market public/v1/market/bundesliga.json \
+            --previous https://geozocco.github.io/kicker-interactive-manager/v1/kicker-history/bundesliga.json \
+            --output public/v1/kicker-history/bundesliga.json
+          python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_kicker_history_snapshot.py \
             --market public/v1/market/2-bundesliga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/kicker-history/2-bundesliga.json \
             --output public/v1/kicker-history/2-bundesliga.json
@@ -64,6 +74,31 @@ jobs:
             --market public/v1/market/3-liga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/kicker-history/3-liga.json \
             --output public/v1/kicker-history/3-liga.json
+
+      - name: Refresh Bundesliga
+        env:
+          API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
+          SPORTMONKS_API_TOKEN: ${{ secrets.SPORTMONKS_API_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_APIKEY }}
+        run: |
+          python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_news_snapshot.py \
+            --mapping config/news/bundesliga.json \
+            --role-evidence-config config/quality/bundesliga.json \
+            --market public/v1/market/bundesliga.json \
+            --previous-quality https://geozocco.github.io/kicker-interactive-manager/v1/quality/bundesliga.json \
+            --openai-role-max-players 0 \
+            --openai-role-batch-size 8 \
+            --openai-transfer-max-players 0 \
+            --openai-transfer-batch-size 8 \
+            --openai-transfer-workers 4 \
+            --openai-refresh-mode "$OPENAI_REFRESH_MODE" \
+            --output public/v1/news/bundesliga.json \
+            --previous https://geozocco.github.io/kicker-interactive-manager/v1/news/bundesliga.json \
+            --provider api_sports \
+            --optional-provider sportsmonks
+
+      - name: Respect API-Sports minute limit after Bundesliga
+        run: sleep 65
 
       - name: Refresh 2. Bundesliga
         env:
@@ -87,7 +122,7 @@ jobs:
             --provider api_sports \
             --optional-provider sportsmonks
 
-      - name: Respect API-Sports minute limit
+      - name: Respect API-Sports minute limit after 2. Bundesliga
         run: sleep 65
 
       - name: Refresh 3. Liga
@@ -115,6 +150,16 @@ jobs:
       - name: Respect API-Sports minute limit before quality history
         run: sleep 65
 
+      - name: Refresh Bundesliga preseason evidence
+        env:
+          API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
+        run: |
+          python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_preseason_snapshot.py \
+            --news public/v1/news/bundesliga.json \
+            --mapping config/preseason/bundesliga.json \
+            --previous https://geozocco.github.io/kicker-interactive-manager/v1/preseason/bundesliga.json \
+            --output public/v1/preseason/bundesliga.json
+
       - name: Refresh 2. Bundesliga preseason evidence
         env:
           API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
@@ -138,6 +183,21 @@ jobs:
       - name: Respect API-Sports minute limit before player histories
         run: sleep 65
 
+      - name: Refresh Transfermarkt history for Bundesliga
+        run: |
+          python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_transfermarkt_history.py \
+            --market public/v1/market/bundesliga.json \
+            --mapping config/history/bundesliga.json \
+            --strengths config/history/competition-strength.json \
+            --identity-seed config/history/identities/bundesliga.json \
+            --additional-identity-seed config/history/identities/2-bundesliga.json \
+            --additional-identity-seed config/history/identities/3-liga.json \
+            --performance-seed config/history/performance/bundesliga.json.gz \
+            --additional-performance-seed config/history/performance/2-bundesliga.json.gz \
+            --additional-performance-seed config/history/performance/3-liga.json.gz \
+            --previous https://geozocco.github.io/kicker-interactive-manager/v1/history/bundesliga.json \
+            --output public/v1/history/bundesliga.json
+
       - name: Refresh Transfermarkt history for 2. Bundesliga
         run: |
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_transfermarkt_history.py \
@@ -145,8 +205,10 @@ jobs:
             --mapping config/history/2-bundesliga.json \
             --strengths config/history/competition-strength.json \
             --identity-seed config/history/identities/2-bundesliga.json \
+            --additional-identity-seed config/history/identities/bundesliga.json \
             --additional-identity-seed config/history/identities/3-liga.json \
             --performance-seed config/history/performance/2-bundesliga.json.gz \
+            --additional-performance-seed config/history/performance/bundesliga.json.gz \
             --additional-performance-seed config/history/performance/3-liga.json.gz \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/history/2-bundesliga.json \
             --output public/v1/history/2-bundesliga.json
@@ -158,11 +220,27 @@ jobs:
             --mapping config/history/3-liga.json \
             --strengths config/history/competition-strength.json \
             --identity-seed config/history/identities/3-liga.json \
+            --additional-identity-seed config/history/identities/bundesliga.json \
             --additional-identity-seed config/history/identities/2-bundesliga.json \
             --performance-seed config/history/performance/3-liga.json.gz \
+            --additional-performance-seed config/history/performance/bundesliga.json.gz \
             --additional-performance-seed config/history/performance/2-bundesliga.json.gz \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/history/3-liga.json \
             --output public/v1/history/3-liga.json
+
+      - name: Refresh Bundesliga quality pool
+        env:
+          API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
+        run: |
+          python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_quality_snapshot.py \
+            --market public/v1/market/bundesliga.json \
+            --news public/v1/news/bundesliga.json \
+            --preseason public/v1/preseason/bundesliga.json \
+            --history public/v1/history/bundesliga.json \
+            --kicker-history public/v1/kicker-history/bundesliga.json \
+            --previous-quality https://geozocco.github.io/kicker-interactive-manager/v1/quality/bundesliga.json \
+            --mapping config/quality/bundesliga.json \
+            --output public/v1/quality/bundesliga.json
 
       - name: Refresh 2. Bundesliga quality pool
         env:
@@ -196,6 +274,10 @@ jobs:
         env:
           API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
         run: |
+          python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_matchday_snapshot.py \
+            --mapping config/news/bundesliga.json \
+            --quality public/v1/quality/bundesliga.json \
+            --output public/v1/matchday/bundesliga.json
           python plugins/kicker-interactive-manager/skills/build-kicker-interactive-squad/scripts/refresh_matchday_snapshot.py \
             --mapping config/news/2-bundesliga.json \
             --quality public/v1/quality/2-bundesliga.json \

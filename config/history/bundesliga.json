@@ -1,0 +1,11 @@
+{
+  "competition": "Bundesliga",
+  "season": "2026/27",
+  "expected_team_count": 18,
+  "transfermarkt_competition_id": "L1",
+  "transfermarkt_competition_slug": "bundesliga",
+  "transfermarkt_season": 2026,
+  "target_strength": 1.0,
+  "maximum_seasons": 8,
+  "minimum_resolved_percent": 75
+}

@@ -1,0 +1,3165 @@
+{
+  "schema_version": 1,
+  "competition": "Bundesliga",
+  "season": "2026/27",
+  "generated_at": "2026-08-05T11:42:15Z",
+  "source": "Locally verified Transfermarkt current squad bootstrap",
+  "players": [
+    {
+      "player_id": 7161,
+      "name": "Jonas Hofmann",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/jonas-hofmann/profil/spieler/7161"
+    },
+    {
+      "player_id": 17259,
+      "name": "Manuel Neuer",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/manuel-neuer/profil/spieler/17259"
+    },
+    {
+      "player_id": 21327,
+      "name": "Ron-Robert Zieler",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/ron-robert-zieler/profil/spieler/21327"
+    },
+    {
+      "player_id": 28396,
+      "name": "Edin Dzeko",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/edin-dzeko/profil/spieler/28396"
+    },
+    {
+      "player_id": 31653,
+      "name": "Tobias Sippel",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/tobias-sippel/profil/spieler/31653"
+    },
+    {
+      "player_id": 40034,
+      "name": "Jens Grahl",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/jens-grahl/profil/spieler/40034"
+    },
+    {
+      "player_id": 40680,
+      "name": "Sven Ulreich",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/sven-ulreich/profil/spieler/40680"
+    },
+    {
+      "player_id": 43824,
+      "name": "Kevin Müller",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/kevin-muller/profil/spieler/43824"
+    },
+    {
+      "player_id": 44536,
+      "name": "Frank Lehmann",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/frank-lehmann/profil/spieler/44536"
+    },
+    {
+      "player_id": 46580,
+      "name": "Andrej Kramaric",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/andrej-kramaric/profil/spieler/46580"
+    },
+    {
+      "player_id": 49723,
+      "name": "Timothy Chandler",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/timothy-chandler/profil/spieler/49723"
+    },
+    {
+      "player_id": 55089,
+      "name": "Oliver Baumann",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/oliver-baumann/profil/spieler/55089"
+    },
+    {
+      "player_id": 58995,
+      "name": "Anthony Jung",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/anthony-jung/profil/spieler/58995"
+    },
+    {
+      "player_id": 74842,
+      "name": "Mario Götze",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/mario-gotze/profil/spieler/74842"
+    },
+    {
+      "player_id": 75921,
+      "name": "Christopher Trimmel",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/christopher-trimmel/profil/spieler/75921"
+    },
+    {
+      "player_id": 76158,
+      "name": "Alexander Meyer",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/alexander-meyer/profil/spieler/76158"
+    },
+    {
+      "player_id": 81173,
+      "name": "Janis Blaswich",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/janis-blaswich/profil/spieler/81173"
+    },
+    {
+      "player_id": 82350,
+      "name": "Stefan Bell",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/stefan-bell/profil/spieler/82350"
+    },
+    {
+      "player_id": 84993,
+      "name": "Daniel Heuer Fernandes",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/daniel-heuer-fernandes/profil/spieler/84993"
+    },
+    {
+      "player_id": 85534,
+      "name": "Tim Boss",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/tim-boss/profil/spieler/85534"
+    },
+    {
+      "player_id": 85543,
+      "name": "Niklas Lomb",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/niklas-lomb/profil/spieler/85543"
+    },
+    {
+      "player_id": 85864,
+      "name": "Loris Karius",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/loris-karius/profil/spieler/85864"
+    },
+    {
+      "player_id": 85906,
+      "name": "Danny da Costa",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/danny-da-costa/profil/spieler/85906"
+    },
+    {
+      "player_id": 90317,
+      "name": "Daniel Batz",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/daniel-batz/profil/spieler/90317"
+    },
+    {
+      "player_id": 93604,
+      "name": "Lukas Kübler",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/lukas-kubler/profil/spieler/93604"
+    },
+    {
+      "player_id": 93707,
+      "name": "Christian Günter",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/christian-gunter/profil/spieler/93707"
+    },
+    {
+      "player_id": 93740,
+      "name": "Willi Orbán",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/willi-orban/profil/spieler/93740"
+    },
+    {
+      "player_id": 93763,
+      "name": "Alexander Schwolow",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/alexander-schwolow/profil/spieler/93763"
+    },
+    {
+      "player_id": 94192,
+      "name": "Patrick Drewes",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/patrick-drewes/profil/spieler/94192"
+    },
+    {
+      "player_id": 99451,
+      "name": "Markus Kolke",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/markus-kolke/profil/spieler/99451"
+    },
+    {
+      "player_id": 106405,
+      "name": "Jeffrey Gouweleeuw",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/jeffrey-gouweleeuw/profil/spieler/106405"
+    },
+    {
+      "player_id": 106872,
+      "name": "Kevin Stöger",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/kevin-stoger/profil/spieler/106872"
+    },
+    {
+      "player_id": 106987,
+      "name": "Marcel Sabitzer",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/marcel-sabitzer/profil/spieler/106987"
+    },
+    {
+      "player_id": 107775,
+      "name": "Frederik Rönnow",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/frederik-ronnow/profil/spieler/107775"
+    },
+    {
+      "player_id": 116088,
+      "name": "Marius Bülter",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/marius-bulter/profil/spieler/116088"
+    },
+    {
+      "player_id": 118847,
+      "name": "Dominik Kohr",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/dominik-kohr/profil/spieler/118847"
+    },
+    {
+      "player_id": 119211,
+      "name": "Mitchell Weiser",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/mitchell-weiser/profil/spieler/119211"
+    },
+    {
+      "player_id": 119296,
+      "name": "Emre Can",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/emre-can/profil/spieler/119296"
+    },
+    {
+      "player_id": 119557,
+      "name": "Kenan Karaman",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/kenan-karaman/profil/spieler/119557"
+    },
+    {
+      "player_id": 120205,
+      "name": "Michael Gregoritsch",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/michael-gregoritsch/profil/spieler/120205"
+    },
+    {
+      "player_id": 124410,
+      "name": "Rani Khedira",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/rani-khedira/profil/spieler/124410"
+    },
+    {
+      "player_id": 124502,
+      "name": "Matthias Ginter",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/matthias-ginter/profil/spieler/124502"
+    },
+    {
+      "player_id": 125714,
+      "name": "Mark Flekken",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/mark-flekken/profil/spieler/125714"
+    },
+    {
+      "player_id": 127573,
+      "name": "Phillipp Mwene",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/phillipp-mwene/profil/spieler/127573"
+    },
+    {
+      "player_id": 132098,
+      "name": "Harry Kane",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/harry-kane/profil/spieler/132098"
+    },
+    {
+      "player_id": 156990,
+      "name": "Marco Friedl",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/marco-friedl/profil/spieler/156990"
+    },
+    {
+      "player_id": 157635,
+      "name": "Yussuf Poulsen",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/yussuf-poulsen/profil/spieler/157635"
+    },
+    {
+      "player_id": 157672,
+      "name": "Vladimír Coufal",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/vladimir-coufal/profil/spieler/157672"
+    },
+    {
+      "player_id": 159088,
+      "name": "Robert Andrich",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/robert-andrich/profil/spieler/159088"
+    },
+    {
+      "player_id": 159471,
+      "name": "Serge Gnabry",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/serge-gnabry/profil/spieler/159471"
+    },
+    {
+      "player_id": 160929,
+      "name": "Marvin Schwäbe",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/marvin-schwabe/profil/spieler/160929"
+    },
+    {
+      "player_id": 160954,
+      "name": "Jannik Huth",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/jannik-huth/profil/spieler/160954"
+    },
+    {
+      "player_id": 160963,
+      "name": "Robin Zentner",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/robin-zentner/profil/spieler/160963"
+    },
+    {
+      "player_id": 160971,
+      "name": "Leopold Zingerle",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/leopold-zingerle/profil/spieler/160971"
+    },
+    {
+      "player_id": 161056,
+      "name": "Joshua Kimmich",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/joshua-kimmich/profil/spieler/161056"
+    },
+    {
+      "player_id": 161057,
+      "name": "Carl Klaus",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/carl-klaus/profil/spieler/161057"
+    },
+    {
+      "player_id": 162434,
+      "name": "Niklas Stark",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/niklas-stark/profil/spieler/162434"
+    },
+    {
+      "player_id": 168989,
+      "name": "Silvan Widmer",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/silvan-widmer/profil/spieler/168989"
+    },
+    {
+      "player_id": 170517,
+      "name": "Marius Funk",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/marius-funk/profil/spieler/170517"
+    },
+    {
+      "player_id": 177779,
+      "name": "Janik Haberer",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/janik-haberer/profil/spieler/177779"
+    },
+    {
+      "player_id": 179184,
+      "name": "Michy Batshuayi",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/michy-batshuayi/profil/spieler/179184"
+    },
+    {
+      "player_id": 185077,
+      "name": "Vincenzo Grifo",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/vincenzo-grifo/profil/spieler/185077"
+    },
+    {
+      "player_id": 186374,
+      "name": "Alexander Schlager",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/alexander-schlager/profil/spieler/186374"
+    },
+    {
+      "player_id": 186988,
+      "name": "Sven Michel",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/sven-michel/profil/spieler/186988"
+    },
+    {
+      "player_id": 187624,
+      "name": "Fabian Bredlow",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/fabian-bredlow/profil/spieler/187624"
+    },
+    {
+      "player_id": 188888,
+      "name": "Sheraldo Becker",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/sheraldo-becker/profil/spieler/188888"
+    },
+    {
+      "player_id": 190284,
+      "name": "Maximilian Eggestein",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/maximilian-eggestein/profil/spieler/190284"
+    },
+    {
+      "player_id": 192635,
+      "name": "Nico Elvedi",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/nico-elvedi/profil/spieler/192635"
+    },
+    {
+      "player_id": 192840,
+      "name": "Jan Gyamerah",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/jan-gyamerah/profil/spieler/192840"
+    },
+    {
+      "player_id": 193004,
+      "name": "Waldemar Anton",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/waldemar-anton/profil/spieler/193004"
+    },
+    {
+      "player_id": 193033,
+      "name": "Tim Kleindienst",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/tim-kleindienst/profil/spieler/193033"
+    },
+    {
+      "player_id": 193900,
+      "name": "Marius Wolf",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/marius-wolf/profil/spieler/193900"
+    },
+    {
+      "player_id": 196095,
+      "name": "Luca Waldschmidt",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/luca-waldschmidt/profil/spieler/196095"
+    },
+    {
+      "player_id": 196231,
+      "name": "Marvin Friedrich",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/marvin-friedrich/profil/spieler/196231"
+    },
+    {
+      "player_id": 196357,
+      "name": "Jonathan Tah",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/jonathan-tah/profil/spieler/196357"
+    },
+    {
+      "player_id": 196813,
+      "name": "Michael Zetterer",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/michael-zetterer/profil/spieler/196813"
+    },
+    {
+      "player_id": 202591,
+      "name": "Benjamin Henrichs",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/benjamin-henrichs/profil/spieler/202591"
+    },
+    {
+      "player_id": 207580,
+      "name": "Amara Condé",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/amara-conde/profil/spieler/207580"
+    },
+    {
+      "player_id": 208167,
+      "name": "Dawid Kownacki",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/dawid-kownacki/profil/spieler/208167"
+    },
+    {
+      "player_id": 215599,
+      "name": "Lukas Klostermann",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/lukas-klostermann/profil/spieler/215599"
+    },
+    {
+      "player_id": 221316,
+      "name": "Lucas Vázquez",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/lucas-vazquez/profil/spieler/221316"
+    },
+    {
+      "player_id": 223967,
+      "name": "Konrad Laimer",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/konrad-laimer/profil/spieler/223967"
+    },
+    {
+      "player_id": 225657,
+      "name": "Philipp Lienhart",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/philipp-lienhart/profil/spieler/225657"
+    },
+    {
+      "player_id": 227089,
+      "name": "Matthias Köbbing",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/matthias-kobbing/profil/spieler/227089"
+    },
+    {
+      "player_id": 227110,
+      "name": "Jordan Torunarigha",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/jordan-torunarigha/profil/spieler/227110"
+    },
+    {
+      "player_id": 229006,
+      "name": "Franck Honorat",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/franck-honorat/profil/spieler/229006"
+    },
+    {
+      "player_id": 229991,
+      "name": "Luca Schnellbacher",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/luca-schnellbacher/profil/spieler/229991"
+    },
+    {
+      "player_id": 232320,
+      "name": "Atakan Karazor",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/atakan-karazor/profil/spieler/232320"
+    },
+    {
+      "player_id": 232454,
+      "name": "Nadiem Amiri",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/nadiem-amiri/profil/spieler/232454"
+    },
+    {
+      "player_id": 232463,
+      "name": "Luca Pfeiffer",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/luca-pfeiffer/profil/spieler/232463"
+    },
+    {
+      "player_id": 234029,
+      "name": "Grischa Prömel",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/grischa-promel/profil/spieler/234029"
+    },
+    {
+      "player_id": 236981,
+      "name": "Timo Hübers",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/timo-hubers/profil/spieler/236981"
+    },
+    {
+      "player_id": 238639,
+      "name": "Steve Mounié",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/steve-mounie/profil/spieler/238639"
+    },
+    {
+      "player_id": 241307,
+      "name": "Finn Porath",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/finn-porath/profil/spieler/241307"
+    },
+    {
+      "player_id": 242086,
+      "name": "Patrik Schick",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/patrik-schick/profil/spieler/242086"
+    },
+    {
+      "player_id": 243856,
+      "name": "Cedric Itten",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/cedric-itten/profil/spieler/243856"
+    },
+    {
+      "player_id": 248999,
+      "name": "Lucas Höler",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/lucas-holer/profil/spieler/248999"
+    },
+    {
+      "player_id": 251299,
+      "name": "Finn Dahmen",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/finn-dahmen/profil/spieler/251299"
+    },
+    {
+      "player_id": 251309,
+      "name": "Dennis Geiger",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/dennis-geiger/profil/spieler/251309"
+    },
+    {
+      "player_id": 257455,
+      "name": "João Palhinha",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/joao-palhinha/profil/spieler/257455"
+    },
+    {
+      "player_id": 257814,
+      "name": "Gregor Kobel",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/gregor-kobel/profil/spieler/257814"
+    },
+    {
+      "player_id": 261504,
+      "name": "Aleix García",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/aleix-garcia/profil/spieler/261504"
+    },
+    {
+      "player_id": 263361,
+      "name": "Maximilian Wöber",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/maximilian-wober/profil/spieler/263361"
+    },
+    {
+      "player_id": 264960,
+      "name": "Robin Fellhauer",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/robin-fellhauer/profil/spieler/264960"
+    },
+    {
+      "player_id": 270393,
+      "name": "Robert Skov",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/robert-skov/profil/spieler/270393"
+    },
+    {
+      "player_id": 270541,
+      "name": "Serhou Guirassy",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/serhou-guirassy/profil/spieler/270541"
+    },
+    {
+      "player_id": 272278,
+      "name": "Chris Führich",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/chris-fuhrich/profil/spieler/272278"
+    },
+    {
+      "player_id": 273132,
+      "name": "Robin Gosens",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/robin-gosens/profil/spieler/273132"
+    },
+    {
+      "player_id": 278332,
+      "name": "Florian Neuhaus",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/florian-neuhaus/profil/spieler/278332"
+    },
+    {
+      "player_id": 279009,
+      "name": "Marco Richter",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/marco-richter/profil/spieler/279009"
+    },
+    {
+      "player_id": 280553,
+      "name": "Anton Donkor",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/anton-donkor/profil/spieler/280553"
+    },
+    {
+      "player_id": 282349,
+      "name": "Timo Becker",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/timo-becker/profil/spieler/282349"
+    },
+    {
+      "player_id": 282660,
+      "name": "Maximilian Mittelstädt",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/maximilian-mittelstadt/profil/spieler/282660"
+    },
+    {
+      "player_id": 284010,
+      "name": "Robin Hack",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/robin-hack/profil/spieler/284010"
+    },
+    {
+      "player_id": 284270,
+      "name": "Moritz Nicolas",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/moritz-nicolas/profil/spieler/284270"
+    },
+    {
+      "player_id": 284732,
+      "name": "Ramy Bensebaini",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/ramy-bensebaini/profil/spieler/284732"
+    },
+    {
+      "player_id": 284769,
+      "name": "Florian Müller",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/florian-muller/profil/spieler/284769"
+    },
+    {
+      "player_id": 287188,
+      "name": "Dejan Ljubicic",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/dejan-ljubicic/profil/spieler/287188"
+    },
+    {
+      "player_id": 287920,
+      "name": "Tim Skarke",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/tim-skarke/profil/spieler/287920"
+    },
+    {
+      "player_id": 288340,
+      "name": "Phillip Tietz",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/phillip-tietz/profil/spieler/288340"
+    },
+    {
+      "player_id": 288429,
+      "name": "Mads Pedersen",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/mads-pedersen/profil/spieler/288429"
+    },
+    {
+      "player_id": 289835,
+      "name": "Jens Stage",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/jens-stage/profil/spieler/289835"
+    },
+    {
+      "player_id": 290587,
+      "name": "Ellyes Skhiri",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/ellyes-skhiri/profil/spieler/290587"
+    },
+    {
+      "player_id": 291222,
+      "name": "Jean-Luc Dompé",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/jean-luc-dompe/profil/spieler/291222"
+    },
+    {
+      "player_id": 292812,
+      "name": "Hasan Kuruçay",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/hasan-kurucay/profil/spieler/292812"
+    },
+    {
+      "player_id": 295630,
+      "name": "Dimitrios Giannoulis",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/dimitrios-giannoulis/profil/spieler/295630"
+    },
+    {
+      "player_id": 296741,
+      "name": "Markus Schubert",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/markus-schubert/profil/spieler/296741"
+    },
+    {
+      "player_id": 296879,
+      "name": "Steffen Tigges",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/steffen-tigges/profil/spieler/296879"
+    },
+    {
+      "player_id": 297583,
+      "name": "Woo-yeong Jeong",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/woo-yeong-jeong/profil/spieler/297583"
+    },
+    {
+      "player_id": 298603,
+      "name": "Miro Muheim",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/miro-muheim/profil/spieler/298603"
+    },
+    {
+      "player_id": 303219,
+      "name": "Jeff Chabot",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/jeff-chabot/profil/spieler/303219"
+    },
+    {
+      "player_id": 314398,
+      "name": "Jae-sung Lee",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/jae-sung-lee/profil/spieler/314398"
+    },
+    {
+      "player_id": 318204,
+      "name": "David Raum",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/david-raum/profil/spieler/318204"
+    },
+    {
+      "player_id": 322073,
+      "name": "Isac Lidberg",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/isac-lidberg/profil/spieler/322073"
+    },
+    {
+      "player_id": 322517,
+      "name": "Joël Schmied",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/joel-schmied/profil/spieler/322517"
+    },
+    {
+      "player_id": 324278,
+      "name": "Christoph Baumgartner",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/christoph-baumgartner/profil/spieler/324278"
+    },
+    {
+      "player_id": 327251,
+      "name": "Ridle Baku",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/ridle-baku/profil/spieler/327251"
+    },
+    {
+      "player_id": 327862,
+      "name": "Janik Bachmann",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/janik-bachmann/profil/spieler/327862"
+    },
+    {
+      "player_id": 328784,
+      "name": "Robin Koch",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/robin-koch/profil/spieler/328784"
+    },
+    {
+      "player_id": 330635,
+      "name": "Felix Götze",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/felix-gotze/profil/spieler/330635"
+    },
+    {
+      "player_id": 330699,
+      "name": "Raphael Obermair",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/raphael-obermair/profil/spieler/330699"
+    },
+    {
+      "player_id": 331637,
+      "name": "Tom Baack",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/tom-baack/profil/spieler/331637"
+    },
+    {
+      "player_id": 332392,
+      "name": "Ron Schallenberg",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/ron-schallenberg/profil/spieler/332392"
+    },
+    {
+      "player_id": 333647,
+      "name": "Jonathan Burkardt",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/jonathan-burkardt/profil/spieler/333647"
+    },
+    {
+      "player_id": 334221,
+      "name": "Amos Pieper",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/amos-pieper/profil/spieler/334221"
+    },
+    {
+      "player_id": 335103,
+      "name": "Linton Maina",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/linton-maina/profil/spieler/335103"
+    },
+    {
+      "player_id": 335209,
+      "name": "Kevin Diks",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/kevin-diks/profil/spieler/335209"
+    },
+    {
+      "player_id": 335457,
+      "name": "Ermedin Demirovic",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/ermedin-demirovic/profil/spieler/335457"
+    },
+    {
+      "player_id": 335993,
+      "name": "Philipp Treu",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/philipp-treu/profil/spieler/335993"
+    },
+    {
+      "player_id": 337036,
+      "name": "Florent Muslija",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/florent-muslija/profil/spieler/337036"
+    },
+    {
+      "player_id": 337097,
+      "name": "Tom Zimmerschied",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/tom-zimmerschied/profil/spieler/337097"
+    },
+    {
+      "player_id": 338668,
+      "name": "Senne Lynen",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/senne-lynen/profil/spieler/338668"
+    },
+    {
+      "player_id": 339314,
+      "name": "Deniz Undav",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/deniz-undav/profil/spieler/339314"
+    },
+    {
+      "player_id": 340166,
+      "name": "Alessio Castro-Montes",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/alessio-castro-montes/profil/spieler/340166"
+    },
+    {
+      "player_id": 340322,
+      "name": "Nathan Tella",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/nathan-tella/profil/spieler/340322"
+    },
+    {
+      "player_id": 341317,
+      "name": "Oliver Burke",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/oliver-burke/profil/spieler/341317"
+    },
+    {
+      "player_id": 342039,
+      "name": "Yannik Keitel",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/yannik-keitel/profil/spieler/342039"
+    },
+    {
+      "player_id": 342967,
+      "name": "Niklas Beste",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/niklas-beste/profil/spieler/342967"
+    },
+    {
+      "player_id": 344598,
+      "name": "Dan-Axel Zagadou",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/dan-axel-zagadou/profil/spieler/344598"
+    },
+    {
+      "player_id": 344695,
+      "name": "Dayot Upamecano",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/dayot-upamecano/profil/spieler/344695"
+    },
+    {
+      "player_id": 345189,
+      "name": "Luka Lochoshvili",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/luka-lochoshvili/profil/spieler/345189"
+    },
+    {
+      "player_id": 346853,
+      "name": "Romano Schmid",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/romano-schmid/profil/spieler/346853"
+    },
+    {
+      "player_id": 349465,
+      "name": "Nicolas Kristof",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/nicolas-kristof/profil/spieler/349465"
+    },
+    {
+      "player_id": 352332,
+      "name": "Florian Le Joncour",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/florian-le-joncour/profil/spieler/352332"
+    },
+    {
+      "player_id": 353892,
+      "name": "Hiroki Ito",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/hiroki-ito/profil/spieler/353892"
+    },
+    {
+      "player_id": 357310,
+      "name": "Christian Gomis",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/christian-gomis/profil/spieler/357310"
+    },
+    {
+      "player_id": 358504,
+      "name": "Ritsu Doan",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/ritsu-doan/profil/spieler/358504"
+    },
+    {
+      "player_id": 358766,
+      "name": "Calvin Brackelmann",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/calvin-brackelmann/profil/spieler/358766"
+    },
+    {
+      "player_id": 361260,
+      "name": "Ozan Kabak",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/ozan-kabak/profil/spieler/361260"
+    },
+    {
+      "player_id": 362977,
+      "name": "Josip Juranovic",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/josip-juranovic/profil/spieler/362977"
+    },
+    {
+      "player_id": 364258,
+      "name": "Bernardo",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/bernardo/profil/spieler/364258"
+    },
+    {
+      "player_id": 365172,
+      "name": "Patson Daka",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/patson-daka/profil/spieler/365172"
+    },
+    {
+      "player_id": 368891,
+      "name": "Arthur Theate",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/arthur-theate/profil/spieler/368891"
+    },
+    {
+      "player_id": 370683,
+      "name": "Andreas Hanche-Olsen",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/andreas-hanche-olsen/profil/spieler/370683"
+    },
+    {
+      "player_id": 370789,
+      "name": "Julian Ryerson",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/julian-ryerson/profil/spieler/370789"
+    },
+    {
+      "player_id": 371141,
+      "name": "Stanley Nsoki",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/stanley-nsoki/profil/spieler/371141"
+    },
+    {
+      "player_id": 374954,
+      "name": "Kristijan Jakic",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/kristijan-jakic/profil/spieler/374954"
+    },
+    {
+      "player_id": 378424,
+      "name": "Sebastian Klaas",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/sebastian-klaas/profil/spieler/378424"
+    },
+    {
+      "player_id": 381967,
+      "name": "Albert Sambi Lokonga",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/albert-sambi-lokonga/profil/spieler/381967"
+    },
+    {
+      "player_id": 383362,
+      "name": "Enzo Leopold",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/enzo-leopold/profil/spieler/383362"
+    },
+    {
+      "player_id": 384593,
+      "name": "Alexis Claude-Maurice",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/alexis-claude-maurice/profil/spieler/384593"
+    },
+    {
+      "player_id": 386685,
+      "name": "Matheo Raab",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/matheo-raab/profil/spieler/386685"
+    },
+    {
+      "player_id": 388067,
+      "name": "Stefan Drljaca",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/stefan-drljaca/profil/spieler/388067"
+    },
+    {
+      "player_id": 388198,
+      "name": "Nico Schlotterbeck",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/nico-schlotterbeck/profil/spieler/388198"
+    },
+    {
+      "player_id": 388409,
+      "name": "Philipp Sander",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/philipp-sander/profil/spieler/388409"
+    },
+    {
+      "player_id": 390661,
+      "name": "Jason Ceka",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/jason-ceka/profil/spieler/390661"
+    },
+    {
+      "player_id": 391766,
+      "name": "Marco Grüll",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/marco-grull/profil/spieler/391766"
+    },
+    {
+      "player_id": 391780,
+      "name": "Derrick Köhn",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/derrick-kohn/profil/spieler/391780"
+    },
+    {
+      "player_id": 392710,
+      "name": "Lennard Maloney",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/lennard-maloney/profil/spieler/392710"
+    },
+    {
+      "player_id": 392964,
+      "name": "Emmanuel Latte Lath",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/emmanuel-latte-lath/profil/spieler/392964"
+    },
+    {
+      "player_id": 393512,
+      "name": "Felix Agu",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/felix-agu/profil/spieler/393512"
+    },
+    {
+      "player_id": 397171,
+      "name": "Gideon Mensah",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/gideon-mensah/profil/spieler/397171"
+    },
+    {
+      "player_id": 400489,
+      "name": "Eljif Elmas",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/eljif-elmas/profil/spieler/400489"
+    },
+    {
+      "player_id": 400546,
+      "name": "Nikolas Nartey",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/nikolas-nartey/profil/spieler/400546"
+    },
+    {
+      "player_id": 401578,
+      "name": "Exequiel Palacios",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/exequiel-palacios/profil/spieler/401578"
+    },
+    {
+      "player_id": 401639,
+      "name": "Lukas Petkov",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/lukas-petkov/profil/spieler/401639"
+    },
+    {
+      "player_id": 403177,
+      "name": "Emir Sahiti",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/emir-sahiti/profil/spieler/403177"
+    },
+    {
+      "player_id": 404950,
+      "name": "Nicolas Seiwald",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/nicolas-seiwald/profil/spieler/404950"
+    },
+    {
+      "player_id": 405670,
+      "name": "Yannik Engelhardt",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/yannik-engelhardt/profil/spieler/405670"
+    },
+    {
+      "player_id": 405687,
+      "name": "Tom Krauß",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/tom-krauss/profil/spieler/405687"
+    },
+    {
+      "player_id": 406614,
+      "name": "Oliver Batista Meier",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/oliver-batista-meier/profil/spieler/406614"
+    },
+    {
+      "player_id": 406640,
+      "name": "Felix Nmecha",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/felix-nmecha/profil/spieler/406640"
+    },
+    {
+      "player_id": 410870,
+      "name": "Adrian Gantenbein",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/adrian-gantenbein/profil/spieler/410870"
+    },
+    {
+      "player_id": 412935,
+      "name": "Immanuel Pherai",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/immanuel-pherai/profil/spieler/412935"
+    },
+    {
+      "player_id": 412953,
+      "name": "Wouter Burger",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/wouter-burger/profil/spieler/412953"
+    },
+    {
+      "player_id": 413843,
+      "name": "Keven Schlotterbeck",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/keven-schlotterbeck/profil/spieler/413843"
+    },
+    {
+      "player_id": 415035,
+      "name": "Koki Machida",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/koki-machida/profil/spieler/415035"
+    },
+    {
+      "player_id": 415194,
+      "name": "Bakery Jatta",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/bakery-jatta/profil/spieler/415194"
+    },
+    {
+      "player_id": 416380,
+      "name": "Ragnar Ache",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/ragnar-ache/profil/spieler/416380"
+    },
+    {
+      "player_id": 420210,
+      "name": "Lutsharel Geertruida",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/lutsharel-geertruida/profil/spieler/420210"
+    },
+    {
+      "player_id": 421323,
+      "name": "Timur Gayret",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/timur-gayret/profil/spieler/421323"
+    },
+    {
+      "player_id": 422051,
+      "name": "Nikola Katic",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/nikola-katic/profil/spieler/422051"
+    },
+    {
+      "player_id": 424204,
+      "name": "Alphonso Davies",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/alphonso-davies/profil/spieler/424204"
+    },
+    {
+      "player_id": 429874,
+      "name": "Ansgar Knauff",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/ansgar-knauff/profil/spieler/429874"
+    },
+    {
+      "player_id": 430034,
+      "name": "Nicholas Mickelson",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/nicholas-mickelson/profil/spieler/430034"
+    },
+    {
+      "player_id": 432403,
+      "name": "Rihito Yamamoto",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/rihito-yamamoto/profil/spieler/432403"
+    },
+    {
+      "player_id": 432671,
+      "name": "Luca Philipp",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/luca-philipp/profil/spieler/432671"
+    },
+    {
+      "player_id": 434116,
+      "name": "Alexander Prass",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/alexander-prass/profil/spieler/434116"
+    },
+    {
+      "player_id": 436064,
+      "name": "Ramon Hendriks",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/ramon-hendriks/profil/spieler/436064"
+    },
+    {
+      "player_id": 440386,
+      "name": "Maximilian Rohr",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/maximilian-rohr/profil/spieler/440386"
+    },
+    {
+      "player_id": 442891,
+      "name": "Martin Terrier",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/martin-terrier/profil/spieler/442891"
+    },
+    {
+      "player_id": 443331,
+      "name": "Patrick Osterhage",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/patrick-osterhage/profil/spieler/443331"
+    },
+    {
+      "player_id": 443710,
+      "name": "Angelo Stiller",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/angelo-stiller/profil/spieler/443710"
+    },
+    {
+      "player_id": 443855,
+      "name": "Nick Bätzner",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/nick-batzner/profil/spieler/443855"
+    },
+    {
+      "player_id": 448177,
+      "name": "Jessic Ngankam",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/jessic-ngankam/profil/spieler/448177"
+    },
+    {
+      "player_id": 448258,
+      "name": "Josha Vagnoman",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/josha-vagnoman/profil/spieler/448258"
+    },
+    {
+      "player_id": 448259,
+      "name": "Lukas Pinckert",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/lukas-pinckert/profil/spieler/448259"
+    },
+    {
+      "player_id": 448705,
+      "name": "Diant Ramaj",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/diant-ramaj/profil/spieler/448705"
+    },
+    {
+      "player_id": 452477,
+      "name": "Junior Adamu",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/junior-adamu/profil/spieler/452477"
+    },
+    {
+      "player_id": 453016,
+      "name": "Anthony Caci",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/anthony-caci/profil/spieler/453016"
+    },
+    {
+      "player_id": 453307,
+      "name": "Filimon Gerezgiher",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/filimon-gerezgiher/profil/spieler/453307"
+    },
+    {
+      "player_id": 453870,
+      "name": "Benedict Hollerbach",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/benedict-hollerbach/profil/spieler/453870"
+    },
+    {
+      "player_id": 454863,
+      "name": "András Schäfer",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/andras-schafer/profil/spieler/454863"
+    },
+    {
+      "player_id": 455922,
+      "name": "Jan Olschowsky",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/jan-olschowsky/profil/spieler/455922"
+    },
+    {
+      "player_id": 460655,
+      "name": "Moussa Sylla",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/moussa-sylla/profil/spieler/460655"
+    },
+    {
+      "player_id": 464154,
+      "name": "Imad Rondic",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/imad-rondic/profil/spieler/464154"
+    },
+    {
+      "player_id": 467434,
+      "name": "Rocco Reitz",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/rocco-reitz/profil/spieler/467434"
+    },
+    {
+      "player_id": 467437,
+      "name": "Malik Tillman",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/malik-tillman/profil/spieler/467437"
+    },
+    {
+      "player_id": 470038,
+      "name": "Ransford Königsdörffer",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/ransford-konigsdorffer/profil/spieler/470038"
+    },
+    {
+      "player_id": 472249,
+      "name": "Jan Thielmann",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/jan-thielmann/profil/spieler/472249"
+    },
+    {
+      "player_id": 475413,
+      "name": "Sacha Boey",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/sacha-boey/profil/spieler/475413"
+    },
+    {
+      "player_id": 477109,
+      "name": "Bryan Lasme",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/bryan-lasme/profil/spieler/477109"
+    },
+    {
+      "player_id": 480692,
+      "name": "Luis Díaz",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/luis-diaz/profil/spieler/480692"
+    },
+    {
+      "player_id": 483046,
+      "name": "Josip Stanisic",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/josip-stanisic/profil/spieler/483046"
+    },
+    {
+      "player_id": 486046,
+      "name": "Maarten Vandevoordt",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/maarten-vandevoordt/profil/spieler/486046"
+    },
+    {
+      "player_id": 493513,
+      "name": "Karl Hein",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/karl-hein/profil/spieler/493513"
+    },
+    {
+      "player_id": 503160,
+      "name": "Paul Nebel",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/paul-nebel/profil/spieler/503160"
+    },
+    {
+      "player_id": 503482,
+      "name": "Min-jae Kim",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/min-jae-kim/profil/spieler/503482"
+    },
+    {
+      "player_id": 504153,
+      "name": "Joe Scally",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/joe-scally/profil/spieler/504153"
+    },
+    {
+      "player_id": 505653,
+      "name": "Fábio Silva",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/fabio-silva/profil/spieler/505653"
+    },
+    {
+      "player_id": 507341,
+      "name": "Fabian Rieder",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/fabian-rieder/profil/spieler/507341"
+    },
+    {
+      "player_id": 507345,
+      "name": "Leonidas Stergiou",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/leonidas-stergiou/profil/spieler/507345"
+    },
+    {
+      "player_id": 509650,
+      "name": "Tjark Scheller",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/tjark-scheller/profil/spieler/509650"
+    },
+    {
+      "player_id": 516978,
+      "name": "Laurin Curda",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/laurin-curda/profil/spieler/516978"
+    },
+    {
+      "player_id": 518505,
+      "name": "Jamie Leweling",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/jamie-leweling/profil/spieler/518505"
+    },
+    {
+      "player_id": 519872,
+      "name": "Livan Burcu",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/livan-burcu/profil/spieler/519872"
+    },
+    {
+      "player_id": 521331,
+      "name": "Nyamekye Awortwie-Grant",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/nyamekye-awortwie-grant/profil/spieler/521331"
+    },
+    {
+      "player_id": 521928,
+      "name": "Luca Sirch",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/luca-sirch/profil/spieler/521928"
+    },
+    {
+      "player_id": 522245,
+      "name": "Lasse Günther",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/lasse-gunther/profil/spieler/522245"
+    },
+    {
+      "player_id": 524290,
+      "name": "Fisnik Asllani",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/fisnik-asllani/profil/spieler/524290"
+    },
+    {
+      "player_id": 526845,
+      "name": "Noah Atubolu",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/noah-atubolu/profil/spieler/526845"
+    },
+    {
+      "player_id": 529895,
+      "name": "Daniel Elfadli",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/daniel-elfadli/profil/spieler/529895"
+    },
+    {
+      "player_id": 532169,
+      "name": "Lukasz Poreba",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/lukasz-poreba/profil/spieler/532169"
+    },
+    {
+      "player_id": 533295,
+      "name": "Patrick Wimmer",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/patrick-wimmer/profil/spieler/533295"
+    },
+    {
+      "player_id": 536508,
+      "name": "Han-Noah Massengo",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/han-noah-massengo/profil/spieler/536508"
+    },
+    {
+      "player_id": 539798,
+      "name": "Luca Jaquez",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/luca-jaquez/profil/spieler/539798"
+    },
+    {
+      "player_id": 544148,
+      "name": "Tomas Cvancara",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/tomas-cvancara/profil/spieler/544148"
+    },
+    {
+      "player_id": 549378,
+      "name": "Sander Tangvik",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/sander-tangvik/profil/spieler/549378"
+    },
+    {
+      "player_id": 550580,
+      "name": "Shuto Machino",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/shuto-machino/profil/spieler/550580"
+    },
+    {
+      "player_id": 552057,
+      "name": "Adam Hlozek",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/adam-hlozek/profil/spieler/552057"
+    },
+    {
+      "player_id": 553285,
+      "name": "Tim Lemperle",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/tim-lemperle/profil/spieler/553285"
+    },
+    {
+      "player_id": 562948,
+      "name": "Hyun-seok Hong",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/hyun-seok-hong/profil/spieler/562948"
+    },
+    {
+      "player_id": 564545,
+      "name": "Edmond Tapsoba",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/edmond-tapsoba/profil/spieler/564545"
+    },
+    {
+      "player_id": 565424,
+      "name": "Johan Bakayoko",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/johan-bakayoko/profil/spieler/565424"
+    },
+    {
+      "player_id": 566723,
+      "name": "Michael Olise",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/michael-olise/profil/spieler/566723"
+    },
+    {
+      "player_id": 569031,
+      "name": "Umut Tohumcu",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/umut-tohumcu/profil/spieler/569031"
+    },
+    {
+      "player_id": 569033,
+      "name": "Armindo Sieb",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/armindo-sieb/profil/spieler/569033"
+    },
+    {
+      "player_id": 569383,
+      "name": "Chrislain Matsima",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/chrislain-matsima/profil/spieler/569383"
+    },
+    {
+      "player_id": 569385,
+      "name": "Adil Aouchiche",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/adil-aouchiche/profil/spieler/569385"
+    },
+    {
+      "player_id": 569387,
+      "name": "Valentin Gendrey",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/valentin-gendrey/profil/spieler/569387"
+    },
+    {
+      "player_id": 569457,
+      "name": "Tim Breithaupt",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/tim-breithaupt/profil/spieler/569457"
+    },
+    {
+      "player_id": 570152,
+      "name": "Marcel Hoffmeier",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/marcel-hoffmeier/profil/spieler/570152"
+    },
+    {
+      "player_id": 574193,
+      "name": "Bambasé Conté",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/bambase-conte/profil/spieler/574193"
+    },
+    {
+      "player_id": 578392,
+      "name": "Maximilian Beier",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/maximilian-beier/profil/spieler/578392"
+    },
+    {
+      "player_id": 579287,
+      "name": "Daniel Svensson",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/daniel-svensson/profil/spieler/579287"
+    },
+    {
+      "player_id": 579459,
+      "name": "Albian Hajdari",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/albian-hajdari/profil/spieler/579459"
+    },
+    {
+      "player_id": 579565,
+      "name": "Ísak Jóhannesson",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/isak-johannesson/profil/spieler/579565"
+    },
+    {
+      "player_id": 580195,
+      "name": "Jamal Musiala",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/jamal-musiala/profil/spieler/580195"
+    },
+    {
+      "player_id": 583699,
+      "name": "Andrej Ilic",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/andrej-ilic/profil/spieler/583699"
+    },
+    {
+      "player_id": 591193,
+      "name": "Niels Nkounkou",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/niels-nkounkou/profil/spieler/591193"
+    },
+    {
+      "player_id": 592387,
+      "name": "Sebastian Sebulonsen",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/sebastian-sebulonsen/profil/spieler/592387"
+    },
+    {
+      "player_id": 592534,
+      "name": "Nicolai Remberg",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/nicolai-remberg/profil/spieler/592534"
+    },
+    {
+      "player_id": 594731,
+      "name": "Fabio Gruber",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/fabio-gruber/profil/spieler/594731"
+    },
+    {
+      "player_id": 596153,
+      "name": "Justin Njinmah",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/justin-njinmah/profil/spieler/596153"
+    },
+    {
+      "player_id": 597000,
+      "name": "Eric Martel",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/eric-martel/profil/spieler/597000"
+    },
+    {
+      "player_id": 597432,
+      "name": "Leopold Querfeld",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/leopold-querfeld/profil/spieler/597432"
+    },
+    {
+      "player_id": 599419,
+      "name": "Max Rosenfelder",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/max-rosenfelder/profil/spieler/599419"
+    },
+    {
+      "player_id": 600942,
+      "name": "Nahuel Noll",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/nahuel-noll/profil/spieler/600942"
+    },
+    {
+      "player_id": 604358,
+      "name": "David Herold",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/david-herold/profil/spieler/604358"
+    },
+    {
+      "player_id": 604359,
+      "name": "Yusuf Kabadayi",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/yusuf-kabadayi/profil/spieler/604359"
+    },
+    {
+      "player_id": 604756,
+      "name": "Frederik Schmahl",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/frederik-schmahl/profil/spieler/604756"
+    },
+    {
+      "player_id": 605268,
+      "name": "Igor Matanovic",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/igor-matanovic/profil/spieler/605268"
+    },
+    {
+      "player_id": 606113,
+      "name": "Jano ter Horst",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/jano-ter-horst/profil/spieler/606113"
+    },
+    {
+      "player_id": 607720,
+      "name": "Jonas Urbig",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/jonas-urbig/profil/spieler/607720"
+    },
+    {
+      "player_id": 610190,
+      "name": "Nediljko Labrovic",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/nediljko-labrovic/profil/spieler/610190"
+    },
+    {
+      "player_id": 612826,
+      "name": "Silas",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/silas/profil/spieler/612826"
+    },
+    {
+      "player_id": 613192,
+      "name": "Jens Castrop",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/jens-castrop/profil/spieler/613192"
+    },
+    {
+      "player_id": 616344,
+      "name": "Tiago Tomás",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/tiago-tomas/profil/spieler/616344"
+    },
+    {
+      "player_id": 618472,
+      "name": "Castello Lukeba",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/castello-lukeba/profil/spieler/618472"
+    },
+    {
+      "player_id": 620217,
+      "name": "Robin Hranac",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/robin-hranac/profil/spieler/620217"
+    },
+    {
+      "player_id": 620295,
+      "name": "Mio Backhaus",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/mio-backhaus/profil/spieler/620295"
+    },
+    {
+      "player_id": 620598,
+      "name": "Ameen Al-Dakhil",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/ameen-al-dakhil/profil/spieler/620598"
+    },
+    {
+      "player_id": 621802,
+      "name": "Olivier Deman",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/olivier-deman/profil/spieler/621802"
+    },
+    {
+      "player_id": 627228,
+      "name": "Yan Couto",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/yan-couto/profil/spieler/627228"
+    },
+    {
+      "player_id": 629588,
+      "name": "Nathan Ngoumou",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/nathan-ngoumou/profil/spieler/629588"
+    },
+    {
+      "player_id": 632349,
+      "name": "Jarell Quansah",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/jarell-quansah/profil/spieler/632349"
+    },
+    {
+      "player_id": 640556,
+      "name": "Rav van den Berg",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/rav-van-den-berg/profil/spieler/640556"
+    },
+    {
+      "player_id": 643574,
+      "name": "Kaishu Sano",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/kaishu-sano/profil/spieler/643574"
+    },
+    {
+      "player_id": 645774,
+      "name": "Eren Dinkçi",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/eren-dinkci/profil/spieler/645774"
+    },
+    {
+      "player_id": 649672,
+      "name": "Nicolás Capaldo",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/nicolas-capaldo/profil/spieler/649672"
+    },
+    {
+      "player_id": 654234,
+      "name": "Anton Kade",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/anton-kade/profil/spieler/654234"
+    },
+    {
+      "player_id": 654982,
+      "name": "Bilal El Khannouss",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/bilal-el-khannouss/profil/spieler/654982"
+    },
+    {
+      "player_id": 654991,
+      "name": "Samuel Mbangula",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/samuel-mbangula/profil/spieler/654991"
+    },
+    {
+      "player_id": 656681,
+      "name": "Victor Boniface",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/victor-boniface/profil/spieler/656681"
+    },
+    {
+      "player_id": 659459,
+      "name": "Carney Chukwuemeka",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/carney-chukwuemeka/profil/spieler/659459"
+    },
+    {
+      "player_id": 659542,
+      "name": "Elye Wahi",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/elye-wahi/profil/spieler/659542"
+    },
+    {
+      "player_id": 664708,
+      "name": "Equi Fernández",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/equi-fernandez/profil/spieler/664708"
+    },
+    {
+      "player_id": 665618,
+      "name": "Satoshi Tanaka",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/satoshi-tanaka/profil/spieler/665618"
+    },
+    {
+      "player_id": 667251,
+      "name": "Hugo Bolin",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/hugo-bolin/profil/spieler/667251"
+    },
+    {
+      "player_id": 667457,
+      "name": "Leon Avdullahu",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/leon-avdullahu/profil/spieler/667457"
+    },
+    {
+      "player_id": 668606,
+      "name": "Yuito Suzuki",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/yuito-suzuki/profil/spieler/668606"
+    },
+    {
+      "player_id": 675535,
+      "name": "Noel Futkeu",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/noel-futkeu/profil/spieler/675535"
+    },
+    {
+      "player_id": 675565,
+      "name": "Thomas Kastanaras",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/thomas-kastanaras/profil/spieler/675565"
+    },
+    {
+      "player_id": 684116,
+      "name": "Silas Ostrzinski",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/silas-ostrzinski/profil/spieler/684116"
+    },
+    {
+      "player_id": 684315,
+      "name": "Nnamdi Collins",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/nnamdi-collins/profil/spieler/684315"
+    },
+    {
+      "player_id": 685484,
+      "name": "Luka Duric",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/luka-duric/profil/spieler/685484"
+    },
+    {
+      "player_id": 691892,
+      "name": "Nathaniel Brown",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/nathaniel-brown/profil/spieler/691892"
+    },
+    {
+      "player_id": 692368,
+      "name": "Younes Ebnoutalib",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/younes-ebnoutalib/profil/spieler/692368"
+    },
+    {
+      "player_id": 692737,
+      "name": "Aljoscha Kemlein",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/aljoscha-kemlein/profil/spieler/692737"
+    },
+    {
+      "player_id": 694132,
+      "name": "Mattes Hansen",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/mattes-hansen/profil/spieler/694132"
+    },
+    {
+      "player_id": 694507,
+      "name": "Rayan Philippe",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/rayan-philippe/profil/spieler/694507"
+    },
+    {
+      "player_id": 696164,
+      "name": "Tim Oermann",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/tim-oermann/profil/spieler/696164"
+    },
+    {
+      "player_id": 697740,
+      "name": "Soufiane El-Faouzi",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/soufiane-el-faouzi/profil/spieler/697740"
+    },
+    {
+      "player_id": 698843,
+      "name": "Jonah Sticker",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/jonah-sticker/profil/spieler/698843"
+    },
+    {
+      "player_id": 699783,
+      "name": "Raphael Onyedika",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/raphael-onyedika/profil/spieler/699783"
+    },
+    {
+      "player_id": 700106,
+      "name": "Brajan Gruda",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/brajan-gruda/profil/spieler/700106"
+    },
+    {
+      "player_id": 701757,
+      "name": "Keke Topp",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/keke-topp/profil/spieler/701757"
+    },
+    {
+      "player_id": 702869,
+      "name": "Ismael Saibari",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/ismael-saibari/profil/spieler/702869"
+    },
+    {
+      "player_id": 707242,
+      "name": "Badredine Bouanani",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/badredine-bouanani/profil/spieler/707242"
+    },
+    {
+      "player_id": 710886,
+      "name": "Leo Sauer",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/leo-sauer/profil/spieler/710886"
+    },
+    {
+      "player_id": 711969,
+      "name": "Lorenz Assignon",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/lorenz-assignon/profil/spieler/711969"
+    },
+    {
+      "player_id": 711996,
+      "name": "Warmed Omari",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/warmed-omari/profil/spieler/711996"
+    },
+    {
+      "player_id": 713644,
+      "name": "Bryan Zaragoza",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/bryan-zaragoza/profil/spieler/713644"
+    },
+    {
+      "player_id": 717465,
+      "name": "Laurin Ulrich",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/laurin-ulrich/profil/spieler/717465"
+    },
+    {
+      "player_id": 718303,
+      "name": "Ernest Poku",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/ernest-poku/profil/spieler/718303"
+    },
+    {
+      "player_id": 718460,
+      "name": "Lúkas Petersson",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/lukas-petersson/profil/spieler/718460"
+    },
+    {
+      "player_id": 720162,
+      "name": "Justin Diehl",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/justin-diehl/profil/spieler/720162"
+    },
+    {
+      "player_id": 720948,
+      "name": "Mika Baur",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/mika-baur/profil/spieler/720948"
+    },
+    {
+      "player_id": 724104,
+      "name": "Fabio Chiarodia",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/fabio-chiarodia/profil/spieler/724104"
+    },
+    {
+      "player_id": 726701,
+      "name": "Rodrigo Ribeiro",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/rodrigo-ribeiro/profil/spieler/726701"
+    },
+    {
+      "player_id": 730581,
+      "name": "Loïc Badé",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/loic-bade/profil/spieler/730581"
+    },
+    {
+      "player_id": 733371,
+      "name": "Sota Kawasaki",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/sota-kawasaki/profil/spieler/733371"
+    },
+    {
+      "player_id": 738774,
+      "name": "Zeno Van Den Bosch",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/zeno-van-den-bosch/profil/spieler/738774"
+    },
+    {
+      "player_id": 743395,
+      "name": "Noah Mbamba",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/noah-mbamba/profil/spieler/743395"
+    },
+    {
+      "player_id": 744558,
+      "name": "Julian Pauli",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/julian-pauli/profil/spieler/744558"
+    },
+    {
+      "player_id": 744728,
+      "name": "Arijon Ibrahimovic",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/arijon-ibrahimovic/profil/spieler/744728"
+    },
+    {
+      "player_id": 744857,
+      "name": "Elias Baum",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/elias-baum/profil/spieler/744857"
+    },
+    {
+      "player_id": 763948,
+      "name": "Ayodele Thomas",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/ayodele-thomas/profil/spieler/763948"
+    },
+    {
+      "player_id": 777005,
+      "name": "Mert Kömür",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/mert-komur/profil/spieler/777005"
+    },
+    {
+      "player_id": 787151,
+      "name": "Lukas Ullrich",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/lukas-ullrich/profil/spieler/787151"
+    },
+    {
+      "player_id": 787912,
+      "name": "El Chadaille Bitshiabu",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/el-chadaille-bitshiabu/profil/spieler/787912"
+    },
+    {
+      "player_id": 792380,
+      "name": "Aleksandar Pavlovic",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/aleksandar-pavlovic/profil/spieler/792380"
+    },
+    {
+      "player_id": 795762,
+      "name": "Elias Bakatukanda",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/elias-bakatukanda/profil/spieler/795762"
+    },
+    {
+      "player_id": 796297,
+      "name": "Jobe Bellingham",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/jobe-bellingham/profil/spieler/796297"
+    },
+    {
+      "player_id": 798043,
+      "name": "Tom Rothe",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/tom-rothe/profil/spieler/798043"
+    },
+    {
+      "player_id": 798091,
+      "name": "Tristan Zobel",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/tristan-zobel/profil/spieler/798091"
+    },
+    {
+      "player_id": 799993,
+      "name": "Ayoube Amaimouni-Echghouyab",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/ayoube-amaimouni-echghouyab/profil/spieler/799993"
+    },
+    {
+      "player_id": 800946,
+      "name": "Dennis Seimen",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/dennis-seimen/profil/spieler/800946"
+    },
+    {
+      "player_id": 806007,
+      "name": "Luis Seifert",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/luis-seifert/profil/spieler/806007"
+    },
+    {
+      "player_id": 807386,
+      "name": "Conrad Harder",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/conrad-harder/profil/spieler/807386"
+    },
+    {
+      "player_id": 810649,
+      "name": "Max Finkgräfe",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/max-finkgrafe/profil/spieler/810649"
+    },
+    {
+      "player_id": 810895,
+      "name": "Eliesse Ben Seghir",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/eliesse-ben-seghir/profil/spieler/810895"
+    },
+    {
+      "player_id": 814950,
+      "name": "Kofi Amoako",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/kofi-amoako/profil/spieler/814950"
+    },
+    {
+      "player_id": 814976,
+      "name": "Martin Adeline",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/martin-adeline/profil/spieler/814976"
+    },
+    {
+      "player_id": 814986,
+      "name": "Albert Millgramm",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/albert-millgramm/profil/spieler/814986"
+    },
+    {
+      "player_id": 815078,
+      "name": "Jordy Makengo",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/jordy-makengo/profil/spieler/815078"
+    },
+    {
+      "player_id": 815322,
+      "name": "Felix Keidel",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/felix-keidel/profil/spieler/815322"
+    },
+    {
+      "player_id": 815838,
+      "name": "Joel Agyekum",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/joel-agyekum/profil/spieler/815838"
+    },
+    {
+      "player_id": 816585,
+      "name": "Can Uzun",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/can-uzun/profil/spieler/816585"
+    },
+    {
+      "player_id": 817521,
+      "name": "Maximilian Kinzig",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/maximilian-kinzig/profil/spieler/817521"
+    },
+    {
+      "player_id": 820957,
+      "name": "Derry Scherhant",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/derry-scherhant/profil/spieler/820957"
+    },
+    {
+      "player_id": 821350,
+      "name": "Oskar Wójcik",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/oskar-wojcik/profil/spieler/821350"
+    },
+    {
+      "player_id": 822959,
+      "name": "Tom Bischof",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/tom-bischof/profil/spieler/822959"
+    },
+    {
+      "player_id": 826795,
+      "name": "Dariusz Stalmach",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/dariusz-stalmach/profil/spieler/826795"
+    },
+    {
+      "player_id": 829267,
+      "name": "Stefano Marino",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/stefano-marino/profil/spieler/829267"
+    },
+    {
+      "player_id": 829316,
+      "name": "Maurice Krattenmacher",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/maurice-krattenmacher/profil/spieler/829316"
+    },
+    {
+      "player_id": 829838,
+      "name": "Hennes Behrens",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/hennes-behrens/profil/spieler/829838"
+    },
+    {
+      "player_id": 830108,
+      "name": "Julián Malatini",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/julian-malatini/profil/spieler/830108"
+    },
+    {
+      "player_id": 838236,
+      "name": "Marin Ljubicic",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/marin-ljubicic/profil/spieler/838236"
+    },
+    {
+      "player_id": 842341,
+      "name": "Maxime Estève",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/maxime-esteve/profil/spieler/842341"
+    },
+    {
+      "player_id": 855015,
+      "name": "Farès Chaïbi",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/fares-chaibi/profil/spieler/855015"
+    },
+    {
+      "player_id": 855134,
+      "name": "Skelly Alvero",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/skelly-alvero/profil/spieler/855134"
+    },
+    {
+      "player_id": 863759,
+      "name": "Bruno Ogbus",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/bruno-ogbus/profil/spieler/863759"
+    },
+    {
+      "player_id": 865682,
+      "name": "Ezechiel Banzuzi",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/ezechiel-banzuzi/profil/spieler/865682"
+    },
+    {
+      "player_id": 866579,
+      "name": "Cole Campbell",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/cole-campbell/profil/spieler/866579"
+    },
+    {
+      "player_id": 875332,
+      "name": "Arthur Chaves",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/arthur-chaves/profil/spieler/875332"
+    },
+    {
+      "player_id": 881297,
+      "name": "Adam Daghim",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/adam-daghim/profil/spieler/881297"
+    },
+    {
+      "player_id": 883007,
+      "name": "Filippo Mane",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/filippo-mane/profil/spieler/883007"
+    },
+    {
+      "player_id": 884820,
+      "name": "Almugera Kabar",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/almugera-kabar/profil/spieler/884820"
+    },
+    {
+      "player_id": 894914,
+      "name": "Antonio Nusa",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/antonio-nusa/profil/spieler/894914"
+    },
+    {
+      "player_id": 897402,
+      "name": "Farid Alfa-Ruprecht",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/farid-alfa-ruprecht/profil/spieler/897402"
+    },
+    {
+      "player_id": 897424,
+      "name": "Assan Ouédraogo",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/assan-ouedraogo/profil/spieler/897424"
+    },
+    {
+      "player_id": 897480,
+      "name": "Noah Darvich",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/noah-darvich/profil/spieler/897480"
+    },
+    {
+      "player_id": 897505,
+      "name": "Lazar Jovanovic",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/lazar-jovanovic/profil/spieler/897505"
+    },
+    {
+      "player_id": 901877,
+      "name": "Otto Ruoppi",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/otto-ruoppi/profil/spieler/901877"
+    },
+    {
+      "player_id": 904974,
+      "name": "Noël Aséko",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/noel-aseko/profil/spieler/904974"
+    },
+    {
+      "player_id": 905011,
+      "name": "Ibrahim Maza",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/ibrahim-maza/profil/spieler/905011"
+    },
+    {
+      "player_id": 907082,
+      "name": "Karl Steinmann",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/karl-steinmann/profil/spieler/907082"
+    },
+    {
+      "player_id": 907085,
+      "name": "Ruben Müller",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/ruben-muller/profil/spieler/907085"
+    },
+    {
+      "player_id": 907277,
+      "name": "Sean Dulic",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/sean-dulic/profil/spieler/907277"
+    },
+    {
+      "player_id": 910538,
+      "name": "Raif Adam",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/raif-adam/profil/spieler/910538"
+    },
+    {
+      "player_id": 910541,
+      "name": "Fábio Baldé",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/fabio-balde/profil/spieler/910541"
+    },
+    {
+      "player_id": 916623,
+      "name": "Keisuke Goto",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/keisuke-goto/profil/spieler/916623"
+    },
+    {
+      "player_id": 919515,
+      "name": "Jeanuël Belocian",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/jeanuel-belocian/profil/spieler/919515"
+    },
+    {
+      "player_id": 919703,
+      "name": "Vitalie Becker",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/vitalie-becker/profil/spieler/919703"
+    },
+    {
+      "player_id": 920946,
+      "name": "Max Grüger",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/max-gruger/profil/spieler/920946"
+    },
+    {
+      "player_id": 923595,
+      "name": "Max Moerstedt",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/max-moerstedt/profil/spieler/923595"
+    },
+    {
+      "player_id": 923945,
+      "name": "Noahkai Banks",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/noahkai-banks/profil/spieler/923945"
+    },
+    {
+      "player_id": 924117,
+      "name": "Finn Jeltsch",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/finn-jeltsch/profil/spieler/924117"
+    },
+    {
+      "player_id": 926694,
+      "name": "Arthur Vermeeren",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/arthur-vermeeren/profil/spieler/926694"
+    },
+    {
+      "player_id": 926763,
+      "name": "Chuki",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/chuki/profil/spieler/926763"
+    },
+    {
+      "player_id": 928265,
+      "name": "Sima Suso",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/sima-suso/profil/spieler/928265"
+    },
+    {
+      "player_id": 929943,
+      "name": "Francis Onyeka",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/francis-onyeka/profil/spieler/929943"
+    },
+    {
+      "player_id": 930013,
+      "name": "Florian Pruhs",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/florian-pruhs/profil/spieler/930013"
+    },
+    {
+      "player_id": 931838,
+      "name": "Hugo Larsson",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/hugo-larsson/profil/spieler/931838"
+    },
+    {
+      "player_id": 939964,
+      "name": "Jean-Mattéo Bahoya",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/jean-matteo-bahoya/profil/spieler/939964"
+    },
+    {
+      "player_id": 941177,
+      "name": "Robert Ramsak",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/robert-ramsak/profil/spieler/941177"
+    },
+    {
+      "player_id": 942497,
+      "name": "Jahmai Simpson-Pusey",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/jahmai-simpson-pusey/profil/spieler/942497"
+    },
+    {
+      "player_id": 943795,
+      "name": "Jovan Milosevic",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/jovan-milosevic/profil/spieler/943795"
+    },
+    {
+      "player_id": 944331,
+      "name": "Youssoupha Niang",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/youssoupha-niang/profil/spieler/944331"
+    },
+    {
+      "player_id": 949389,
+      "name": "Niklas Mohr",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/niklas-mohr/profil/spieler/949389"
+    },
+    {
+      "player_id": 952282,
+      "name": "Afonso Moreira",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/afonso-moreira/profil/spieler/952282"
+    },
+    {
+      "player_id": 952779,
+      "name": "Andrija Maksimovic",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/andrija-maksimovic/profil/spieler/952779"
+    },
+    {
+      "player_id": 954082,
+      "name": "Tom Wisbereit",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/tom-wisbereit/profil/spieler/954082"
+    },
+    {
+      "player_id": 955448,
+      "name": "Tidiam Gomis",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/tidiam-gomis/profil/spieler/955448"
+    },
+    {
+      "player_id": 957526,
+      "name": "Zento Uno",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/zento-uno/profil/spieler/957526"
+    },
+    {
+      "player_id": 957874,
+      "name": "Rômulo",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/romulo/profil/spieler/957874"
+    },
+    {
+      "player_id": 969376,
+      "name": "Mertcan Ayhan",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/mertcan-ayhan/profil/spieler/969376"
+    },
+    {
+      "player_id": 971663,
+      "name": "Jeremy Arévalo",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/jeremy-arevalo/profil/spieler/971663"
+    },
+    {
+      "player_id": 974894,
+      "name": "David Mokwa",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/david-mokwa/profil/spieler/974894"
+    },
+    {
+      "player_id": 977464,
+      "name": "Arthur",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/arthur/profil/spieler/977464"
+    },
+    {
+      "player_id": 983677,
+      "name": "Mats Rots",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/mats-rots/profil/spieler/983677"
+    },
+    {
+      "player_id": 987770,
+      "name": "Alessandro Vogt",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/alessandro-vogt/profil/spieler/987770"
+    },
+    {
+      "player_id": 990146,
+      "name": "Joyeux Masanka Bungi",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/joyeux-masanka-bungi/profil/spieler/990146"
+    },
+    {
+      "player_id": 990148,
+      "name": "Konstantinos Karetsas",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/konstantinos-karetsas/profil/spieler/990148"
+    },
+    {
+      "player_id": 995520,
+      "name": "Oluwaseun Ogbemudia",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/oluwaseun-ogbemudia/profil/spieler/995520"
+    },
+    {
+      "player_id": 997861,
+      "name": "Kauã Santos",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/kaua-santos/profil/spieler/997861"
+    },
+    {
+      "player_id": 1005509,
+      "name": "Santiago Castañeda",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/santiago-castaneda/profil/spieler/1005509"
+    },
+    {
+      "player_id": 1009441,
+      "name": "Felipe Chávez",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/felipe-chavez/profil/spieler/1009441"
+    },
+    {
+      "player_id": 1025989,
+      "name": "Stefan Smarkalev",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/stefan-smarkalev/profil/spieler/1025989"
+    },
+    {
+      "player_id": 1027870,
+      "name": "Andrik Markgraf",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/andrik-markgraf/profil/spieler/1027870"
+    },
+    {
+      "player_id": 1031774,
+      "name": "Jarzinho Malanga",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/jarzinho-malanga/profil/spieler/1031774"
+    },
+    {
+      "player_id": 1033581,
+      "name": "Julien Friedrich",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/julien-friedrich/profil/spieler/1033581"
+    },
+    {
+      "player_id": 1035765,
+      "name": "Ilyas Ansah",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/ilyas-ansah/profil/spieler/1035765"
+    },
+    {
+      "player_id": 1042472,
+      "name": "Salim Musah",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/salim-musah/profil/spieler/1042472"
+    },
+    {
+      "player_id": 1045446,
+      "name": "Dmytro Bogdanov",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/dmytro-bogdanov/profil/spieler/1045446"
+    },
+    {
+      "player_id": 1045986,
+      "name": "Mick Schmetgens",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/mick-schmetgens/profil/spieler/1045986"
+    },
+    {
+      "player_id": 1047136,
+      "name": "Cajetan Lenz",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/cajetan-lenz/profil/spieler/1047136"
+    },
+    {
+      "player_id": 1047294,
+      "name": "Johannes Siebeking",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/johannes-siebeking/profil/spieler/1047294"
+    },
+    {
+      "player_id": 1048715,
+      "name": "Fernando Dickes",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/fernando-dickes/profil/spieler/1048715"
+    },
+    {
+      "player_id": 1056437,
+      "name": "Reigan Heskey",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/reigan-heskey/profil/spieler/1056437"
+    },
+    {
+      "player_id": 1058359,
+      "name": "Samuele Inácio",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/samuele-inacio/profil/spieler/1058359"
+    },
+    {
+      "player_id": 1058514,
+      "name": "Montrell Culbreath",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/montrell-culbreath/profil/spieler/1058514"
+    },
+    {
+      "player_id": 1058520,
+      "name": "Otto Stange",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/otto-stange/profil/spieler/1058520"
+    },
+    {
+      "player_id": 1064377,
+      "name": "Paul Okon-Engstler",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/paul-okon-engstler/profil/spieler/1064377"
+    },
+    {
+      "player_id": 1070979,
+      "name": "Wael Mohya",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/wael-mohya/profil/spieler/1070979"
+    },
+    {
+      "player_id": 1071244,
+      "name": "Darwin Soylu",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/darwin-soylu/profil/spieler/1071244"
+    },
+    {
+      "player_id": 1073748,
+      "name": "Kacper Potulski",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/kacper-potulski/profil/spieler/1073748"
+    },
+    {
+      "player_id": 1074526,
+      "name": "Viggo Gebel",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/viggo-gebel/profil/spieler/1074526"
+    },
+    {
+      "player_id": 1074990,
+      "name": "Luca Reggiani",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/luca-reggiani/profil/spieler/1074990"
+    },
+    {
+      "player_id": 1075143,
+      "name": "Natnael Abraha",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/natnael-abraha/profil/spieler/1075143"
+    },
+    {
+      "player_id": 1075147,
+      "name": "Lennart Karl",
+      "club": "Bayern Munich",
+      "profile_url": "https://www.transfermarkt.co.uk/lennart-karl/profil/spieler/1075147"
+    },
+    {
+      "player_id": 1075577,
+      "name": "Joane Gadou",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/joane-gadou/profil/spieler/1075577"
+    },
+    {
+      "player_id": 1077670,
+      "name": "Axel Tape",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/axel-tape/profil/spieler/1077670"
+    },
+    {
+      "player_id": 1079622,
+      "name": "Amil Siljevic",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/amil-siljevic/profil/spieler/1079622"
+    },
+    {
+      "player_id": 1084638,
+      "name": "Karim Coulibaly",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/karim-coulibaly/profil/spieler/1084638"
+    },
+    {
+      "player_id": 1094885,
+      "name": "Otávio",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/otavio/profil/spieler/1094885"
+    },
+    {
+      "player_id": 1104418,
+      "name": "Kennedy Okpala",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/kennedy-okpala/profil/spieler/1104418"
+    },
+    {
+      "player_id": 1105541,
+      "name": "Nathan De Cat",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/nathan-de-cat/profil/spieler/1105541"
+    },
+    {
+      "player_id": 1108022,
+      "name": "Deniz Zeitler",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/deniz-zeitler/profil/spieler/1108022"
+    },
+    {
+      "player_id": 1114155,
+      "name": "Patrice Covic",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/patrice-covic/profil/spieler/1114155"
+    },
+    {
+      "player_id": 1116191,
+      "name": "Luis Engelns",
+      "club": "TSG 1899 Hoffenheim",
+      "profile_url": "https://www.transfermarkt.co.uk/luis-engelns/profil/spieler/1116191"
+    },
+    {
+      "player_id": 1118874,
+      "name": "Jan Leszczyński",
+      "club": "Borussia Mönchengladbach",
+      "profile_url": "https://www.transfermarkt.co.uk/jan-leszczynski/profil/spieler/1118874"
+    },
+    {
+      "player_id": 1125079,
+      "name": "Shafiq Nandja",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/shafiq-nandja/profil/spieler/1125079"
+    },
+    {
+      "player_id": 1130445,
+      "name": "Abdoul Koné",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/abdoul-kone/profil/spieler/1130445"
+    },
+    {
+      "player_id": 1131117,
+      "name": "Mirza Catovic",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/mirza-catovic/profil/spieler/1131117"
+    },
+    {
+      "player_id": 1131153,
+      "name": "Tim Blaszczak",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/tim-blaszczak/profil/spieler/1131153"
+    },
+    {
+      "player_id": 1132292,
+      "name": "Faik Sakar",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/faik-sakar/profil/spieler/1132292"
+    },
+    {
+      "player_id": 1141179,
+      "name": "Mussa Kaba",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/mussa-kaba/profil/spieler/1141179"
+    },
+    {
+      "player_id": 1145064,
+      "name": "Cyriaque Irié",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/cyriaque-irie/profil/spieler/1145064"
+    },
+    {
+      "player_id": 1146988,
+      "name": "Keita Kosugi",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/keita-kosugi/profil/spieler/1146988"
+    },
+    {
+      "player_id": 1148887,
+      "name": "Clemens Lippmann",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/clemens-lippmann/profil/spieler/1148887"
+    },
+    {
+      "player_id": 1159439,
+      "name": "Rouven Tarnutzer",
+      "club": "SC Freiburg",
+      "profile_url": "https://www.transfermarkt.co.uk/rouven-tarnutzer/profil/spieler/1159439"
+    },
+    {
+      "player_id": 1159486,
+      "name": "Elias Etringer",
+      "club": "SV 07 Elversberg",
+      "profile_url": "https://www.transfermarkt.co.uk/elias-etringer/profil/spieler/1159486"
+    },
+    {
+      "player_id": 1162413,
+      "name": "Luca Vozar",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/luca-vozar/profil/spieler/1162413"
+    },
+    {
+      "player_id": 1162925,
+      "name": "Mekhi Gray",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/mekhi-gray/profil/spieler/1162925"
+    },
+    {
+      "player_id": 1168219,
+      "name": "Said El Mala",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/said-el-mala/profil/spieler/1168219"
+    },
+    {
+      "player_id": 1168222,
+      "name": "Malek El Mala",
+      "club": "1.FC Köln",
+      "profile_url": "https://www.transfermarkt.co.uk/malek-el-mala/profil/spieler/1168222"
+    },
+    {
+      "player_id": 1178695,
+      "name": "Kenny Quetant",
+      "club": "SV Werder Bremen",
+      "profile_url": "https://www.transfermarkt.co.uk/kenny-quetant/profil/spieler/1178695"
+    },
+    {
+      "player_id": 1184986,
+      "name": "Love Arrhov",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/love-arrhov/profil/spieler/1184986"
+    },
+    {
+      "player_id": 1185507,
+      "name": "Justin Lerma",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/justin-lerma/profil/spieler/1185507"
+    },
+    {
+      "player_id": 1188989,
+      "name": "Dylan Leonard",
+      "club": "FC Schalke 04",
+      "profile_url": "https://www.transfermarkt.co.uk/dylan-leonard/profil/spieler/1188989"
+    },
+    {
+      "player_id": 1193849,
+      "name": "Mathis Albert",
+      "club": "Borussia Dortmund",
+      "profile_url": "https://www.transfermarkt.co.uk/mathis-albert/profil/spieler/1193849"
+    },
+    {
+      "player_id": 1213681,
+      "name": "Alexander Røssing-Lelesiit",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/alexander-rossing-lelesiit/profil/spieler/1213681"
+    },
+    {
+      "player_id": 1214123,
+      "name": "Kennet Eichhorn",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/kennet-eichhorn/profil/spieler/1214123"
+    },
+    {
+      "player_id": 1235583,
+      "name": "Suleman Sani",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/suleman-sani/profil/spieler/1235583"
+    },
+    {
+      "player_id": 1259986,
+      "name": "Malik Pimpong",
+      "club": "Eintracht Frankfurt",
+      "profile_url": "https://www.transfermarkt.co.uk/malik-pimpong/profil/spieler/1259986"
+    },
+    {
+      "player_id": 1279157,
+      "name": "Benno Kaltefleiter",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/benno-kaltefleiter/profil/spieler/1279157"
+    },
+    {
+      "player_id": 1294853,
+      "name": "Louis Lemke",
+      "club": "Hamburger SV",
+      "profile_url": "https://www.transfermarkt.co.uk/louis-lemke/profil/spieler/1294853"
+    },
+    {
+      "player_id": 1297520,
+      "name": "Ertugrul Yigit",
+      "club": "VfB Stuttgart",
+      "profile_url": "https://www.transfermarkt.co.uk/ertugrul-yigit/profil/spieler/1297520"
+    },
+    {
+      "player_id": 1299403,
+      "name": "Lasse Eickel",
+      "club": "SC Paderborn 07",
+      "profile_url": "https://www.transfermarkt.co.uk/lasse-eickel/profil/spieler/1299403"
+    },
+    {
+      "player_id": 1309324,
+      "name": "Uchenna Ogundu",
+      "club": "FC Augsburg",
+      "profile_url": "https://www.transfermarkt.co.uk/uchenna-ogundu/profil/spieler/1309324"
+    },
+    {
+      "player_id": 1364454,
+      "name": "Christian Kofane",
+      "club": "Bayer 04 Leverkusen",
+      "profile_url": "https://www.transfermarkt.co.uk/christian-kofane/profil/spieler/1364454"
+    },
+    {
+      "player_id": 1378338,
+      "name": "Linus Güther",
+      "club": "1.FC Union Berlin",
+      "profile_url": "https://www.transfermarkt.co.uk/linus-guther/profil/spieler/1378338"
+    },
+    {
+      "player_id": 1390649,
+      "name": "Yan Diomande",
+      "club": "RB Leipzig",
+      "profile_url": "https://www.transfermarkt.co.uk/yan-diomande/profil/spieler/1390649"
+    },
+    {
+      "player_id": 1392952,
+      "name": "Alynho Haidara",
+      "club": "1.FSV Mainz 05",
+      "profile_url": "https://www.transfermarkt.co.uk/alynho-haidara/profil/spieler/1392952"
+    }
+  ]
+}

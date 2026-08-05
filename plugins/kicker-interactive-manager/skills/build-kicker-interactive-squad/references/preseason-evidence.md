@@ -6,9 +6,10 @@ Vorbereitungseindrücke als zeitlich begrenztes Einsatz- und Rollensignal verwen
 
 ## Zentraler Bestand
 
-Für 2. Bundesliga und 3. Liga veröffentlicht der zentrale Lauf:
+Für Bundesliga, 2. Bundesliga und 3. Liga veröffentlicht der zentrale Lauf:
 
 ```text
+https://geozocco.github.io/kicker-interactive-manager/v1/preseason/bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/preseason/2-bundesliga.json
 https://geozocco.github.io/kicker-interactive-manager/v1/preseason/3-liga.json
 ```
