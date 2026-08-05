@@ -1237,19 +1237,32 @@ def historical_club_context(
         for item in histories
         if optional_int(item.get("season")) is not None
     }
-    latest_provider = next(
-        (
-            provider_by_season[season]
-            for season in sorted(provider_by_season, reverse=True)
-            if provider_by_season[season].get("clubs")
-        ),
-        {},
-    )
+    recent_provider_seasons = [
+        provider_by_season[season]
+        for season in sorted(provider_by_season, reverse=True)
+        if provider_by_season[season].get("clubs")
+    ][:2]
+    latest_provider = recent_provider_seasons[0] if recent_provider_seasons else {}
     historical_clubs = [
         str(club.get("name", "")).strip()
         for club in latest_provider.get("clubs", [])
         if str(club.get("name", "")).strip()
     ]
+    if confirmed_inbound_transfer(news_player):
+        return historical_clubs, True, "confirmed_inbound_transfer"
+    # API-Sports uses calendar seasons for national-team tournaments. During
+    # the summer a new season can therefore contain only "Germany", "England"
+    # or another national side even though the player never changed clubs.
+    # Check the two most recent populated seasons for the current market club
+    # before interpreting the newest aggregate as a transfer.
+    for provider_season in recent_provider_seasons:
+        season_clubs = [
+            str(club.get("name", "")).strip()
+            for club in provider_season.get("clubs", [])
+            if str(club.get("name", "")).strip()
+        ]
+        if any(club_match(market_club, club) for club in season_clubs):
+            return season_clubs, False, "provider_history_recent_club"
     if historical_clubs:
         return (
             historical_clubs,
@@ -1259,8 +1272,6 @@ def historical_club_context(
             ),
             "provider_history",
         )
-    if confirmed_inbound_transfer(news_player):
-        return historical_clubs, True, "confirmed_inbound_transfer"
     return historical_clubs, None, "unknown"
 
 

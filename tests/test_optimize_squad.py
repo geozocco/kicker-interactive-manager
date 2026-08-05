@@ -1987,11 +1987,27 @@ class ReliableCorePolicyTests(unittest.TestCase):
                 ],
             },
         )
-        current_top_price = player(
-            "top-price",
-            "Top Price Club",
-            "FORWARD",
-            1_000,
+        current_top_price = optimizer.replace(
+            player(
+                "top-price",
+                "Top Price Club",
+                "FORWARD",
+                1_000,
+                reliable_anchor=True,
+                role_context={
+                    "responsibilities": {
+                        "penalties": "primary",
+                        "offensive_focal_point": "primary",
+                    }
+                },
+            ),
+            scorer_profile={
+                "sample_minutes": 6_000,
+                "proven_seasons": 5,
+                "goals_per_90": 0.62,
+                "contributions_per_90": 0.82,
+            },
+            components={key: 90.0 for key in optimizer.COMPONENTS},
         )
         candidates = [rebound, current_top_price]
         raw_scores = {
@@ -2773,7 +2789,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             after["bench_usage_weights"]["FORWARD"],
         )
         self.assertEqual(
-            "joint-xi-bench-v15-package-gates",
+            "joint-xi-bench-v16-scorer-defense-gates",
             optimized.architecture_diagnostics["model_version"],
         )
         self.assertGreater(
@@ -3654,7 +3670,31 @@ class ReliableCorePolicyTests(unittest.TestCase):
                 f"Premium Club {index}",
                 "MIDFIELDER",
                 cost,
+                reliable_anchor=index in {0, 1},
+                role_context=(
+                    {
+                        "responsibilities": {
+                            "penalties": "primary",
+                            "offensive_focal_point": "primary",
+                        }
+                    }
+                    if index in {0, 1}
+                    else {}
+                ),
             )
+            if index in {0, 1}:
+                item = optimizer.replace(
+                    item,
+                    scorer_profile={
+                        "sample_minutes": 6_000,
+                        "proven_seasons": 5,
+                        "goals_per_90": 0.55,
+                        "contributions_per_90": 0.78,
+                    },
+                    components={
+                        key: 90.0 for key in optimizer.COMPONENTS
+                    },
+                )
             candidates.append(item)
             scores[item.player_id] = score
 
@@ -3673,12 +3713,12 @@ class ReliableCorePolicyTests(unittest.TestCase):
             "low",
         )
         self.assertAlmostEqual(
-            60.0,
+            68.0,
             weighted["premium-m0"]
             - scores["premium-m0"] * multipliers["premium-m0"],
         )
         self.assertAlmostEqual(
-            0.0,
+            8.0,
             weighted["premium-m1"]
             - scores["premium-m1"] * multipliers["premium-m1"],
         )
@@ -4127,7 +4167,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
                 200,
             )
             candidates.extend((upgraded, balancing))
-            scores[upgraded.player_id] = 40.0 - index
+            scores[upgraded.player_id] = 60.0 - index
             scores[balancing.player_id] = 75.0 - index
 
         initial = optimizer.Squad(
@@ -4153,7 +4193,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             "defender_architecture"
         ]
         self.assertTrue(optimized.architecture_diagnostics["passes"])
-        self.assertLess(optimized.objective_score, initial.objective_score)
+        self.assertGreater(optimized.objective_score, initial.objective_score)
         self.assertLessEqual(
             defender_audit["minimum_price_filler_count"],
             defender_audit["minimum_price_filler_limit"],

@@ -134,7 +134,7 @@ VARIATION_STATE_SCHEMA_VERSION = 2
 OPTIMIZER_CACHE_ENV = "KICKER_OPTIMIZER_CACHE"
 OPTIMIZER_CACHE_SCHEMA_VERSION = 1
 OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v7-depth-diversity"
-ARCHITECTURE_MODEL_VERSION = "joint-xi-bench-v15-package-gates"
+ARCHITECTURE_MODEL_VERSION = "joint-xi-bench-v16-scorer-defense-gates"
 COMPETITION_BUDGETS = {
     "Bundesliga": 42_500_000,
     "2. Bundesliga": 10_000_000,
@@ -618,6 +618,11 @@ ELITE_REBOUND_MINIMUM_SAMPLE_MINUTES = 1_200
 ELITE_REBOUND_MINIMUM_GOALS_PER_90 = 0.40
 ELITE_REBOUND_MINIMUM_CONTRIBUTIONS_PER_90 = 0.70
 ELITE_REBOUND_REALLOCATION_PENALTY = 24.0
+TOP_SCORER_MINIMUM_PROVEN_SEASONS = 3
+TOP_SCORER_MINIMUM_SAMPLE_MINUTES = 1_200
+TOP_SCORER_MINIMUM_GOALS_PER_90 = 0.35
+TOP_SCORER_MINIMUM_CONTRIBUTIONS_PER_90 = 0.60
+TOP_SCORER_MINIMUM_LEVERAGE = 8.0
 
 
 def variation_distance_met(variation: str, distance: int) -> bool:
@@ -1730,6 +1735,48 @@ def scorer_leverage_candidate_ids(
     )
 
 
+def genuine_top_scorer_evidence(player: Player) -> dict[str, Any]:
+    """Recognize a currently usable, multi-season elite scorer path."""
+
+    profile = player.scorer_profile
+    sample_minutes = numeric(profile.get("sample_minutes"))
+    goals_per_90 = numeric(profile.get("goals_per_90"))
+    contributions_per_90 = numeric(profile.get("contributions_per_90"))
+    scorer_leverage = starting_scorer_leverage(player)
+    qualified = (
+        player.position in {"MIDFIELDER", "FORWARD"}
+        and player.reliable_anchor
+        and player.proven_seasons >= TOP_SCORER_MINIMUM_PROVEN_SEASONS
+        and sample_minutes >= TOP_SCORER_MINIMUM_SAMPLE_MINUTES
+        and (
+            goals_per_90 >= TOP_SCORER_MINIMUM_GOALS_PER_90
+            or contributions_per_90
+            >= TOP_SCORER_MINIMUM_CONTRIBUTIONS_PER_90
+        )
+        and scorer_leverage >= TOP_SCORER_MINIMUM_LEVERAGE
+        and player.components["confirmed_performance"] >= 80.0
+        and player.components["minutes"] >= 75.0
+        and player.components["role"] >= 70.0
+        and player.components["fitness"] >= 70.0
+        and player.risks["transfer"] <= 25.0
+        and player.risks["injury"] <= 35.0
+        and player.risks["rotation"] <= 35.0
+        and player.risks["unknown_role"] <= 30.0
+    )
+    return {
+        "qualified": qualified,
+        "proven_seasons": player.proven_seasons,
+        "sample_minutes": int(sample_minutes),
+        "goals_per_90": round(goals_per_90, 3),
+        "contributions_per_90": round(contributions_per_90, 3),
+        "scorer_leverage": scorer_leverage,
+    }
+
+
+def is_genuine_top_scorer(player: Player) -> bool:
+    return bool(genuine_top_scorer_evidence(player)["qualified"])
+
+
 def elite_rebound_striker_evidence(
     player: Player,
 ) -> dict[str, Any]:
@@ -2668,7 +2715,7 @@ def premium_starter_candidate_ids(
     candidates: list[Player],
     raw_scores: Mapping[str, float],
 ) -> frozenset[str]:
-    """Find credible premium starters without treating price as ground truth."""
+    """Find expensive, proven scorers whose points justify starter budget."""
 
     eligible: set[str] = {
         player.player_id
@@ -2683,7 +2730,12 @@ def premium_starter_candidate_ids(
         ]
         if not position_players:
             continue
-        highest_price = max(player.cost for player in position_players)
+        ordered_costs = sorted(player.cost for player in position_players)
+        premium_price_index = max(
+            0,
+            math.ceil(0.85 * len(ordered_costs)) - 1,
+        )
+        premium_price_floor = ordered_costs[premium_price_index]
         ordered_scores = sorted(
             raw_scores[player.player_id]
             for player in position_players
@@ -2697,7 +2749,8 @@ def premium_starter_candidate_ids(
             player.player_id
             for player in position_players
             if (
-                player.cost == highest_price
+                is_genuine_top_scorer(player)
+                and player.cost >= premium_price_floor
                 and raw_scores[player.player_id] >= score_floor
             )
         )
@@ -2994,8 +3047,9 @@ def defender_architecture_audit(
     raw_scores: Mapping[str, float] | None = None,
     position_minimum_costs: Mapping[str, int] | None = None,
     ready_reserve_available_count: int | None = None,
+    qualified_potential_ids: AbstractSet[str] = frozenset(),
 ) -> dict[str, Any]:
-    """Prevent a nominal defense made almost entirely of price-floor fillers."""
+    """Keep one playable reserve without funding a second starting defense."""
 
     defenders = [
         player for player in squad.players if player.position == "DEFENDER"
@@ -3110,11 +3164,31 @@ def defender_architecture_audit(
     direct_backup_deficit = int(
         direct_backup_required and not direct_backup_ready
     )
+    paid_reserves = [
+        player for player in reserve_defenders if player.cost > minimum_cost
+    ]
+    ordinary_paid_reserves = [
+        player
+        for player in paid_reserves
+        if player.player_id not in qualified_potential_ids
+    ]
+    paid_reserve_limit = 2
+    ordinary_paid_reserve_limit = 1
+    paid_reserve_excess = max(0, len(paid_reserves) - paid_reserve_limit)
+    ordinary_paid_reserve_excess = max(
+        0,
+        len(ordinary_paid_reserves) - ordinary_paid_reserve_limit,
+    )
+    reserve_budget_violation = max(
+        paid_reserve_excess,
+        ordinary_paid_reserve_excess,
+    )
     violation_score = (
         minimum_price_filler_excess
         + minimum_price_starter_excess
         + lineup_ready_deficit
         + direct_backup_deficit
+        + reserve_budget_violation
     )
     return {
         "enforced": enforce,
@@ -3148,6 +3222,16 @@ def defender_architecture_audit(
         "direct_backup_required": direct_backup_required,
         "direct_backup_available_count": ready_reserve_available_count,
         "direct_backup_deficit": direct_backup_deficit,
+        "paid_reserve_count": len(paid_reserves),
+        "paid_reserve_limit": paid_reserve_limit,
+        "paid_reserve_excess": paid_reserve_excess,
+        "paid_reserve_ids": sorted(
+            player.player_id for player in paid_reserves
+        ),
+        "ordinary_paid_reserve_count": len(ordinary_paid_reserves),
+        "ordinary_paid_reserve_limit": ordinary_paid_reserve_limit,
+        "ordinary_paid_reserve_excess": ordinary_paid_reserve_excess,
+        "reserve_budget_violation": reserve_budget_violation,
         "violation_score": violation_score if enforce else 0,
         "passes": not enforce or violation_score == 0,
     }
@@ -3261,6 +3345,7 @@ def squad_architecture_metrics(
         ready_reserve_available_count=(
             defender_ready_reserve_available_count
         ),
+        qualified_potential_ids=qualified_potential_ids,
     )
     midfield_audit = midfield_architecture_audit(
         squad,

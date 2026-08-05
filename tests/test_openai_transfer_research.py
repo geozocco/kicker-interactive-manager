@@ -364,6 +364,79 @@ class TransferResearchTests(unittest.TestCase):
         )
         self.assertEqual("new", selected[0]["player_id"])
 
+    def test_open_role_competition_becomes_critical_transfer_target(
+        self,
+    ) -> None:
+        market = {
+            "players": [
+                {
+                    "id": "incumbent",
+                    "name": "Dimitrios Beispiel",
+                    "club": "FC Beispiel",
+                    "position": "DEFENDER",
+                    "market_value": 1_600_000,
+                }
+            ]
+        }
+        quality = {
+            "annotations": {
+                "incumbent": {
+                    "reliable_anchor": True,
+                    "risks": {"transfer": 0},
+                }
+            }
+        }
+        news = {
+            "players": {},
+            "role_profiles": {
+                "incumbent": {
+                    "designation": "open_competition",
+                    "external_signing_risk": 0,
+                }
+            },
+        }
+
+        selected = transfer.select_transfer_targets(market, quality, news)
+
+        self.assertEqual("critical", selected[0]["research_priority"])
+
+    def test_critical_targets_are_researched_individually(self) -> None:
+        targets = []
+        observed_batch_sizes: list[int] = []
+        for index in range(3):
+            item = target()
+            item["player_id"] = f"critical-{index}"
+            item["name"] = f"Critical {index}"
+            item["research_priority"] = "critical"
+            targets.append(item)
+
+        def requester(payload, *, api_key):
+            requested = json.loads(payload["input"][1]["content"])["players"]
+            observed_batch_sizes.append(len(requested))
+            reports = []
+            for item in requested:
+                no_signal = raw_report()
+                no_signal["player_id"] = item["player_id"]
+                no_signal["has_transfer_signal"] = False
+                no_signal["evidence"] = []
+                reports.append(no_signal)
+            return response_for(reports)
+
+        transfer.research_transfer_reports(
+            targets,
+            competition="2. Bundesliga",
+            season="2026/27",
+            competition_clubs={"Energie Cottbus"},
+            previous_reports={},
+            previous_abstentions={},
+            api_key="secret",
+            now=NOW,
+            batch_size=8,
+            requester=requester,
+        )
+
+        self.assertEqual([1, 1, 1], sorted(observed_batch_sizes))
+
     def test_multiple_batches_use_bounded_workers(self) -> None:
         targets = []
         for index in range(4):

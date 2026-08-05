@@ -33,7 +33,7 @@ from openai_usage import empty_usage, merge_usage, response_usage
 
 
 MODEL_VERSION = "openai-transfer-watch-v1"
-PROMPT_VERSION = "transfer-watch-2026-07-29-v2"
+PROMPT_VERSION = "transfer-watch-2026-08-05-v3"
 TRANSFER_STAGES = {
     "rumour",
     "contact",
@@ -103,10 +103,17 @@ def select_transfer_targets(
         if isinstance(previous_news, dict)
         else {}
     )
+    role_profiles = (
+        previous_news.get("role_profiles", {})
+        if isinstance(previous_news, dict)
+        else {}
+    )
     if not isinstance(annotations, dict):
         annotations = {}
     if not isinstance(news_players, dict):
         news_players = {}
+    if not isinstance(role_profiles, dict):
+        role_profiles = {}
 
     priority_scores: dict[str, float] = {}
 
@@ -131,6 +138,14 @@ def select_transfer_targets(
             if isinstance(signal, dict)
         ):
             score += 800.0
+        role_profile = role_profiles.get(player_id, {})
+        if isinstance(role_profile, dict):
+            if role_profile.get("designation") == "open_competition":
+                score += 550.0
+            score += 5.0 * max(
+                0.0,
+                float(role_profile.get("external_signing_risk", 0) or 0),
+            )
         score += min(200.0, float(player.get("market_value", 0)) / 10_000)
         priority_scores[player_id] = score
         return (-score, -int(float(player.get("market_value", 0))), player_id)
@@ -254,8 +269,11 @@ def build_request(
         "loans, whether cited statements describe immediate help, development minutes "
         "or squad depth. Parent-club level describes its current senior competition; "
         "ownership by a famous club does not prove that the player performed there. "
-        "Return has_transfer_signal=false with empty evidence if there is no grounded "
-        "report from the last 31 days. Every evidence URL must be returned by web "
+        "For critical targets, search the player separately with the supplied current "
+        "club before concluding that no report exists; do not let other players in the "
+        "request consume that search. Return has_transfer_signal=false with empty "
+        "evidence if there is no grounded report from the last 31 days. Every evidence "
+        "URL must be returned by web "
         "search and every claim must be player-specific."
     )
     payload = {
@@ -879,7 +897,23 @@ def research_transfer_reports(
     failures: list[str] = []
     requests = researched = no_signal = inconclusive = 0
     usage = empty_usage(model)
-    pending_batches = list(chunks(pending, max(1, min(8, batch_size))))
+    critical_pending = [
+        target
+        for target in pending
+        if target.get("research_priority") == "critical"
+    ]
+    noncritical_pending = [
+        target
+        for target in pending
+        if target.get("research_priority") != "critical"
+    ]
+    # A batch-level web search can miss a concrete transfer when seven other
+    # names compete for the same search budget. Critical cases are deliberately
+    # isolated; routine coverage stays batched to preserve the cost advantage.
+    pending_batches = [[target] for target in critical_pending]
+    pending_batches.extend(
+        chunks(noncritical_pending, max(1, min(8, batch_size)))
+    )
     worker_count = max(1, min(8, max_workers, len(pending_batches) or 1))
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         for (

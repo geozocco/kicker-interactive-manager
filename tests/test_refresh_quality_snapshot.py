@@ -1138,6 +1138,46 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             stable["adjustments"]["unknown_role_risk"],
         )
 
+    def test_summer_national_team_only_season_is_not_a_club_change(
+        self,
+    ) -> None:
+        history = [
+            form_season(
+                2026,
+                minutes=700,
+                lineups=8,
+                rating=7.1,
+                goals=5,
+                assists=1,
+                club="England",
+            ),
+            form_season(
+                2025,
+                minutes=2500,
+                lineups=29,
+                rating=7.4,
+                goals=25,
+                assists=7,
+                club="Bayern München",
+            ),
+        ]
+
+        profile = quality.historical_form_profile(
+            position="FORWARD",
+            histories=history,
+            history_player={"seasons": []},
+            market_club="Bayern München",
+            news_player=news_player(),
+            age=32,
+        )
+
+        self.assertFalse(profile["club_changed"])
+        self.assertEqual(
+            "provider_history_recent_club",
+            profile["club_change_source"],
+        )
+        self.assertEqual(1.0, profile["context_transfer_factor"])
+
     def test_confirmed_new_club_role_removes_blanket_transfer_malus(
         self,
     ) -> None:
