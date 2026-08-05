@@ -369,6 +369,48 @@ class DistanceOptimizerTests(unittest.TestCase):
         self.assertNotIn(premium.player_id, unconstrained_ids)
         self.assertIn(premium.player_id, constrained_ids)
 
+    def test_starting_lineup_can_require_a_qualified_u23_prospect(
+        self,
+    ) -> None:
+        players: list[optimizer.Player] = [
+            player(f"g{index}", "Goalkeeper Club", "GOALKEEPER", 100)
+            for index in range(3)
+        ]
+        for position, prefix, count in (
+            ("DEFENDER", "d", 7),
+            ("MIDFIELDER", "m", 7),
+            ("FORWARD", "f", 5),
+        ):
+            for index in range(count):
+                players.append(
+                    player(
+                        f"{prefix}{index}",
+                        f"{prefix.upper()} Club {index}",
+                        position,
+                        100,
+                    )
+                )
+        prospect_id = "m6"
+        scores = {
+            item.player_id: 100.0 - index
+            for index, item in enumerate(players)
+        }
+        scores[prospect_id] = 1.0
+
+        _, unconstrained_ids = optimizer.best_starting_lineup(
+            players,
+            scores,
+        )
+        _, constrained_ids = optimizer.best_starting_lineup(
+            players,
+            scores,
+            qualified_potential_ids=frozenset({prospect_id}),
+            min_qualified_potential_starters=1,
+        )
+
+        self.assertNotIn(prospect_id, unconstrained_ids)
+        self.assertIn(prospect_id, constrained_ids)
+
     def test_postprocessing_variation_corridor_is_narrow(self) -> None:
         self.assertTrue(optimizer.variation_distance_met("medium", 4))
         self.assertTrue(optimizer.variation_distance_met("medium", 5))
@@ -2731,7 +2773,7 @@ class ReliableCorePolicyTests(unittest.TestCase):
             after["bench_usage_weights"]["FORWARD"],
         )
         self.assertEqual(
-            "joint-xi-bench-v13-depth-diversity",
+            "joint-xi-bench-v14-youth-start",
             optimized.architecture_diagnostics["model_version"],
         )
         self.assertGreater(
@@ -2933,6 +2975,21 @@ class ReliableCorePolicyTests(unittest.TestCase):
             [prospect.player_id],
             optimized.architecture_diagnostics[
                 "qualified_potential_core_ids"
+            ],
+        )
+        self.assertIn(
+            prospect.player_id,
+            optimized.architecture_diagnostics["player_ids"],
+        )
+        self.assertTrue(
+            optimized.architecture_diagnostics[
+                "qualified_potential_starter_minimum_met"
+            ]
+        )
+        self.assertEqual(
+            [prospect.player_id],
+            optimized.architecture_diagnostics[
+                "qualified_potential_starter_ids"
             ],
         )
 

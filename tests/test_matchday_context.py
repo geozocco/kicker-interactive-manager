@@ -55,7 +55,13 @@ def snapshot() -> dict:
 
 class MatchdayContextTests(unittest.TestCase):
     def test_provider_club_name_resolves_to_canonical_kicker_name(self) -> None:
-        clubs = {"1. FC Nürnberg", "SV Wehen Wiesbaden", "VfL Bochum"}
+        clubs = {
+            "1. FC Nürnberg",
+            "Rot-Weiss Essen",
+            "SG Sonnenhof Großaspach",
+            "SV Wehen Wiesbaden",
+            "VfL Bochum",
+        }
         self.assertEqual(
             "1. FC Nürnberg",
             refresh_matchday_snapshot.resolve_quality_club(
@@ -67,6 +73,20 @@ class MatchdayContextTests(unittest.TestCase):
             "SV Wehen Wiesbaden",
             refresh_matchday_snapshot.resolve_quality_club(
                 "Wehen Wiesbaden",
+                clubs,
+            ),
+        )
+        self.assertEqual(
+            "Rot-Weiss Essen",
+            refresh_matchday_snapshot.resolve_quality_club(
+                "Rot-Weiß Essen",
+                clubs,
+            ),
+        )
+        self.assertEqual(
+            "SG Sonnenhof Großaspach",
+            refresh_matchday_snapshot.resolve_quality_club(
+                "SG Sonnenhof Grossaspach",
                 clubs,
             ),
         )

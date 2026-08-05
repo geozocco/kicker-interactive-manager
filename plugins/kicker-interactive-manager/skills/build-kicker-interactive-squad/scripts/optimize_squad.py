@@ -122,9 +122,7 @@ VARIATION_STATE_SCHEMA_VERSION = 2
 OPTIMIZER_CACHE_ENV = "KICKER_OPTIMIZER_CACHE"
 OPTIMIZER_CACHE_SCHEMA_VERSION = 1
 OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v7-depth-diversity"
-ARCHITECTURE_MODEL_VERSION = (
-    "joint-xi-bench-v13-depth-diversity"
-)
+ARCHITECTURE_MODEL_VERSION = "joint-xi-bench-v14-youth-start"
 COMPETITION_BUDGETS = {
     "Bundesliga": 42_500_000,
     "2. Bundesliga": 10_000_000,
@@ -2180,6 +2178,8 @@ def best_starting_lineup(
     min_forwards: int = 1,
     max_defenders: int = 5,
     min_offensive_premium_anchors: int = 0,
+    qualified_potential_ids: AbstractSet[str] = frozenset(),
+    min_qualified_potential_starters: int = 0,
 ) -> tuple[str, frozenset[str]]:
     """Infer the strongest legal eleven while keeping the reliable core."""
 
@@ -2204,9 +2204,9 @@ def best_starting_lineup(
         "FORWARD": max(formation[2] for formation in FORMATIONS),
     }
     states: dict[
-        tuple[int, int, int, int, int],
+        tuple[int, int, int, int, int, int],
         tuple[float, frozenset[str]],
-    ] = {(0, 0, 0, 0, 0): (0.0, frozenset())}
+    ] = {(0, 0, 0, 0, 0, 0): (0.0, frozenset())}
     for player in sorted(
         (
             player
@@ -2230,12 +2230,17 @@ def best_starting_lineup(
                 min_offensive_premium_anchors,
                 key[4] + int(is_offensive_premium_anchor(player)),
             )
+            potential_starters = min(
+                min_qualified_potential_starters,
+                key[5] + int(player.player_id in qualified_potential_ids),
+            )
             new_key = (
                 counts[0],
                 counts[1],
                 counts[2],
                 anchors,
                 premium_anchors,
+                potential_starters,
             )
             new_score = score + scores[player.player_id]
             current = next_states.get(new_key)
@@ -2272,6 +2277,7 @@ def best_starting_lineup(
             if (
                 key[3] < min_reliable_anchors
                 or key[4] < min_offensive_premium_anchors
+                or key[5] < min_qualified_potential_starters
             ):
                 continue
             if (
@@ -2401,6 +2407,8 @@ def reliable_core_audit(
     min_attacking_anchors: int,
     min_core_budget_share: float,
     min_offensive_premium_anchors: int = 0,
+    qualified_potential_ids: AbstractSet[str] = frozenset(),
+    min_qualified_potential_starters: int = 0,
 ) -> dict[str, Any]:
     """Measure whether a conservative squad actually funds its scoring core."""
 
@@ -2411,6 +2419,8 @@ def reliable_core_audit(
         2 if min_core_budget_share > 0 else 1,
         4 if min_core_budget_share > 0 else 5,
         min_offensive_premium_anchors,
+        qualified_potential_ids,
+        min_qualified_potential_starters,
     )
     core_players = [
         player for player in squad.players if player.player_id in core_ids
@@ -2425,6 +2435,9 @@ def reliable_core_audit(
         is_offensive_premium_anchor(player)
         for player in core_players
     )
+    qualified_potential_starter_ids = sorted(
+        core_ids.intersection(qualified_potential_ids)
+    )
     core_budget = sum(player.cost for player in core_players)
     core_budget_share = core_budget / max(squad.cost, 1)
     return {
@@ -2433,6 +2446,19 @@ def reliable_core_audit(
         "reliable_anchors": reliable_anchors,
         "attacking_anchors": attacking_anchors,
         "offensive_premium_anchors": offensive_premium_anchors,
+        "qualified_potential_starter_ids": (
+            qualified_potential_starter_ids
+        ),
+        "qualified_potential_starter_count": len(
+            qualified_potential_starter_ids
+        ),
+        "qualified_potential_starter_minimum": (
+            min_qualified_potential_starters
+        ),
+        "qualified_potential_starter_minimum_met": (
+            len(qualified_potential_starter_ids)
+            >= min_qualified_potential_starters
+        ),
         "core_budget": core_budget,
         "core_budget_share": core_budget_share,
         "passes": (
@@ -2440,6 +2466,8 @@ def reliable_core_audit(
             and attacking_anchors >= min_attacking_anchors
             and offensive_premium_anchors
             >= min_offensive_premium_anchors
+            and len(qualified_potential_starter_ids)
+            >= min_qualified_potential_starters
             and core_budget_share >= min_core_budget_share
         ),
     }
@@ -3153,6 +3181,22 @@ def squad_architecture_metrics(
         )
         for player in squad.players
     }
+    available_potential_count = len(qualified_potential_ids)
+    effective_potential_minimum = min(
+        min_qualified_potential_core,
+        available_potential_count,
+    )
+    effective_potential_target = min(
+        max(
+            effective_potential_minimum,
+            target_qualified_potential_core,
+        ),
+        available_potential_count,
+    )
+    effective_potential_starter_minimum = min(
+        1,
+        effective_potential_minimum,
+    )
     audit = reliable_core_audit(
         squad,
         lineup_scores,
@@ -3160,6 +3204,8 @@ def squad_architecture_metrics(
         min_attacking_anchors,
         min_core_budget_share,
         min_offensive_premium_anchors,
+        qualified_potential_ids,
+        effective_potential_starter_minimum,
     )
     core_ids = set(audit["player_ids"])
     player_usage_weights = bench_player_usage_weights(
@@ -3189,18 +3235,6 @@ def squad_architecture_metrics(
             extended_core_ids.add(reserves[0].player_id)
     selected_potential_core_ids = sorted(
         extended_core_ids.intersection(qualified_potential_ids)
-    )
-    available_potential_count = len(qualified_potential_ids)
-    effective_potential_minimum = min(
-        min_qualified_potential_core,
-        available_potential_count,
-    )
-    effective_potential_target = min(
-        max(
-            effective_potential_minimum,
-            target_qualified_potential_core,
-        ),
-        available_potential_count,
     )
     defender_audit = defender_architecture_audit(
         squad,
@@ -3275,6 +3309,11 @@ def squad_architecture_metrics(
         0,
         effective_potential_minimum - len(selected_potential_core_ids),
     )
+    potential_starter_deficit = max(
+        0,
+        effective_potential_starter_minimum
+        - int(audit["qualified_potential_starter_count"]),
+    )
     variation_distances = [
         len(squad.ids.symmetric_difference(frozenset(reference_ids))) // 2
         for reference_ids in variation_reference_squads
@@ -3300,6 +3339,7 @@ def squad_architecture_metrics(
         + offensive_premium_deficit
         + core_budget_deficit
         + potential_core_deficit
+        + potential_starter_deficit
         + int(defender_audit["violation_score"])
         + int(midfield_audit["violation_score"])
         + int(forward_audit["violation_score"])
@@ -3475,6 +3515,7 @@ def squad_architecture_metrics(
     architecture_passes = (
         bool(audit["passes"])
         and potential_core_deficit == 0
+        and potential_starter_deficit == 0
         and bool(defender_audit["passes"])
         and bool(midfield_audit["passes"])
         and bool(forward_audit["passes"])
@@ -3594,6 +3635,9 @@ def squad_architecture_metrics(
         "qualified_potential_core_target_met": (
             len(selected_potential_core_ids)
             >= effective_potential_target
+        ),
+        "qualified_potential_starter_deficit": (
+            potential_starter_deficit
         ),
         "potential_core_adjustment": potential_core_adjustment,
         "squad_average_age": (
@@ -5043,6 +5087,21 @@ def optimize_joint_squad_architecture(
         ],
         "qualified_potential_core_target_met": current_metrics[
             "qualified_potential_core_target_met"
+        ],
+        "qualified_potential_starter_ids": current_metrics[
+            "qualified_potential_starter_ids"
+        ],
+        "qualified_potential_starter_count": current_metrics[
+            "qualified_potential_starter_count"
+        ],
+        "qualified_potential_starter_minimum": current_metrics[
+            "qualified_potential_starter_minimum"
+        ],
+        "qualified_potential_starter_minimum_met": current_metrics[
+            "qualified_potential_starter_minimum_met"
+        ],
+        "qualified_potential_starter_deficit": current_metrics[
+            "qualified_potential_starter_deficit"
         ],
         "potential_core_adjustment": current_metrics[
             "potential_core_adjustment"
@@ -8591,7 +8650,15 @@ def output_payload(
                 "The extended sporting core contains no qualified U23 "
                 "potential investment despite suitable candidates."
             )
-        elif not architecture_audit.get(
+        if not architecture_audit.get(
+            "qualified_potential_starter_minimum_met",
+            True,
+        ):
+            warnings.append(
+                "No evidence-qualified U23 potential player reached the "
+                "starting eleven despite suitable candidates."
+            )
+        if not architecture_audit.get(
             "qualified_potential_core_target_met",
             True,
         ):
@@ -8618,14 +8685,6 @@ def output_payload(
                 "The projected starting eleven averages above 28 years; "
                 "verify that the experience premium is worth the missing "
                 "development upside."
-            )
-        if int(
-            architecture_audit.get("starting_u23_count") or 0
-        ) == 0:
-            warnings.append(
-                "No U23 player projects into the starting eleven. This can "
-                "be valid, but the squad should still carry a qualified "
-                "potential player in its extended core."
             )
     architecture_contributions = squad.architecture_diagnostics.get(
         "player_contributions",
@@ -9318,9 +9377,9 @@ def parse_args() -> argparse.Namespace:
         "--min-qualified-potential-core",
         type=int,
         help=(
-            "Minimum qualified U23 potential players in the starting eleven "
-            "plus the first reserve per outfield position; default 1 for a "
-            "final reliable low-maintenance squad"
+            "Minimum qualified U23 potential players in the extended core; "
+            "a positive minimum also requires one of them in the starting "
+            "eleven. Default 1 for a final reliable low-maintenance squad"
         ),
     )
     parser.add_argument(

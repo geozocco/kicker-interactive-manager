@@ -41,7 +41,13 @@ def clamp(value: Any) -> float:
 
 
 def club_tokens(value: Any) -> tuple[str, ...]:
-    text = unicodedata.normalize("NFKD", str(value or ""))
+    # Unicode normalization does not decompose German sharp-s. Normalize it
+    # explicitly so provider spellings such as ``Grossaspach`` and
+    # ``Rot-Weiss`` resolve to Kicker's ``Großaspach`` and ``Rot-Weiß``.
+    text = unicodedata.normalize(
+        "NFKD",
+        str(value or "").replace("ß", "ss").replace("ẞ", "ss"),
+    )
     ascii_text = text.encode("ascii", "ignore").decode("ascii").casefold()
     return tuple(
         token
