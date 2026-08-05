@@ -21,6 +21,40 @@ import refresh_news_snapshot as refresh
 
 
 class RefreshNewsSnapshotTests(unittest.TestCase):
+    def test_shared_evidence_cache_deduplicates_source_urls(self) -> None:
+        evidence = {
+            "claim": "Coach confirms the role.",
+            "source_url": "https://club.example/news",
+            "observed_at": "2026-07-28T12:00:00Z",
+        }
+        cache = refresh.build_evidence_cache(
+            {"p1": {"evidence": [evidence]}},
+            {"Club": {"evidence": [evidence]}},
+            {},
+        )
+        self.assertEqual(1, cache["source_count"])
+        record = cache["sources"]["https://club.example/news"]
+        self.assertEqual(["role", "team"], record["contexts"])
+        self.assertEqual(["Club", "p1"], record["entities"])
+
+    def test_combined_openai_usage_keeps_stage_breakdown(self) -> None:
+        combined = refresh.combined_openai_usage(
+            {
+                "model": "gpt-5.6-luna",
+                "usage": {
+                    "model": "gpt-5.6-luna",
+                    "responses": 1,
+                    "input_tokens": 100,
+                    "web_search_calls": 1,
+                },
+            },
+            None,
+            None,
+        )
+        self.assertEqual(1, combined["responses"])
+        self.assertEqual(1, combined["web_search_calls"])
+        self.assertIn("role", combined["stages"])
+
     def test_role_news_is_cached_with_source_age_not_refresh_age(self) -> None:
         profiles = refresh.cached_role_profiles(
             {

@@ -18,6 +18,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterable
 from urllib.parse import urlparse
 
+from openai_usage import empty_usage, merge_usage, response_usage
+
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_MODEL = "gpt-5.6-luna"
@@ -73,6 +75,30 @@ ROLE_ENVIRONMENT = {
     },
     "role_stability": {"unknown", "fragile", "uncertain", "stable"},
 }
+
+
+def target_fingerprint(target: dict[str, Any]) -> str:
+    """Fingerprint role-relevant roster identity, excluding price changes."""
+
+    return hashlib.sha256(
+        json.dumps(
+            {
+                "player_id": str(target.get("player_id", "")),
+                "name": str(target.get("name", "")).strip(),
+                "club": str(target.get("club", "")).strip(),
+                "position": str(target.get("position", "")),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def cache_matches_target(value: Any, target: dict[str, Any]) -> bool:
+    if not isinstance(value, dict):
+        return False
+    cached = str(value.get("target_fingerprint", "")).strip()
+    return not cached or cached == target_fingerprint(target)
 
 
 def parsed_timestamp(value: Any) -> datetime | None:
@@ -159,6 +185,9 @@ def select_role_targets(
         normalized_id = str(player_id)
         promote(normalized_id, 1_000.0)
         protected_ids.add(normalized_id)
+    for player_id in by_id:
+        if player_id not in annotations:
+            promote(player_id, 770.0)
     for player_id, annotation in annotations.items():
         if not isinstance(annotation, dict):
             continue
@@ -289,6 +318,14 @@ def select_role_targets(
             "position": str(by_id[player_id]["position"]),
             "market_value": int(float(by_id[player_id]["market_value"])),
             "force_refresh": player_id in forced_refresh_ids,
+            "research_priority": (
+                "critical"
+                if player_id in forced_refresh_ids
+                or priority.get(player_id, 0.0) >= 760.0
+                else "elevated"
+                if priority.get(player_id, 0.0) >= 700.0
+                else "routine"
+            ),
         }
         for player_id in selected_ids
     ]
@@ -299,12 +336,15 @@ def reusable_profile(
     *,
     now: datetime,
     model: str,
+    target: dict[str, Any] | None = None,
 ) -> bool:
     if not isinstance(profile, dict):
         return False
     if profile.get("model_version") != MODEL_VERSION:
         return False
     if profile.get("research_model") != model:
+        return False
+    if target is not None and not cache_matches_target(profile, target):
         return False
     refresh_after = parsed_timestamp(profile.get("refresh_after"))
     expires_at = parsed_timestamp(profile.get("expires_at"))
@@ -322,12 +362,15 @@ def reusable_abstention(
     *,
     now: datetime,
     model: str,
+    target: dict[str, Any] | None = None,
 ) -> bool:
     if not isinstance(record, dict):
         return False
     if record.get("model_version") != MODEL_VERSION:
         return False
     if record.get("research_model") != model:
+        return False
+    if target is not None and not cache_matches_target(record, target):
         return False
     refresh_after = parsed_timestamp(record.get("refresh_after"))
     expires_at = parsed_timestamp(record.get("expires_at"))
@@ -365,6 +408,7 @@ def abstention_record(
         "prompt_version": PROMPT_VERSION,
         "research_model": model,
         "research_fingerprint": fingerprint,
+        "target_fingerprint": target_fingerprint(target),
         "forced_refresh": bool(target.get("force_refresh")),
         "checked_at": iso_timestamp(now),
         "refresh_after": iso_timestamp(now + timedelta(days=refresh_days)),
@@ -402,6 +446,7 @@ def inconclusive_record(
         "prompt_version": PROMPT_VERSION,
         "research_model": model,
         "research_fingerprint": fingerprint,
+        "target_fingerprint": target_fingerprint(target),
         "checked_at": iso_timestamp(now),
         "refresh_after": iso_timestamp(now + timedelta(minutes=1)),
         "expires_at": iso_timestamp(now + timedelta(days=3)),
@@ -524,6 +569,7 @@ def build_request(
     season: str,
     model: str,
     current_date: str,
+    reasoning_effort: str = "low",
 ) -> dict[str, Any]:
     instructions = (
         "Research the current expected club role of each listed football player. "
@@ -559,9 +605,9 @@ def build_request(
         "maximum_source_age_days": 45,
         "players": targets,
     }
-    return {
+    payload = {
         "model": model,
-        "reasoning": {"effort": "low"},
+        "reasoning": {"effort": reasoning_effort},
         "tools": [{"type": "web_search"}],
         "tool_choice": "auto",
         "include": ["web_search_call.action.sources"],
@@ -587,6 +633,19 @@ def build_request(
             }
         },
     }
+    if model.startswith("gpt-5.6"):
+        payload["prompt_cache_key"] = (
+            f"kicker-role:{model}:{PROMPT_VERSION}"
+        )
+        payload["prompt_cache_options"] = {"mode": "explicit"}
+        payload["input"][0]["content"] = [
+            {
+                "type": "input_text",
+                "text": instructions,
+                "prompt_cache_breakpoint": {"mode": "explicit"},
+            }
+        ]
+    return payload
 
 
 def request_openai(
@@ -838,6 +897,7 @@ def normalize_profile(
         "prompt_version": PROMPT_VERSION,
         "research_model": model,
         "research_fingerprint": fingerprint,
+        "target_fingerprint": target_fingerprint(target),
         "designation": designation,
         "continuity": str(raw.get("continuity", "unknown")),
         "expected_start_probability": round(probability, 2),
@@ -872,6 +932,7 @@ def research_role_profiles(
     model: str = DEFAULT_MODEL,
     now: datetime | None = None,
     batch_size: int = 4,
+    refresh_mode: str = "standard",
     requester: Callable[..., dict[str, Any]] = request_openai,
 ) -> tuple[
     dict[str, dict[str, Any]],
@@ -883,13 +944,24 @@ def research_role_profiles(
     previous_empty = (
         previous_abstentions if isinstance(previous_abstentions, dict) else {}
     )
+    if refresh_mode not in {"urgent", "standard", "full"}:
+        raise ValueError("refresh_mode must be urgent, standard or full")
     profiles: dict[str, dict[str, Any]] = {}
     abstentions: dict[str, dict[str, Any]] = {}
     pending: list[dict[str, Any]] = []
+    deferred = 0
+    cache_hits = 0
     for target in targets:
         player_id = str(target["player_id"])
         cached = previous.get(player_id)
         cached_abstention = previous_empty.get(player_id)
+        target_changed = (
+            isinstance(cached, dict)
+            and not cache_matches_target(cached, target)
+        ) or (
+            isinstance(cached_abstention, dict)
+            and not cache_matches_target(cached_abstention, target)
+        )
         already_forced = (
             bool(target.get("force_refresh"))
             and isinstance(cached_abstention, dict)
@@ -898,23 +970,58 @@ def research_role_profiles(
                 cached_abstention,
                 now=current,
                 model=model,
+                target=target,
             )
         )
         force_refresh = bool(target.get("force_refresh")) and not already_forced
         if (
-            not force_refresh
-            and reusable_profile(cached, now=current, model=model)
+            refresh_mode != "full"
+            and not force_refresh
+            and reusable_profile(
+                cached,
+                now=current,
+                model=model,
+                target=target,
+            )
         ):
             profiles[player_id] = dict(cached)
+            cache_hits += 1
         elif (
-            not force_refresh
+            refresh_mode != "full"
+            and not force_refresh
             and reusable_abstention(
                 cached_abstention,
                 now=current,
                 model=model,
+                target=target,
             )
         ):
             abstentions[player_id] = dict(previous_empty[player_id])
+            cache_hits += 1
+        elif (
+            refresh_mode == "urgent"
+            and target.get("research_priority") != "critical"
+            and not target_changed
+        ):
+            cached_expiry = (
+                parsed_timestamp(cached.get("expires_at"))
+                if isinstance(cached, dict)
+                and cache_matches_target(cached, target)
+                else None
+            )
+            abstention_expiry = (
+                parsed_timestamp(cached_abstention.get("expires_at"))
+                if isinstance(cached_abstention, dict)
+                and cache_matches_target(cached_abstention, target)
+                else None
+            )
+            if cached_expiry and current < cached_expiry:
+                profiles[player_id] = dict(cached)
+                cache_hits += 1
+            elif abstention_expiry and current < abstention_expiry:
+                abstentions[player_id] = dict(cached_abstention)
+                cache_hits += 1
+            deferred += 1
         else:
             pending.append(target)
 
@@ -923,6 +1030,7 @@ def research_role_profiles(
     researched = 0
     researched_abstentions = 0
     researched_inconclusive = 0
+    usage = empty_usage(model)
     for batch in chunks(pending, max(1, min(8, batch_size))):
         completed_ids: set[str] = set()
         batch_failure = ""
@@ -935,10 +1043,20 @@ def research_role_profiles(
                     season=season,
                     model=model,
                     current_date=current.date().isoformat(),
+                    reasoning_effort=(
+                        "low"
+                        if any(
+                            target.get("research_priority") == "critical"
+                            or target.get("force_refresh")
+                            for target in batch
+                        )
+                        else "none"
+                    ),
                 ),
                 api_key=api_key,
             )
             requests += 1
+            merge_usage(usage, response_usage(response, model=model))
             grounded_urls = response_source_urls(response)
             parsed = json.loads(response_output_text(response))
             raw_profiles = parsed.get("profiles", [])
@@ -1041,7 +1159,7 @@ def research_role_profiles(
         "model_version": MODEL_VERSION,
         "prompt_version": PROMPT_VERSION,
         "targets": len(targets),
-        "cache_hits": len(targets) - len(pending),
+        "cache_hits": cache_hits,
         "forced_refreshes": sum(
             bool(target.get("force_refresh")) for target in pending
         ),
@@ -1049,5 +1167,8 @@ def research_role_profiles(
         "researched_abstentions": researched_abstentions,
         "researched_inconclusive": researched_inconclusive,
         "requests": requests,
+        "refresh_mode": refresh_mode,
+        "deferred_targets": deferred,
+        "usage": usage,
         "failures": failures[:5],
     }

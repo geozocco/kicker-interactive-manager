@@ -20,13 +20,16 @@ from urllib.parse import urlparse
 
 from openai_role_research import (
     DEFAULT_MODEL,
+    cache_matches_target,
     iso_timestamp,
     optional_float,
     parsed_timestamp,
     request_openai,
     response_output_text,
     response_source_urls,
+    target_fingerprint,
 )
+from openai_usage import empty_usage, merge_usage, response_usage
 
 
 MODEL_VERSION = "openai-transfer-watch-v1"
@@ -105,6 +108,8 @@ def select_transfer_targets(
     if not isinstance(news_players, dict):
         news_players = {}
 
+    priority_scores: dict[str, float] = {}
+
     def priority(player: dict[str, Any]) -> tuple[float, int, str]:
         player_id = str(player["id"])
         annotation = annotations.get(player_id, {})
@@ -127,6 +132,7 @@ def select_transfer_targets(
         ):
             score += 800.0
         score += min(200.0, float(player.get("market_value", 0)) / 10_000)
+        priority_scores[player_id] = score
         return (-score, -int(float(player.get("market_value", 0))), player_id)
 
     ordered = sorted(players, key=priority)
@@ -138,6 +144,13 @@ def select_transfer_targets(
             "club": str(player["club"]).strip(),
             "position": str(player["position"]),
             "market_value": int(float(player["market_value"])),
+            "research_priority": (
+                "critical"
+                if priority_scores.get(str(player["id"]), 0.0) >= 800.0
+                else "elevated"
+                if priority_scores.get(str(player["id"]), 0.0) >= 300.0
+                else "routine"
+            ),
         }
         for player in selected
     ]
@@ -219,6 +232,7 @@ def build_request(
     season: str,
     model: str,
     current_date: str,
+    reasoning_effort: str = "low",
 ) -> dict[str, Any]:
     instructions = (
         "Research current transfer developments for every listed football player. "
@@ -244,9 +258,9 @@ def build_request(
         "report from the last 31 days. Every evidence URL must be returned by web "
         "search and every claim must be player-specific."
     )
-    return {
+    payload = {
         "model": model,
-        "reasoning": {"effort": "low"},
+        "reasoning": {"effort": reasoning_effort},
         "tools": [{"type": "web_search"}],
         "tool_choice": "auto",
         "include": ["web_search_call.action.sources"],
@@ -279,6 +293,19 @@ def build_request(
             }
         },
     }
+    if model.startswith("gpt-5.6"):
+        payload["prompt_cache_key"] = (
+            f"kicker-transfer:{model}:{PROMPT_VERSION}"
+        )
+        payload["prompt_cache_options"] = {"mode": "explicit"}
+        payload["input"][0]["content"] = [
+            {
+                "type": "input_text",
+                "text": instructions,
+                "prompt_cache_breakpoint": {"mode": "explicit"},
+            }
+        ]
+    return payload
 
 
 def _source_url_is_grounded(url: str, grounded_urls: set[str]) -> bool:
@@ -570,6 +597,7 @@ def normalize_report(
         "prompt_version": PROMPT_VERSION,
         "research_model": model,
         "research_fingerprint": fingerprint,
+        "target_fingerprint": target_fingerprint(target),
         "status": status,
         "stage": stage,
         "direction": direction,
@@ -598,8 +626,12 @@ def _cache_record(
     status: str,
     reason: str = "",
 ) -> dict[str, Any]:
+    priority = str(target.get("research_priority", "routine"))
+    no_signal_hours = (
+        12 if priority == "critical" else 24 if priority == "elevated" else 72
+    )
     refresh_after = (
-        now + timedelta(hours=24)
+        now + timedelta(hours=no_signal_hours)
         if status == "no_grounded_transfer_signal"
         else now + timedelta(minutes=5)
     )
@@ -613,6 +645,8 @@ def _cache_record(
         "model_version": MODEL_VERSION,
         "prompt_version": PROMPT_VERSION,
         "research_model": model,
+        "target_fingerprint": target_fingerprint(target),
+        "research_priority": priority,
         "checked_at": iso_timestamp(now),
         "refresh_after": iso_timestamp(refresh_after),
         "expires_at": iso_timestamp(expires_at),
@@ -629,13 +663,21 @@ def _cache_record(
     return record
 
 
-def _reusable(value: Any, *, now: datetime, model: str) -> bool:
+def _reusable(
+    value: Any,
+    *,
+    now: datetime,
+    model: str,
+    target: dict[str, Any] | None = None,
+) -> bool:
     if (
         not isinstance(value, dict)
         or value.get("model_version") != MODEL_VERSION
         or value.get("prompt_version") != PROMPT_VERSION
         or value.get("research_model") != model
     ):
+        return False
+    if target is not None and not cache_matches_target(value, target):
         return False
     refresh_after = parsed_timestamp(value.get("refresh_after"))
     expires_at = parsed_timestamp(value.get("expires_at"))
@@ -663,6 +705,7 @@ def research_transfer_reports(
     now: datetime | None = None,
     batch_size: int = 8,
     max_workers: int = 4,
+    refresh_mode: str = "standard",
     requester: Callable[..., dict[str, Any]] = request_openai,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], dict[str, Any]]:
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -670,15 +713,62 @@ def research_transfer_reports(
     previous_empty = (
         previous_abstentions if isinstance(previous_abstentions, dict) else {}
     )
+    if refresh_mode not in {"urgent", "standard", "full"}:
+        raise ValueError("refresh_mode must be urgent, standard or full")
     reports: dict[str, dict[str, Any]] = {}
     abstentions: dict[str, dict[str, Any]] = {}
     pending: list[dict[str, Any]] = []
+    deferred = 0
+    cache_hits = 0
     for target in targets:
         player_id = str(target["player_id"])
-        if _reusable(previous.get(player_id), now=current, model=model):
+        cached = previous.get(player_id)
+        cached_abstention = previous_empty.get(player_id)
+        target_changed = (
+            isinstance(cached, dict)
+            and not cache_matches_target(cached, target)
+        ) or (
+            isinstance(cached_abstention, dict)
+            and not cache_matches_target(cached_abstention, target)
+        )
+        if refresh_mode != "full" and _reusable(
+            cached,
+            now=current,
+            model=model,
+            target=target,
+        ):
             reports[player_id] = dict(previous[player_id])
-        elif _reusable(previous_empty.get(player_id), now=current, model=model):
+            cache_hits += 1
+        elif refresh_mode != "full" and _reusable(
+            cached_abstention,
+            now=current,
+            model=model,
+            target=target,
+        ):
             abstentions[player_id] = dict(previous_empty[player_id])
+            cache_hits += 1
+        elif (
+            refresh_mode == "urgent"
+            and target.get("research_priority") != "critical"
+            and not target_changed
+        ):
+            cached_expiry = (
+                parsed_timestamp(cached.get("expires_at"))
+                if isinstance(cached, dict)
+                else None
+            )
+            abstention_expiry = (
+                parsed_timestamp(cached_abstention.get("expires_at"))
+                if isinstance(cached_abstention, dict)
+                else None
+            )
+            if cached_expiry and current < cached_expiry:
+                reports[player_id] = dict(cached)
+                cache_hits += 1
+            elif abstention_expiry and current < abstention_expiry:
+                abstentions[player_id] = dict(cached_abstention)
+                cache_hits += 1
+            deferred += 1
         else:
             pending.append(target)
 
@@ -691,6 +781,7 @@ def research_transfer_reports(
         int,
         int,
         int,
+        dict[str, Any],
     ]:
         batch_reports: dict[str, dict[str, Any]] = {}
         batch_abstentions: dict[str, dict[str, Any]] = {}
@@ -698,6 +789,7 @@ def research_transfer_reports(
         raw_by_id: dict[str, Any] = {}
         failure = ""
         researched_count = no_signal_count = inconclusive_count = 0
+        batch_usage = empty_usage(model)
         try:
             response = requester(
                 build_request(
@@ -706,9 +798,18 @@ def research_transfer_reports(
                     season=season,
                     model=model,
                     current_date=current.date().isoformat(),
+                    reasoning_effort=(
+                        "low"
+                        if any(
+                            target.get("research_priority") == "critical"
+                            for target in batch
+                        )
+                        else "none"
+                    ),
                 ),
                 api_key=api_key,
             )
+            merge_usage(batch_usage, response_usage(response, model=model))
             grounded_urls = response_source_urls(response)
             payload = json.loads(response_output_text(response))
             raw_by_id = {
@@ -772,10 +873,12 @@ def research_transfer_reports(
             researched_count,
             no_signal_count,
             inconclusive_count,
+            batch_usage,
         )
 
     failures: list[str] = []
     requests = researched = no_signal = inconclusive = 0
+    usage = empty_usage(model)
     pending_batches = list(chunks(pending, max(1, min(8, batch_size))))
     worker_count = max(1, min(8, max_workers, len(pending_batches) or 1))
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
@@ -786,11 +889,13 @@ def research_transfer_reports(
             researched_count,
             no_signal_count,
             inconclusive_count,
+            batch_usage,
         ) in executor.map(research_batch, pending_batches):
             requests += 1
             researched += researched_count
             no_signal += no_signal_count
             inconclusive += inconclusive_count
+            merge_usage(usage, batch_usage)
             reports.update(batch_reports)
             abstentions.update(batch_abstentions)
             if failure:
@@ -808,11 +913,14 @@ def research_transfer_reports(
         "model_version": MODEL_VERSION,
         "prompt_version": PROMPT_VERSION,
         "targets": len(targets),
-        "cache_hits": len(targets) - len(pending),
+        "cache_hits": cache_hits,
         "workers": worker_count,
         "researched_reports": researched,
         "researched_abstentions": no_signal,
         "researched_inconclusive": inconclusive,
         "requests": requests,
+        "refresh_mode": refresh_mode,
+        "deferred_targets": deferred,
+        "usage": usage,
         "failures": failures[:5],
     }

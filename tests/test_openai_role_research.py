@@ -498,6 +498,31 @@ class ResearchCacheTests(unittest.TestCase):
         )
         self.assertEqual(2, len(calls))
 
+    def test_changed_club_invalidates_matching_cache(self) -> None:
+        cached = role.normalize_profile(
+            raw_profile(),
+            target=target(),
+            grounded_urls={"https://testverein.de/news/rolle"},
+            now=NOW,
+            model="gpt-5.6-luna",
+        )
+        assert cached is not None
+        moved = target()
+        moved["club"] = "Neuer Verein"
+        profiles, _, audit = role.research_role_profiles(
+            [moved],
+            competition="2. Bundesliga",
+            season="2026/27",
+            previous_profiles={"p1": cached},
+            api_key="secret-value",
+            model="gpt-5.6-luna",
+            now=NOW + timedelta(hours=1),
+            requester=lambda *_args, **_kwargs: response_for([raw_profile()]),
+        )
+        self.assertEqual(0, audit["cache_hits"])
+        self.assertEqual(1, audit["requests"])
+        self.assertIn("p1", profiles)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -35,6 +35,7 @@ from openai_transfer_research import (
     research_transfer_reports,
     select_transfer_targets,
 )
+from openai_usage import empty_usage, merge_usage
 from quality_snapshot import load_snapshot as load_quality_snapshot
 
 
@@ -50,6 +51,85 @@ ROLE_RESPONSIBILITIES = {
     "aerial_set_piece_target",
     "captain",
 }
+
+
+def combined_openai_usage(*audits: dict[str, Any] | None) -> dict[str, Any]:
+    model = next(
+        (
+            str(audit.get("model", ""))
+            for audit in audits
+            if isinstance(audit, dict) and str(audit.get("model", ""))
+        ),
+        DEFAULT_OPENAI_ROLE_MODEL,
+    )
+    total = empty_usage(model)
+    stages: dict[str, Any] = {}
+    for name, audit in zip(("role", "team", "transfer"), audits):
+        usage = audit.get("usage", {}) if isinstance(audit, dict) else {}
+        if isinstance(usage, dict):
+            merge_usage(total, usage)
+            stages[name] = copy.deepcopy(usage)
+    total["stages"] = stages
+    return total
+
+
+def build_evidence_cache(
+    role_profiles: dict[str, dict[str, Any]],
+    team_profiles: dict[str, dict[str, Any]],
+    transfer_profiles: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Deduplicate grounded sources for reuse across research stages."""
+
+    sources: dict[str, dict[str, Any]] = {}
+
+    def add(
+        context: str,
+        entity_id: str,
+        evidence_items: Any,
+    ) -> None:
+        if not isinstance(evidence_items, list):
+            return
+        for item in evidence_items:
+            if not isinstance(item, dict):
+                continue
+            url = str(item.get("source_url", "")).strip()
+            if not url.startswith("https://"):
+                continue
+            record = sources.setdefault(
+                url,
+                {
+                    "observed_at": str(item.get("observed_at", "")),
+                    "contexts": [],
+                    "entities": [],
+                    "claims": [],
+                },
+            )
+            observed_at = str(item.get("observed_at", ""))
+            if observed_at > str(record.get("observed_at", "")):
+                record["observed_at"] = observed_at
+            if context not in record["contexts"]:
+                record["contexts"].append(context)
+            if entity_id not in record["entities"]:
+                record["entities"].append(entity_id)
+            claim = str(item.get("claim", "")).strip()[:360]
+            if claim and claim not in record["claims"]:
+                record["claims"].append(claim)
+                record["claims"] = record["claims"][:4]
+
+    for player_id, profile in role_profiles.items():
+        add("role", str(player_id), profile.get("evidence", []))
+    for club, profile in team_profiles.items():
+        add("team", str(club), profile.get("evidence", []))
+    for player_id, profile in transfer_profiles.items():
+        add("transfer", str(player_id), profile.get("evidence", []))
+    for record in sources.values():
+        record["contexts"].sort()
+        record["entities"].sort()
+    return {
+        "schema_version": 1,
+        "source_count": len(sources),
+        "sources": sources,
+    }
 
 
 def is_api_sports_rate_limit(value: Any) -> bool:
@@ -120,6 +200,16 @@ def merge_role_research_into_previous_snapshot(
             "requests": 0,
             "failures": [],
         }
+    )
+    merged["openai_usage"] = combined_openai_usage(
+        role_research_audit,
+        team_research_audit,
+        transfer_research_audit,
+    )
+    merged["evidence_cache"] = build_evidence_cache(
+        merged["role_profiles"],
+        merged["team_profiles"],
+        merged["transfer_profiles"],
     )
     merged_players = merged.setdefault("players", {})
     market_by_id = {
@@ -1499,6 +1589,16 @@ def build_snapshot(
             "failures": [],
         },
     }
+    payload["openai_usage"] = combined_openai_usage(
+        payload["role_research"],
+        payload["team_research"],
+        payload["transfer_research"],
+    )
+    payload["evidence_cache"] = build_evidence_cache(
+        payload["role_profiles"],
+        payload["team_profiles"],
+        payload["transfer_profiles"],
+    )
     validate_snapshot(payload)
     payload["content_sha256"] = canonical_sha256(payload)
     return payload
@@ -1526,6 +1626,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--openai-transfer-batch-size", type=int, default=8)
     parser.add_argument("--openai-transfer-workers", type=int, default=4)
+    parser.add_argument(
+        "--openai-refresh-mode",
+        choices=("urgent", "standard", "full"),
+        default="standard",
+        help=(
+            "urgent refreshes only high-risk changes, standard obeys the "
+            "risk-based cache, full bypasses OpenAI research caches"
+        ),
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--previous")
     parser.add_argument(
@@ -1701,6 +1810,7 @@ def main() -> int:
                     api_key=api_key,
                     model=args.openai_role_model,
                     batch_size=args.openai_role_batch_size,
+                    refresh_mode=args.openai_refresh_mode,
                 )
             )
         else:
@@ -1769,12 +1879,51 @@ def main() -> int:
                 and str(player.get("club", "")).strip()
             }
         )
-        transfer_targets = select_transfer_targets(
+        # Resolve deterministic primary-source registers before paid web search.
+        # Players already confirmed there do not need an OpenAI transfer query.
+        register_failures: list[str] = []
+        official_register_reports: dict[str, dict[str, Any]] = {}
+        for register in config.get("official_transfer_registers", []):
+            if not isinstance(register, dict):
+                register_failures.append("invalid register configuration")
+                continue
+            source_url = str(register.get("url", "")).strip()
+            try:
+                if (
+                    register.get("format")
+                    != "bundesliga_transfer_centre"
+                    or not source_url.startswith("https://")
+                ):
+                    raise RuntimeError(
+                        "unsupported official transfer register"
+                    )
+                parsed_reports = parse_bundesliga_transfer_centre(
+                    request_text(source_url),
+                    market=market_payload,
+                    source_url=source_url,
+                    now=datetime.now(timezone.utc),
+                    model=args.openai_role_model,
+                )
+                minimum_records = int(register.get("minimum_records", 1))
+                if len(parsed_reports) < minimum_records:
+                    raise RuntimeError(
+                        "official transfer register returned only "
+                        f"{len(parsed_reports)} matched records"
+                    )
+                official_register_reports.update(parsed_reports)
+            except (OSError, RuntimeError, ValueError) as error:
+                register_failures.append(str(error)[:240])
+        all_transfer_targets = select_transfer_targets(
             market_payload,
             previous_quality,
             previous_news,
             max_players=args.openai_transfer_max_players,
         )
+        transfer_targets = [
+            target
+            for target in all_transfer_targets
+            if str(target["player_id"]) not in official_register_reports
+        ]
         if api_key:
             (
                 researched_transfer_reports,
@@ -1802,6 +1951,7 @@ def main() -> int:
                 model=args.openai_role_model,
                 batch_size=args.openai_transfer_batch_size,
                 max_workers=args.openai_transfer_workers,
+                refresh_mode=args.openai_refresh_mode,
             )
         else:
             researched_transfer_reports = {
@@ -1844,43 +1994,18 @@ def main() -> int:
                     + len(transfer_research_abstentions)
                 ),
             }
-        register_failures: list[str] = []
-        official_register_reports: dict[str, dict[str, Any]] = {}
-        for register in config.get("official_transfer_registers", []):
-            if not isinstance(register, dict):
-                register_failures.append("invalid register configuration")
-                continue
-            source_url = str(register.get("url", "")).strip()
-            try:
-                if (
-                    register.get("format")
-                    != "bundesliga_transfer_centre"
-                    or not source_url.startswith("https://")
-                ):
-                    raise RuntimeError(
-                        "unsupported official transfer register"
-                    )
-                parsed_reports = parse_bundesliga_transfer_centre(
-                    request_text(source_url),
-                    market=market_payload,
-                    source_url=source_url,
-                    now=datetime.now(timezone.utc),
-                    model=args.openai_role_model,
-                )
-                minimum_records = int(register.get("minimum_records", 1))
-                if len(parsed_reports) < minimum_records:
-                    raise RuntimeError(
-                        "official transfer register returned only "
-                        f"{len(parsed_reports)} matched records"
-                    )
-                official_register_reports.update(parsed_reports)
-            except (OSError, RuntimeError, ValueError) as error:
-                register_failures.append(str(error)[:240])
         researched_transfer_reports.update(official_register_reports)
         for player_id in official_register_reports:
             transfer_research_abstentions.pop(player_id, None)
         transfer_research_audit["official_register_reports"] = len(
             official_register_reports
+        )
+        transfer_research_audit["deterministic_search_skips"] = len(
+            {
+                str(target["player_id"])
+                for target in all_transfer_targets
+            }
+            & set(official_register_reports)
         )
         transfer_research_audit["official_register_failures"] = (
             register_failures[:5]

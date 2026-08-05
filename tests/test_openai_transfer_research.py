@@ -243,7 +243,7 @@ class TransferNormalizationTests(unittest.TestCase):
 
 
 class TransferResearchTests(unittest.TestCase):
-    def test_no_signal_is_cached_for_one_day(self) -> None:
+    def test_routine_no_signal_is_cached_for_three_days(self) -> None:
         no_signal = raw_report()
         no_signal["has_transfer_signal"] = False
         no_signal["evidence"] = []
@@ -268,6 +268,10 @@ class TransferResearchTests(unittest.TestCase):
         self.assertEqual(
             "no_grounded_transfer_signal",
             abstentions["p1"]["status"],
+        )
+        self.assertEqual(
+            "2026-08-01T10:00:00Z",
+            abstentions["p1"]["refresh_after"],
         )
         self.assertEqual(1, audit["requests"])
 
@@ -352,11 +356,9 @@ class TransferResearchTests(unittest.TestCase):
 
         def requester(payload, *, api_key):
             requested = json.loads(
-                payload["input"][0]["content"][0]["text"].split(
-                    "TARGETS_JSON:\n",
-                    1,
-                )[1]
+                payload["input"][1]["content"]
             )
+            requested = requested["players"]
             items = []
             for item in requested:
                 no_signal = raw_report()
@@ -383,6 +385,33 @@ class TransferResearchTests(unittest.TestCase):
         self.assertEqual(4, len(abstentions))
         self.assertEqual(2, audit["requests"])
         self.assertEqual(2, audit["workers"])
+
+    def test_urgent_mode_defers_routine_expired_cache(self) -> None:
+        routine = target()
+        routine["research_priority"] = "routine"
+        cached = transfer._cache_record(
+            routine,
+            now=NOW - timedelta(days=4),
+            model="gpt-5.6-luna",
+            status="no_grounded_transfer_signal",
+        )
+        _, abstentions, audit = transfer.research_transfer_reports(
+            [routine],
+            competition="2. Bundesliga",
+            season="2026/27",
+            competition_clubs={"Energie Cottbus"},
+            previous_reports={},
+            previous_abstentions={"p1": cached},
+            api_key="secret",
+            now=NOW,
+            refresh_mode="urgent",
+            requester=lambda *_args, **_kwargs: self.fail(
+                "routine target should be deferred"
+            ),
+        )
+        self.assertIn("p1", abstentions)
+        self.assertEqual(1, audit["deferred_targets"])
+        self.assertEqual(0, audit["requests"])
 
 
 if __name__ == "__main__":

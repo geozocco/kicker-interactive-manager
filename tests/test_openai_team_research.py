@@ -67,6 +67,23 @@ def response() -> dict:
 
 
 class TeamResearchTests(unittest.TestCase):
+    def test_gpt_5_6_request_uses_explicit_prompt_cache(self) -> None:
+        payload = team.build_request(
+            ["Club A"],
+            competition="2. Bundesliga",
+            season="2026/27",
+            model="gpt-5.6-luna",
+            current_date="2026-07-28",
+        )
+        self.assertEqual("explicit", payload["prompt_cache_options"]["mode"])
+        self.assertIsInstance(payload["text"]["format"]["schema"], dict)
+        self.assertEqual(
+            "explicit",
+            payload["input"][0]["content"][0][
+                "prompt_cache_breakpoint"
+            ]["mode"],
+        )
+
     def test_grounded_team_profile_is_cached_per_club(self) -> None:
         calls = []
 

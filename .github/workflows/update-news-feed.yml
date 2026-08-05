@@ -2,8 +2,19 @@ name: Update central Kicker data
 
 on:
   workflow_dispatch:
+    inputs:
+      openai_refresh_mode:
+        description: OpenAI research depth
+        required: true
+        default: standard
+        type: choice
+        options:
+          - urgent
+          - standard
+          - full
   schedule:
-    - cron: "17 2,8,14,20 * * *"
+    - cron: "17 2,14 * * *"
+    - cron: "17 8,20 * * *"
 
 permissions:
   contents: read
@@ -20,6 +31,8 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      OPENAI_REFRESH_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.openai_refresh_mode || (github.event.schedule == '17 8,20 * * *' && 'urgent' || 'standard') }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -68,6 +81,7 @@ jobs:
             --openai-transfer-max-players 0 \
             --openai-transfer-batch-size 8 \
             --openai-transfer-workers 4 \
+            --openai-refresh-mode "$OPENAI_REFRESH_MODE" \
             --output public/v1/news/2-bundesliga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/news/2-bundesliga.json \
             --provider api_sports \
@@ -92,6 +106,7 @@ jobs:
             --openai-transfer-max-players 0 \
             --openai-transfer-batch-size 8 \
             --openai-transfer-workers 4 \
+            --openai-refresh-mode "$OPENAI_REFRESH_MODE" \
             --output public/v1/news/3-liga.json \
             --previous https://geozocco.github.io/kicker-interactive-manager/v1/news/3-liga.json \
             --provider api_sports \
