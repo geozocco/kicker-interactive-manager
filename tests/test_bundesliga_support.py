@@ -49,6 +49,20 @@ class BundesligaSupportTests(unittest.TestCase):
         )
         self.assertEqual(42_500_000, optimizer.COMPETITION_BUDGETS["Bundesliga"])
 
+    def test_bundesliga_uses_isolated_architecture_calibration(self) -> None:
+        policy = optimizer.architecture_policy("Bundesliga")
+
+        self.assertEqual("bundesliga-architecture-v1", policy["model_version"])
+        self.assertEqual(0.015, policy["formation_gap"])
+        self.assertEqual(2, policy["minimum_near_equivalent_formations"])
+        self.assertEqual((6_500_000, 8_000_000), policy["bench_budget_ranges"]["low"])
+        self.assertEqual(0.0, policy["home_advantage"]["GOALKEEPER"])
+        self.assertEqual(1.6, policy["home_advantage"]["FORWARD"])
+
+        second_league = optimizer.architecture_policy("2. Bundesliga")
+        self.assertEqual({}, second_league["bench_budget_ranges"])
+        self.assertEqual(0.05, second_league["formation_gap"])
+
     def test_bundesliga_pipeline_configuration_is_complete(self) -> None:
         market = self.load_config("market")
         news = self.load_config("news")

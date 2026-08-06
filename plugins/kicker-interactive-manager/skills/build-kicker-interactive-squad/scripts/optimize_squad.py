@@ -32,6 +32,7 @@ SCRIPT_DIRECTORY = Path(__file__).resolve().parent
 if str(SCRIPT_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIRECTORY))
 
+from competition_strategy import architecture_policy
 from news_snapshot import NewsSnapshotError, load_snapshot, snapshot_audit
 from market_snapshot import (
     MarketSnapshotError,
@@ -2396,9 +2397,15 @@ def formation_flexibility_audit(
     lineup_scores: Mapping[str, float],
     raw_scores: Mapping[str, float],
     core_ids: AbstractSet[str],
+    competition: str | None = None,
 ) -> dict[str, Any]:
     """Credit reserves that can enter a near-equivalent legal formation."""
 
+    policy = architecture_policy(competition)
+    maximum_gap = float(policy["formation_gap"])
+    required_near_equivalent = int(
+        policy["minimum_near_equivalent_formations"]
+    )
     by_position = {
         position: sorted(
             (
@@ -2419,6 +2426,11 @@ def formation_flexibility_audit(
             "eligible_player_ids": [],
             "player_credits": {},
             "near_equivalent_formations": [],
+            "formation_quality_options": [],
+            "maximum_relative_gap": maximum_gap,
+            "minimum_near_equivalent_formations": required_near_equivalent,
+            "near_equivalent_count": 0,
+            "passes": False,
         }
     goalkeeper = expected_primary_goalkeeper(
         by_position["GOALKEEPER"],
@@ -2430,8 +2442,17 @@ def formation_flexibility_audit(
     players_by_id = {
         player.player_id: player for player in squad.players
     }
+    core_position_counts = Counter(
+        players_by_id[player_id].position for player_id in core_ids
+    )
+    primary_formation = (
+        f"{core_position_counts['DEFENDER']}-"
+        f"{core_position_counts['MIDFIELDER']}-"
+        f"{core_position_counts['FORWARD']}"
+    )
     credits: dict[str, float] = {}
     formation_options: list[dict[str, Any]] = []
+    quality_options: list[dict[str, Any]] = []
     for defenders, midfielders, forwards in FORMATIONS:
         counts = {
             "DEFENDER": defenders,
@@ -2449,9 +2470,6 @@ def formation_flexibility_audit(
                 player.player_id
                 for player in by_position[position][:count]
             )
-        added_ids = alternative_ids.difference(core_ids)
-        if not added_ids:
-            continue
         alternative_score = sum(
             lineup_scores[player_id] for player_id in alternative_ids
         )
@@ -2460,11 +2478,21 @@ def formation_flexibility_audit(
             (reference_score - alternative_score)
             / max(abs(reference_score), 1.0),
         )
-        if relative_gap > FORMATION_FLEXIBILITY_MAX_GAP:
+        formation_name = f"{defenders}-{midfielders}-{forwards}"
+        quality_options.append(
+            {
+                "formation": formation_name,
+                "score": round(alternative_score, 6),
+                "relative_gap": round(relative_gap, 6),
+                "near_equivalent": relative_gap <= maximum_gap,
+            }
+        )
+        added_ids = alternative_ids.difference(core_ids)
+        if not added_ids or relative_gap > maximum_gap:
             continue
         closeness = max(
             0.0,
-            1.0 - relative_gap / FORMATION_FLEXIBILITY_MAX_GAP,
+            1.0 - relative_gap / maximum_gap,
         )
         credited_ids: list[str] = []
         for player_id in added_ids:
@@ -2484,11 +2512,20 @@ def formation_flexibility_audit(
         if credited_ids:
             formation_options.append(
                 {
-                    "formation": f"{defenders}-{midfielders}-{forwards}",
+                    "formation": formation_name,
                     "relative_gap": round(relative_gap, 6),
                     "added_player_ids": sorted(credited_ids),
                 }
             )
+    quality_options.sort(
+        key=lambda option: (
+            float(option["relative_gap"]),
+            str(option["formation"]),
+        )
+    )
+    near_equivalent_count = sum(
+        bool(option["near_equivalent"]) for option in quality_options
+    )
     return {
         "adjustment": sum(credits.values()),
         "eligible_player_ids": sorted(credits),
@@ -2497,6 +2534,12 @@ def formation_flexibility_audit(
             for player_id, value in sorted(credits.items())
         },
         "near_equivalent_formations": formation_options,
+        "primary_formation": primary_formation,
+        "formation_quality_options": quality_options,
+        "maximum_relative_gap": maximum_gap,
+        "minimum_near_equivalent_formations": required_near_equivalent,
+        "near_equivalent_count": near_equivalent_count,
+        "passes": near_equivalent_count >= required_near_equivalent,
     }
 
 
@@ -3282,6 +3325,7 @@ def squad_architecture_metrics(
     squad: Squad,
     raw_scores: Mapping[str, float],
     *,
+    competition: str | None = None,
     maintenance: str,
     min_reliable_anchors: int,
     min_attacking_anchors: int,
@@ -3307,6 +3351,7 @@ def squad_architecture_metrics(
 ) -> dict[str, Any]:
     """Value starters at full use and reserves at expected positional use."""
 
+    competition_policy = architecture_policy(competition)
     scorer_leverage = {
         player.player_id: starting_scorer_leverage(player)
         for player in squad.players
@@ -3514,6 +3559,48 @@ def squad_architecture_metrics(
         lineup_scores,
         raw_scores,
         core_ids,
+        competition,
+    )
+    formation_policy_adjustment = (
+        -20.0
+        if (
+            competition == "Bundesliga"
+            and not formation_flexibility["passes"]
+        )
+        else 0.0
+    )
+    bench_spend = max(0, squad.cost - int(audit["core_budget"]))
+    bench_budget_range = competition_policy["bench_budget_ranges"].get(
+        maintenance
+    )
+    if bench_budget_range:
+        bench_budget_minimum, bench_budget_maximum = bench_budget_range
+    else:
+        bench_budget_minimum = bench_budget_maximum = None
+    bench_budget_shortfall = (
+        max(0, int(bench_budget_minimum) - bench_spend)
+        if bench_budget_minimum is not None
+        else 0
+    )
+    bench_budget_excess = (
+        max(0, bench_spend - int(bench_budget_maximum))
+        if bench_budget_maximum is not None
+        else 0
+    )
+    bench_budget_soft_cap = competition_policy["bench_budget_soft_cap"]
+    bench_budget_soft_cap_excess = (
+        max(0, bench_spend - int(bench_budget_soft_cap))
+        if bench_budget_soft_cap is not None
+        else 0
+    )
+    # Underspending is only a light warning because an unusually strong cheap
+    # reserve can make the historical minimum-bank construction rational.
+    # Overspending is materially costlier because it directly displaces the
+    # eleven players who can score on every matchday.
+    bench_budget_adjustment = -(
+        0.5 * bench_budget_shortfall / 100_000
+        + 2.0 * bench_budget_excess / 100_000
+        + 3.0 * bench_budget_soft_cap_excess / 100_000
     )
     target_gap = max(
         0.0,
@@ -3682,6 +3769,8 @@ def squad_architecture_metrics(
         + potential_core_adjustment
         + defensive_overspend_adjustment
         + formation_flexibility["adjustment"]
+        + formation_policy_adjustment
+        + bench_budget_adjustment
         - 50.0 * int(defender_audit["violation_score"])
         - 50.0 * int(midfield_audit["violation_score"])
         - 50.0 * int(forward_audit["violation_score"])
@@ -3756,6 +3845,25 @@ def squad_architecture_metrics(
             formation_flexibility["adjustment"]
         ),
         "formation_flexibility": formation_flexibility,
+        "formation_policy_adjustment": formation_policy_adjustment,
+        "competition_architecture_policy": {
+            "competition": competition,
+            "model_version": competition_policy["model_version"],
+            "home_advantage_mode": competition_policy[
+                "home_advantage_mode"
+            ],
+        },
+        "bench_spend": bench_spend,
+        "bench_budget_minimum": bench_budget_minimum,
+        "bench_budget_maximum": bench_budget_maximum,
+        "bench_budget_soft_cap": bench_budget_soft_cap,
+        "bench_budget_shortfall": bench_budget_shortfall,
+        "bench_budget_excess": bench_budget_excess,
+        "bench_budget_soft_cap_excess": bench_budget_soft_cap_excess,
+        "bench_budget_target_met": (
+            bench_budget_shortfall == 0 and bench_budget_excess == 0
+        ),
+        "bench_budget_adjustment": bench_budget_adjustment,
         "qualified_potential_candidate_ids": sorted(
             qualified_potential_ids
         ),
@@ -3860,6 +3968,7 @@ def finalized_squad_objective(
     metrics = squad_architecture_metrics(
         squad,
         raw_scores,
+        competition=getattr(args, "competition", None),
         maintenance=args.maintenance,
         min_reliable_anchors=args.min_reliable_anchors,
         min_attacking_anchors=args.min_attacking_anchors,
@@ -4156,6 +4265,7 @@ def optimize_joint_squad_architecture(
     quality_scores: Mapping[str, float],
     raw_scores: Mapping[str, float],
     *,
+    competition: str | None = None,
     budget: int,
     club_cap: int,
     maintenance: str,
@@ -4497,6 +4607,7 @@ def optimize_joint_squad_architecture(
         metrics = squad_architecture_metrics(
             candidate,
             raw_scores,
+            competition=competition,
             maintenance=maintenance,
             min_reliable_anchors=min_reliable_anchors,
             min_attacking_anchors=min_attacking_anchors,
@@ -5150,7 +5261,7 @@ def optimize_joint_squad_architecture(
         )
     )
     current.architecture_diagnostics = {
-        "model_version": ARCHITECTURE_MODEL_VERSION,
+        "model_version": architecture_policy(competition)["model_version"],
         "passes": bool(
             current_metrics["passes"] and marginal_search_complete
         ),
@@ -5321,6 +5432,37 @@ def optimize_joint_squad_architecture(
         ],
         "formation_flexibility": current_metrics[
             "formation_flexibility"
+        ],
+        "formation_policy_adjustment": current_metrics[
+            "formation_policy_adjustment"
+        ],
+        "competition_architecture_policy": current_metrics[
+            "competition_architecture_policy"
+        ],
+        "bench_spend": current_metrics["bench_spend"],
+        "bench_budget_minimum": current_metrics[
+            "bench_budget_minimum"
+        ],
+        "bench_budget_maximum": current_metrics[
+            "bench_budget_maximum"
+        ],
+        "bench_budget_soft_cap": current_metrics[
+            "bench_budget_soft_cap"
+        ],
+        "bench_budget_shortfall": current_metrics[
+            "bench_budget_shortfall"
+        ],
+        "bench_budget_excess": current_metrics[
+            "bench_budget_excess"
+        ],
+        "bench_budget_soft_cap_excess": current_metrics[
+            "bench_budget_soft_cap_excess"
+        ],
+        "bench_budget_target_met": current_metrics[
+            "bench_budget_target_met"
+        ],
+        "bench_budget_adjustment": current_metrics[
+            "bench_budget_adjustment"
         ],
         "defender_architecture": current_metrics[
             "defender_architecture"
@@ -5791,6 +5933,7 @@ def finalize_reliable_core_architecture(
     quality_scores: Mapping[str, float],
     core_scores: dict[str, float],
     *,
+    competition: str | None = None,
     budget: int,
     club_cap: int,
     min_reliable_anchors: int,
@@ -5880,6 +6023,7 @@ def finalize_reliable_core_architecture(
         bounded_candidates,
         quality_scores,
         core_scores,
+        competition=competition,
         budget=budget,
         club_cap=club_cap,
         maintenance=maintenance,
@@ -5979,6 +6123,7 @@ def finalize_reliable_core_architecture(
             bounded_candidates,
             quality_scores,
             core_scores,
+            competition=competition,
             budget=budget,
             club_cap=club_cap,
             maintenance=maintenance,
@@ -7571,6 +7716,7 @@ def varied_portfolio(
     avoid_exposure: Mapping[str, int],
     portfolio_size: int,
     portfolio_index: int,
+    competition: str | None = None,
     maintenance: str = "low",
     same_club_goalkeepers: bool = True,
     min_reliable_anchors: int = 0,
@@ -7852,6 +7998,7 @@ def varied_portfolio(
                     slot_players,
                     slot_scores,
                     effective_core_scores,
+                    competition=competition,
                     budget=budget,
                     club_cap=club_cap,
                     min_reliable_anchors=min_reliable_anchors,
@@ -7876,6 +8023,7 @@ def varied_portfolio(
                     slot_players,
                     slot_scores,
                     effective_core_scores,
+                    competition=competition,
                     budget=budget,
                     club_cap=club_cap,
                     min_reliable_anchors=min_reliable_anchors,
@@ -8395,6 +8543,7 @@ def output_payload(
                     players,
                     utility_scores,
                     raw_scores,
+                    competition=getattr(args, "competition", None),
                     budget=args.budget,
                     club_cap=args.max_outfield_per_club,
                     min_reliable_anchors=args.min_reliable_anchors,
@@ -8509,6 +8658,7 @@ def output_payload(
                     players,
                     utility_scores,
                     raw_scores,
+                    competition=getattr(args, "competition", None),
                     budget=args.budget,
                     club_cap=args.max_outfield_per_club,
                     min_reliable_anchors=args.min_reliable_anchors,
@@ -8831,6 +8981,32 @@ def output_payload(
                 "while a quality-qualified attacking scorer is available; "
                 "recheck a multi-player reallocation toward midfield or "
                 "attack."
+            )
+        competition_policy = architecture_audit.get(
+            "competition_architecture_policy",
+            {},
+        )
+        if (
+            competition_policy.get("competition") == "Bundesliga"
+            and not architecture_audit.get("bench_budget_target_met", True)
+        ):
+            warnings.append(
+                "The Bundesliga bench budget is outside the calibrated "
+                "maintenance range; recheck whether paid reserves genuinely "
+                "cover a playable defense/midfield role or displace a scorer."
+            )
+        formation_flexibility = architecture_audit.get(
+            "formation_flexibility",
+            {},
+        )
+        if (
+            competition_policy.get("competition") == "Bundesliga"
+            and not formation_flexibility.get("passes", True)
+        ):
+            warnings.append(
+                "The Bundesliga squad has fewer than two formations within "
+                "1.5 percent of its strongest eleven; do not force a third "
+                "forward or fifth defender merely to name a preferred shape."
             )
         if not architecture_audit.get(
             "qualified_potential_core_minimum_met",
@@ -10382,6 +10558,7 @@ def main() -> int:
                 avoid_exposure=avoid_exposure,
                 portfolio_size=args.portfolio_size,
                 portfolio_index=portfolio_index,
+                competition=args.competition,
                 maintenance=args.maintenance,
                 same_club_goalkeepers=not args.mixed_goalkeepers,
                 min_reliable_anchors=args.min_reliable_anchors,
@@ -10465,6 +10642,7 @@ def main() -> int:
                     eligible_players,
                     eligible_utility_scores,
                     eligible_raw_scores,
+                    competition=args.competition,
                     budget=args.budget,
                     club_cap=args.max_outfield_per_club,
                     min_reliable_anchors=args.min_reliable_anchors,
@@ -10527,6 +10705,7 @@ def main() -> int:
                     eligible_players,
                     eligible_utility_scores,
                     eligible_raw_scores,
+                    competition=args.competition,
                     budget=args.budget,
                     club_cap=args.max_outfield_per_club,
                     min_reliable_anchors=args.min_reliable_anchors,

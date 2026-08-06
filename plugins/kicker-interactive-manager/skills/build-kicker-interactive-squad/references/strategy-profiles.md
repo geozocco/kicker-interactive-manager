@@ -78,6 +78,17 @@ Den Risikowert mit dem Faktor multiplizieren und vom Komponentenscore abziehen.
 - Pokal- und Freundschaftsspiele nicht als Ersatz für eine bestätigte Senior-Ligasaison verwenden. Aktuelle Vorbereitung getrennt als verfallendes Einsatz- und Rollensignal bewerten: höchstens 25 Prozent bei U21-Spielern ohne bestätigte Saison, 18 Prozent bei sonst dünner Historie, 10 Prozent bei jungen etablierten und 6 Prozent bei älteren etablierten Spielern. Konfidenz und Stichprobe reduzieren diese Maxima weiter.
 - Einzelne Testspieltore nie als Durchbruchsnachweis behandeln. Mindestens zwei Einsätze, wiederholte Rollenhinweise und einen unabhängig starken Nachwuchspfad für `high_upside_pre_breakthrough` verlangen. Das Vorbereitungssignal ab Saisonstart innerhalb von fünf Wochen durch Pflichtspieldaten ersetzen.
 
+## Bundesliga-Architektur
+
+Diese Kalibrierung ausschließlich für `competition=Bundesliga` anwenden:
+
+- Keine Formation fest verdrahten. Alle sieben Formationen bewerten und mindestens zwei Aufstellungen innerhalb von 1,5 Prozent der stärksten Elf anstreben. `3-4-3`, `3-5-2`, `4-3-3` und `4-4-2` sind gleichberechtigte Wege; einen dritten Stürmer nur wegen seiner realen Grenzleistung wählen.
+- Eine Fünferabwehr nur akzeptieren, wenn sie innerhalb dieses Qualitätskorridors liegt oder mehrere belegte offensive beziehungsweise standardgefährliche Verteidiger enthält.
+- Bankbudget nach Betreuungsaufwand weich kalibrieren: `gering` 6,5–8,0 Mio., `normal` 7,5–9,0 Mio., `aktiv` 8,0–10,0 Mio. Oberhalb von 10,0 Mio. einen starken Opportunitätskostenabzug anwenden. Unterhalb des Korridors nur leicht abwerten, wenn ungewöhnlich günstige direkte Vertreter alle Spielbarkeitsgates erfüllen.
+- Mindestens einen direkt einsetzbaren Abwehr- und Mittelfeldersatz vor einem bezahlten vierten Stürmer finanzieren. Der fünfte Stürmer bleibt regelmäßig ein Mindestpreisplatz.
+- Heimvorteil niemals in den saisonalen Spielerscore einrechnen. Nur im Spieltagsmodul als Tiebreaker verwenden: Tor `0,0`, Abwehr `+1,3`, Mittelfeld `+1,3`, Sturm `+1,6`. Rollen-, Start- und Gegnerprognose bleiben vorrangig.
+- Im Ergebnis Bankbudget, Kernquote, beste Formation, nahe Alternativformationen, bezahlte Reserven je Position und die Abhängigkeit von aktivem Spieltagswechseln ausweisen.
+
 ## Betreuungsaufwand
 
 ### Gering

@@ -3152,6 +3152,68 @@ class ReliableCorePolicyTests(unittest.TestCase):
         self.assertNotIn("flex-f3", audit["eligible_player_ids"])
         self.assertGreater(audit["adjustment"], 0.0)
 
+    def test_bundesliga_architecture_audits_the_bench_budget(self) -> None:
+        selected: list[optimizer.Player] = []
+        scores: dict[str, float] = {}
+        position_setup = (
+            ("GOALKEEPER", 3, (6_000_000, 500_000, 500_000)),
+            (
+                "DEFENDER",
+                7,
+                (2_000_000, 2_000_000, 2_000_000, 500_000, 500_000, 500_000, 500_000),
+            ),
+            (
+                "MIDFIELDER",
+                7,
+                (3_000_000, 3_000_000, 3_000_000, 3_000_000, 500_000, 500_000, 500_000),
+            ),
+            (
+                "FORWARD",
+                5,
+                (5_000_000, 5_000_000, 3_000_000, 500_000, 500_000),
+            ),
+        )
+        for position, count, costs in position_setup:
+            for index in range(count):
+                item = player(
+                    f"bl-{position}-{index}",
+                    f"BL Club {position} {index}",
+                    position,
+                    costs[index],
+                )
+                selected.append(item)
+                scores[item.player_id] = 100.0 - 10.0 * index
+        squad = optimizer.Squad(selected, sum(scores.values()))
+
+        bundesliga = optimizer.squad_architecture_metrics(
+            squad,
+            scores,
+            competition="Bundesliga",
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.0,
+            target_core_budget_share=0.0,
+        )
+        generic = optimizer.squad_architecture_metrics(
+            squad,
+            scores,
+            competition="2. Bundesliga",
+            maintenance="low",
+            min_reliable_anchors=0,
+            min_attacking_anchors=0,
+            min_core_budget_share=0.0,
+            target_core_budget_share=0.0,
+        )
+
+        self.assertEqual(5_500_000, bundesliga["bench_spend"])
+        self.assertEqual(6_500_000, bundesliga["bench_budget_minimum"])
+        self.assertEqual(8_000_000, bundesliga["bench_budget_maximum"])
+        self.assertFalse(bundesliga["bench_budget_target_met"])
+        self.assertLess(bundesliga["bench_budget_adjustment"], 0.0)
+        self.assertIsNone(generic["bench_budget_minimum"])
+        self.assertEqual(0.0, generic["bench_budget_adjustment"])
+
     def test_expensive_fourth_forward_must_beat_cross_position_upgrade(
         self,
     ) -> None:

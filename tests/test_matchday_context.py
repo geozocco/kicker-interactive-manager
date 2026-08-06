@@ -54,6 +54,46 @@ def snapshot() -> dict:
 
 
 class MatchdayContextTests(unittest.TestCase):
+    def test_bundesliga_home_advantage_is_position_specific(self) -> None:
+        neutral_home = {
+            "opponent_attack": 50,
+            "opponent_defense": 50,
+            "venue": "home",
+        }
+
+        self.assertEqual(
+            0.0,
+            analyze_matchday.adjustment(
+                "GOALKEEPER",
+                neutral_home,
+                "Bundesliga",
+            ),
+        )
+        self.assertEqual(
+            1.3,
+            analyze_matchday.adjustment(
+                "DEFENDER",
+                neutral_home,
+                "Bundesliga",
+            ),
+        )
+        self.assertEqual(
+            1.6,
+            analyze_matchday.adjustment(
+                "FORWARD",
+                neutral_home,
+                "Bundesliga",
+            ),
+        )
+        self.assertEqual(
+            1.0,
+            analyze_matchday.adjustment(
+                "FORWARD",
+                neutral_home,
+                "2. Bundesliga",
+            ),
+        )
+
     def test_provider_club_name_resolves_to_canonical_kicker_name(self) -> None:
         clubs = {
             "1. FC Nürnberg",

@@ -8,16 +8,21 @@ import json
 from pathlib import Path
 from typing import Any
 
+from competition_strategy import architecture_policy, home_advantage_bonus
 from matchday_snapshot import load_snapshot
 
 
-def adjustment(position: str, context: dict[str, Any]) -> float:
+def adjustment(
+    position: str,
+    context: dict[str, Any],
+    competition: str | None = None,
+) -> float:
     if position in {"GOALKEEPER", "DEFENDER"}:
         raw = 0.12 * (50.0 - float(context["opponent_attack"]))
     else:
         raw = 0.12 * (50.0 - float(context["opponent_defense"]))
     if context.get("venue") == "home":
-        raw += 1.0
+        raw += home_advantage_bonus(competition, position)
     return round(max(-6.0, min(6.0, raw)), 2)
 
 
@@ -34,7 +39,7 @@ def analyze(
             {
                 **player,
                 "matchday_adjustment": (
-                    adjustment(position, context)
+                    adjustment(position, context, snapshot["competition"])
                     if isinstance(context, dict)
                     else 0.0
                 ),
@@ -45,6 +50,9 @@ def analyze(
         "competition": snapshot["competition"],
         "season": snapshot["season"],
         "snapshot_status": snapshot["status"],
+        "home_advantage_mode": architecture_policy(
+            snapshot["competition"]
+        )["home_advantage_mode"],
         "players": players,
     }
 
