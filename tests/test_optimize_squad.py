@@ -252,7 +252,7 @@ class DistanceOptimizerTests(unittest.TestCase):
         self.assertEqual(0.80, args.target_core_budget_share)
         self.assertEqual(1.0, args.min_spend_ratio)
         self.assertEqual(1, args.min_offensive_premium_anchors)
-        self.assertEqual(1, args.min_qualified_potential_core)
+        self.assertEqual(0, args.min_qualified_potential_core)
         self.assertEqual(2, args.target_qualified_potential_core)
 
     def test_final_recommendation_rejects_partial_budget_override(self) -> None:
@@ -5363,6 +5363,113 @@ class NewsHardeningIntegrationTests(unittest.TestCase):
         self.assertEqual(["d1"], audit["selection_blocked_player_ids"])
         self.assertTrue(audit["automatic_reoptimization"])
         self.assertTrue(exclusions[0]["automatic_reoptimization"])
+
+    def test_potential_starter_must_be_close_to_affordable_peer_quality(
+        self,
+    ) -> None:
+        established = player(
+            "established-defender",
+            "Established Club",
+            "DEFENDER",
+            3_500_000,
+        )
+        prospect = player(
+            "prospect-defender",
+            "Prospect Club",
+            "DEFENDER",
+            3_200_000,
+        )
+        qualified = frozenset({prospect.player_id})
+
+        rejected = optimizer.quality_competitive_potential_player_ids(
+            [established, prospect],
+            {
+                established.player_id: 88.5,
+                prospect.player_id: 77.2,
+            },
+            qualified,
+        )
+        accepted = optimizer.quality_competitive_potential_player_ids(
+            [established, prospect],
+            {
+                established.player_id: 88.5,
+                prospect.player_id: 83.0,
+            },
+            qualified,
+        )
+
+        self.assertEqual(frozenset(), rejected)
+        self.assertEqual(qualified, accepted)
+
+    def test_paid_reserve_needs_current_role_or_efficient_flexibility(
+        self,
+    ) -> None:
+        starter = player(
+            "starter-defender",
+            "Starter Club",
+            "DEFENDER",
+            2_500_000,
+        )
+        reserve_base = player(
+            "paid-reserve",
+            "Reserve Club",
+            "DEFENDER",
+            1_800_000,
+        )
+        reserve = optimizer.replace(
+            reserve_base,
+            role_context={
+                "evidence_confidence": "high",
+                "expected_start_probability": 80.0,
+                "probability_calibration": {
+                    "start_rate": 0.75,
+                    "starting_status_confirmed": False,
+                },
+            },
+            form_summary={"latest_season_score": 71.0},
+        )
+        squad = optimizer.Squad([starter, reserve], 0.0)
+
+        rejected = optimizer.paid_reserve_justification_audit(
+            squad,
+            {starter.player_id},
+            maintenance="low",
+            player_usage_weights={
+                starter.player_id: 1.0,
+                reserve.player_id: 0.28,
+            },
+            position_minimum_costs={"DEFENDER": 500_000},
+            formation_flexibility={
+                "player_credits": {reserve.player_id: 5.35}
+            },
+            competitive_potential_ids=frozenset(),
+        )
+        current_reserve = optimizer.replace(
+            reserve,
+            role_context={
+                **reserve.role_context,
+                "probability_calibration": {
+                    "start_rate": 0.85,
+                    "starting_status_confirmed": False,
+                },
+            },
+        )
+        accepted = optimizer.paid_reserve_justification_audit(
+            optimizer.Squad([starter, current_reserve], 0.0),
+            {starter.player_id},
+            maintenance="low",
+            player_usage_weights={
+                starter.player_id: 1.0,
+                current_reserve.player_id: 0.28,
+            },
+            position_minimum_costs={"DEFENDER": 500_000},
+            formation_flexibility={"player_credits": {}},
+            competitive_potential_ids=frozenset(),
+        )
+
+        self.assertFalse(rejected["passes"])
+        self.assertEqual([reserve.player_id], rejected["unjustified_ids"])
+        self.assertTrue(accepted["passes"])
 
 
 if __name__ == "__main__":

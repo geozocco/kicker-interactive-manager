@@ -8,6 +8,7 @@ import json
 import math
 import os
 import re
+import statistics
 import sys
 import time
 import unicodedata
@@ -55,9 +56,10 @@ from refresh_news_snapshot import (
 from advanced_signals import apply_advanced_signals
 
 
-MODEL_VERSION = "multi-season-v16-loan-pathway-shortlist"
+MODEL_VERSION = "multi-season-v17-current-level-retention"
 PRESEASON_MODEL_VERSION = "preseason-readiness-v3-role-responsibilities"
-FORM_MODEL_VERSION = "recency-context-v4-evidence-role-transfer"
+FORM_MODEL_VERSION = "recency-context-v5-current-level-retention"
+EXPECTED_ROLE_MODEL_VERSION = "expected-role-v4-start-rate-calibration"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
 COMPETITION_SLUGS = {
     "Bundesliga": "bundesliga",
@@ -103,6 +105,21 @@ MANUAL_NEWS_CLEARANCE_CATEGORIES = {
     "role",
     "transfer",
 }
+STARTING_STATUS_PATTERNS = (
+    r"\bfirst[ -]?choice\b",
+    r"\bnumber one\b",
+    r"\bregular starter\b",
+    r"\bwill start\b",
+    r"\bgesetzt(?:er|e|en)?\b",
+    r"\bstammspieler\b",
+    r"\bnummer\s*1\b",
+)
+STARTING_STATUS_NEGATION_PATTERNS = (
+    r"\bnot (?:the )?(?:first[ -]?choice|number one|regular starter)\b",
+    r"\bno (?:guaranteed )?starter\b",
+    r"\bnicht (?:als )?(?:gesetzt(?:er|e|en)?|stammspieler)\b",
+    r"\bkeine? (?:klare? )?nummer\s*1\b",
+)
 
 
 def utc_now() -> datetime:
@@ -1725,12 +1742,38 @@ def expected_role_profile(
         -10.0,
         min(10.0, environment_adjustment),
     )
-    expected_start_probability = clamp(
+    raw_expected_start_probability = clamp(
         evidence.get("expected_start_probability"),
         0,
     )
     if not evidence_items:
-        expected_start_probability = 0.0
+        raw_expected_start_probability = 0.0
+    latest_domestic_role = latest_domestic_role_sample(history_player or {})
+    starting_status_confirmed = evidence_confirms_starting_status(
+        evidence_items
+    )
+    expected_start_probability = raw_expected_start_probability
+    probability_cap = 100.0
+    if (
+        expected_start_probability > 0
+        and latest_domestic_role["sample_appearances"] >= 8
+        and club_changed is not True
+        and not starting_status_confirmed
+    ):
+        confidence_bonus = {
+            "high": 5.0,
+            "medium": 3.0,
+            "low": 0.0,
+        }.get(str(evidence.get("confidence", "medium")), 0.0)
+        probability_cap = min(
+            92.0,
+            100.0 * latest_domestic_role["start_rate"]
+            + confidence_bonus,
+        )
+        expected_start_probability = min(
+            expected_start_probability,
+            probability_cap,
+        )
     team_quality_delta = max(
         -30.0,
         min(30.0, numeric(evidence.get("team_quality_delta"))),
@@ -1738,7 +1781,7 @@ def expected_role_profile(
     if not evidence_items:
         team_quality_delta = 0.0
     return {
-        "model_version": "expected-role-v3",
+        "model_version": EXPECTED_ROLE_MODEL_VERSION,
         "evidence_source": str(evidence.get("source", "explicit")),
         "continuity": continuity,
         "evidence_confidence": (
@@ -1747,6 +1790,16 @@ def expected_role_profile(
             else "none"
         ),
         "expected_start_probability": round(expected_start_probability, 2),
+        "probability_calibration": {
+            "raw_probability": round(raw_expected_start_probability, 2),
+            "calibrated_probability": round(
+                expected_start_probability,
+                2,
+            ),
+            "probability_cap": round(probability_cap, 2),
+            "starting_status_confirmed": starting_status_confirmed,
+            **latest_domestic_role,
+        },
         "team_quality_delta": round(team_quality_delta, 2),
         "responsibilities": responsibilities,
         "role_environment": role_environment,
@@ -1815,6 +1868,78 @@ def expected_role_profile(
         },
         "evidence": evidence_items,
     }
+
+
+def latest_domestic_role_sample(
+    history_player: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the latest meaningful league start share.
+
+    Captaincy, a contract extension or one friendly can confirm standing in a
+    squad, but they do not by themselves prove a season-long starting role.
+    The latest domestic league sample therefore calibrates editorial role
+    probabilities unless a source explicitly names the player first choice.
+    """
+
+    for season in sorted(
+        history_player.get("seasons", []),
+        key=lambda item: int(item.get("season", 0)),
+        reverse=True,
+    ):
+        domestic = [
+            competition
+            for competition in season.get("competitions", [])
+            if competition.get("kind") == "domestic_league"
+            and bool(competition.get("rated", True))
+        ]
+        appearances = sum(
+            max(0.0, numeric(item.get("appearances")))
+            for item in domestic
+        )
+        starts = sum(
+            max(0.0, numeric(item.get("starts"))) for item in domestic
+        )
+        minutes = sum(
+            max(0.0, numeric(item.get("minutes"))) for item in domestic
+        )
+        if appearances < 8 and minutes < 540:
+            continue
+        return {
+            "sample_season": int(season.get("season", 0)),
+            "sample_appearances": int(appearances),
+            "sample_starts": int(starts),
+            "sample_minutes": round(minutes, 1),
+            "start_rate": round(starts / max(1.0, appearances), 3),
+            "source": "latest_transfermarkt_domestic_league",
+        }
+    return {
+        "sample_season": None,
+        "sample_appearances": 0,
+        "sample_starts": 0,
+        "sample_minutes": 0.0,
+        "start_rate": 0.0,
+        "source": "insufficient",
+    }
+
+
+def evidence_confirms_starting_status(
+    evidence_items: list[dict[str, Any]],
+) -> bool:
+    """Recognize explicit starter wording without accepting its negation."""
+
+    for item in evidence_items:
+        claim = str(item.get("claim", "")).casefold()
+        if any(
+            re.search(pattern, claim)
+            for pattern in STARTING_STATUS_NEGATION_PATTERNS
+        ):
+            continue
+        if any(
+            re.search(pattern, claim)
+            for pattern in STARTING_STATUS_PATTERNS
+        ):
+            return True
+    return False
 
 
 def provider_season_form_score(
@@ -1994,7 +2119,20 @@ def historical_form_profile(
             ),
         }
 
-    seasons = list(by_season.values())
+    all_seasons = list(by_season.values())
+    # A new calendar-season row can contain only a summer tournament or a few
+    # early minutes. It must not displace the latest meaningful club season in
+    # the form curve; preparation already has its own deliberately small
+    # signal channel.
+    seasons = [
+        season
+        for season in all_seasons
+        if (
+            float(season["confidence"]) >= 0.35
+            or numeric(season.get("minutes")) >= 600
+        )
+    ] or all_seasons
+    ignored_partial_season_count = len(all_seasons) - len(seasons)
     decay = 0.50 if age <= 21 else 0.62
     weighted_sum = 0.0
     total_weight = 0.0
@@ -2148,6 +2286,7 @@ def historical_form_profile(
         "score": round(form_score, 2),
         "confidence": round(form_confidence, 3),
         "season_count": len(seasons),
+        "ignored_partial_season_count": ignored_partial_season_count,
         "recency_decay": decay,
         "latest_season_score": (
             round(float(seasons[0]["score"]), 2) if seasons else 50.0
@@ -2164,6 +2303,7 @@ def historical_form_profile(
                     float(season["competition_context_factor"]),
                     3,
                 ),
+                "minutes": round(numeric(season.get("minutes")), 1),
             }
             for season in seasons
         ],
@@ -2210,6 +2350,81 @@ def historical_form_profile(
             ),
             "unknown_role_risk": round(context_uncertainty, 2),
         },
+    }
+
+
+def current_level_retention_profile(
+    *,
+    age: int,
+    form_summary: dict[str, Any],
+    role_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Stop distant peak seasons from recreating a no-longer-current level."""
+
+    seasons = form_summary.get("seasons", [])
+    base = {
+        "model_version": "current-level-retention-v1",
+        "eligible": age >= 30 and len(seasons) >= 2,
+        "applied": False,
+        "age": age,
+        "recent_two_season_score": None,
+        "older_baseline_score": None,
+        "decline_from_older_baseline": 0.0,
+        "confirmed_performance_cap": 100.0,
+        "minutes_cap": 100.0,
+        "role_cap": 100.0,
+        "injury_protection": False,
+    }
+    if not base["eligible"]:
+        return base
+
+    recent_score = (
+        0.65 * numeric(seasons[0].get("score") or 50.0)
+        + 0.35 * numeric(seasons[1].get("score") or 50.0)
+    )
+    older_scores = [
+        numeric(season.get("score") or 50.0) for season in seasons[2:6]
+    ]
+    older_baseline = (
+        statistics.median(older_scores)
+        if older_scores
+        else recent_score
+    )
+    decline = max(0.0, older_baseline - recent_score)
+    recovery_status = str(form_summary.get("recovery_status", ""))
+    injury_protection = recovery_status in {
+        "current_injury_or_recovery",
+        "recent_availability_drop",
+    }
+    allowance = 10.0 if age <= 31 else 8.0 if age <= 33 else 6.0
+    confirmed_cap = min(100.0, recent_score + allowance)
+    probability = numeric(
+        role_context.get("expected_start_probability") or 0.0
+    )
+    role_cap = (
+        min(100.0, 50.0 + 0.48 * probability)
+        if probability > 0
+        else min(100.0, recent_score + 8.0)
+    )
+    minutes_cap = (
+        min(100.0, 48.0 + 0.52 * probability)
+        if probability > 0
+        else min(100.0, recent_score + 8.0)
+    )
+    applied = decline >= 5.0 and not injury_protection
+    return {
+        **base,
+        "applied": applied,
+        "recent_two_season_score": round(recent_score, 2),
+        "older_baseline_score": round(older_baseline, 2),
+        "decline_from_older_baseline": round(decline, 2),
+        "confirmed_performance_cap": round(
+            confirmed_cap if applied else 100.0,
+            2,
+        ),
+        "minutes_cap": round(minutes_cap if applied else 100.0, 2),
+        "role_cap": round(role_cap if applied else 100.0, 2),
+        "injury_protection": injury_protection,
     }
 
 
@@ -3174,6 +3389,29 @@ def build_annotation(
         float(role_adjustments["role_floor"]),
         clamp(role + float(role_adjustments["role"])),
     )
+    current_level_retention = current_level_retention_profile(
+        age=age,
+        form_summary=form_summary,
+        role_context=role_context,
+    )
+    form_summary["current_level_retention"] = current_level_retention
+    if current_level_retention["applied"]:
+        confirmed = min(
+            confirmed,
+            float(
+                current_level_retention[
+                    "confirmed_performance_cap"
+                ]
+            ),
+        )
+        minutes = min(
+            minutes,
+            float(current_level_retention["minutes_cap"]),
+        )
+        role = min(
+            role,
+            float(current_level_retention["role_cap"]),
+        )
     risks = {
         "transfer": transfer_risk,
         "injury": injury_risk,
@@ -3407,6 +3645,15 @@ def build_annotation(
                     f"{role_context['expected_start_probability']:.0f}%, "
                     f"Teamkontext {role_context['team_quality_delta']:+.0f}."
                     if role_context["evidence"]
+                    else ""
+                ),
+                (
+                    "Aktuelles Leistungsniveau begrenzt historischen Bonus: "
+                    f"letzte zwei Spielzeiten "
+                    f"{current_level_retention['recent_two_season_score']:.1f}, "
+                    f"ältere Basis "
+                    f"{current_level_retention['older_baseline_score']:.1f}."
+                    if current_level_retention["applied"]
                     else ""
                 ),
                 (

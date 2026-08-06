@@ -2564,6 +2564,230 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             100,
         )
 
+    def test_partial_current_season_does_not_replace_latest_club_form(
+        self,
+    ) -> None:
+        partial = form_season(
+            2026,
+            minutes=90,
+            lineups=1,
+            rating=6.4,
+            goals=0,
+            assists=0,
+            club="National Team",
+        )
+        partial["appearances"] = 1
+        partial["clubs"][0]["appearances"] = 1
+        profile = quality.historical_form_profile(
+            position="DEFENDER",
+            histories=[
+                partial,
+                form_season(
+                    2025,
+                    minutes=2400,
+                    lineups=27,
+                    rating=7.0,
+                    goals=2,
+                    assists=2,
+                    club="Current Club",
+                ),
+                form_season(
+                    2024,
+                    minutes=2100,
+                    lineups=24,
+                    rating=6.8,
+                    goals=1,
+                    assists=2,
+                    club="Current Club",
+                ),
+            ],
+            history_player={"seasons": []},
+            market_club="Current Club",
+            news_player=news_player(),
+            age=23,
+        )
+
+        self.assertEqual(1, profile["ignored_partial_season_count"])
+        self.assertEqual(2025, profile["seasons"][0]["season"])
+        self.assertNotEqual("recent_availability_drop", profile["recovery_status"])
+
+    def test_role_probability_is_calibrated_by_recent_league_starts(
+        self,
+    ) -> None:
+        history_player = {
+            "seasons": [
+                {
+                    "season": 2025,
+                    "competitions": [
+                        {
+                            "kind": "domestic_league",
+                            "rated": True,
+                            "appearances": 20,
+                            "starts": 12,
+                            "minutes": 1180,
+                        }
+                    ],
+                }
+            ]
+        }
+        evidence = {
+            "continuity": "confirmed",
+            "confidence": "high",
+            "expected_start_probability": 90,
+            "responsibilities": {"captain": "primary"},
+            "evidence": [
+                {
+                    "claim": "The captain extended his contract and started a friendly.",
+                    "source_url": "https://example.com/captain",
+                    "checked_at": "2026-08-01",
+                }
+            ],
+        }
+
+        role = quality.expected_role_profile(
+            position="DEFENDER",
+            histories=[],
+            history_player=history_player,
+            role_evidence=evidence,
+            club_changed=False,
+        )
+
+        self.assertEqual(65.0, role["expected_start_probability"])
+        self.assertEqual(
+            0.6,
+            role["probability_calibration"]["start_rate"],
+        )
+        self.assertFalse(
+            role["probability_calibration"]["starting_status_confirmed"]
+        )
+
+    def test_explicit_first_choice_statement_can_override_start_rate_cap(
+        self,
+    ) -> None:
+        role = quality.expected_role_profile(
+            position="GOALKEEPER",
+            histories=[],
+            history_player={
+                "seasons": [
+                    {
+                        "season": 2025,
+                        "competitions": [
+                            {
+                                "kind": "domestic_league",
+                                "rated": True,
+                                "appearances": 20,
+                                "starts": 4,
+                                "minutes": 420,
+                            }
+                        ],
+                    }
+                ]
+            },
+            role_evidence={
+                "continuity": "expanded",
+                "confidence": "high",
+                "expected_start_probability": 90,
+                "evidence": [
+                    {
+                        "claim": "The coach named him the number one for the season.",
+                        "source_url": "https://example.com/number-one",
+                        "checked_at": "2026-08-02",
+                    }
+                ],
+            },
+            club_changed=False,
+        )
+
+        self.assertEqual(90.0, role["expected_start_probability"])
+        self.assertTrue(
+            role["probability_calibration"]["starting_status_confirmed"]
+        )
+
+    def test_negated_first_choice_statement_does_not_override_cap(
+        self,
+    ) -> None:
+        role = quality.expected_role_profile(
+            position="GOALKEEPER",
+            histories=[],
+            history_player={
+                "seasons": [
+                    {
+                        "season": 2025,
+                        "competitions": [
+                            {
+                                "kind": "domestic_league",
+                                "rated": True,
+                                "appearances": 20,
+                                "starts": 4,
+                                "minutes": 420,
+                            }
+                        ],
+                    }
+                ]
+            },
+            role_evidence={
+                "continuity": "uncertain",
+                "confidence": "high",
+                "expected_start_probability": 90,
+                "evidence": [
+                    {
+                        "claim": "The coach said he is not the first choice.",
+                        "source_url": "https://example.com/not-first-choice",
+                        "checked_at": "2026-08-02",
+                    }
+                ],
+            },
+            club_changed=False,
+        )
+
+        self.assertEqual(25.0, role["expected_start_probability"])
+        self.assertFalse(
+            role["probability_calibration"]["starting_status_confirmed"]
+        )
+
+    def test_declining_older_player_receives_current_level_caps(self) -> None:
+        profile = quality.current_level_retention_profile(
+            age=33,
+            form_summary={
+                "recovery_status": "stable",
+                "seasons": [
+                    {"score": 68.0},
+                    {"score": 72.0},
+                    {"score": 85.0},
+                    {"score": 84.0},
+                ],
+            },
+            role_context={"expected_start_probability": 80.0},
+        )
+
+        self.assertTrue(profile["applied"])
+        self.assertEqual(77.4, profile["confirmed_performance_cap"])
+        self.assertLess(profile["role_cap"], 90.0)
+        self.assertLess(profile["minutes_cap"], 90.0)
+
+    def test_single_old_injury_season_does_not_hide_later_decline(
+        self,
+    ) -> None:
+        profile = quality.current_level_retention_profile(
+            age=32,
+            form_summary={
+                "recovery_status": "stable",
+                "seasons": [
+                    {"score": 70.76},
+                    {"score": 77.75},
+                    {"score": 64.12},
+                    {"score": 80.02},
+                    {"score": 80.59},
+                    {"score": 80.36},
+                ],
+            },
+            role_context={"expected_start_probability": 90.0},
+        )
+
+        self.assertTrue(profile["applied"])
+        self.assertAlmostEqual(80.19, profile["older_baseline_score"], 2)
+        self.assertLess(profile["confirmed_performance_cap"], 82.0)
+
 
 if __name__ == "__main__":
     unittest.main()

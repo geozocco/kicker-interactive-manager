@@ -16,10 +16,10 @@ from urllib.parse import urlparse
 
 
 SCHEMA_VERSION = 3
-GOALKEEPER_HIERARCHY_MODEL = "multi-season-v15-loan-pathway"
-RECENCY_FORM_MODEL = "recency-context-v4-evidence-role-transfer"
+GOALKEEPER_HIERARCHY_MODEL = "multi-season-v17-current-level-retention"
+RECENCY_FORM_MODEL = "recency-context-v5-current-level-retention"
 PRESEASON_READINESS_MODEL = "preseason-readiness-v3-role-responsibilities"
-EXPECTED_ROLE_MODEL = "expected-role-v3"
+EXPECTED_ROLE_MODEL = "expected-role-v4-start-rate-calibration"
 COMPONENTS = {
     "confirmed_performance",
     "minutes",
@@ -461,6 +461,22 @@ def validate_snapshot(
                         f"quality form adjustment {field_name} is invalid "
                         f"for {player_id}"
                     )
+            retention = form_summary.get("current_level_retention")
+            if (
+                not isinstance(retention, dict)
+                or retention.get("model_version")
+                != "current-level-retention-v1"
+                or not isinstance(retention.get("eligible"), bool)
+                or not isinstance(retention.get("applied"), bool)
+                or not isinstance(
+                    retention.get("injury_protection"),
+                    bool,
+                )
+            ):
+                raise QualitySnapshotError(
+                    f"quality current-level retention is invalid for "
+                    f"{player_id}"
+                )
         role_metrics = annotation.get("api_sports_role_metrics")
         if not isinstance(role_metrics, dict):
             raise QualitySnapshotError(

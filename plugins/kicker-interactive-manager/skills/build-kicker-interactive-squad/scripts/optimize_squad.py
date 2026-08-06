@@ -2111,6 +2111,45 @@ def qualified_potential_player_ids(
     return frozenset(qualified)
 
 
+def quality_competitive_potential_player_ids(
+    players: Iterable[Player],
+    raw_scores: Mapping[str, float],
+    qualified_potential_ids: AbstractSet[str],
+) -> frozenset[str]:
+    """Keep potential starters close to an affordable positional peer.
+
+    Potential remains valuable, but a youth label must not force a player into
+    the eleven when a similarly priced current performer is materially better.
+    Cheap prospects are compared with affordable peers so their ability to
+    unlock premium scorers elsewhere is preserved.
+    """
+
+    player_list = list(players)
+    competitive: set[str] = set()
+    for prospect in player_list:
+        if prospect.player_id not in qualified_potential_ids:
+            continue
+        affordability_ceiling = prospect.cost + max(
+            200_000,
+            int(0.20 * prospect.cost),
+        )
+        peers = [
+            player
+            for player in player_list
+            if player.position == prospect.position
+            and player.cost <= affordability_ceiling
+            and player.player_id in raw_scores
+        ]
+        if not peers:
+            continue
+        peer_best = max(raw_scores[player.player_id] for player in peers)
+        prospect_score = raw_scores.get(prospect.player_id, 0.0)
+        required_score = max(0.93 * peer_best, peer_best - 7.0)
+        if prospect_score + 1e-9 >= required_score:
+            competitive.add(prospect.player_id)
+    return frozenset(competitive)
+
+
 def player_age(player: Player) -> int | None:
     age = player.history_summary.get("talent_profile", {}).get("age")
     return (
@@ -2795,6 +2834,116 @@ def bench_player_usage_weights(
     return weights
 
 
+def paid_reserve_justification_audit(
+    squad: Squad,
+    core_ids: AbstractSet[str],
+    *,
+    maintenance: str,
+    player_usage_weights: Mapping[str, float],
+    position_minimum_costs: Mapping[str, int] | None,
+    formation_flexibility: Mapping[str, Any],
+    competitive_potential_ids: AbstractSet[str],
+) -> dict[str, Any]:
+    """Require paid outfield reserves to add current, measurable utility."""
+
+    enforced = maintenance == "low"
+    minimums = position_minimum_costs or {}
+    flexibility_credits = formation_flexibility.get("player_credits", {})
+    evaluated: list[dict[str, Any]] = []
+    unjustified_ids: list[str] = []
+    penalty = 0.0
+    for player in squad.players:
+        minimum_cost = int(minimums.get(player.position, player.cost))
+        if (
+            player.position == "GOALKEEPER"
+            or player.player_id in core_ids
+            or player.cost <= minimum_cost
+        ):
+            continue
+        calibration = player.role_context.get(
+            "probability_calibration",
+            {},
+        )
+        expected_probability = numeric(
+            player.role_context.get("expected_start_probability")
+        )
+        recent_start_rate = numeric(calibration.get("start_rate"))
+        if not calibration:
+            historical_metrics = player.role_context.get(
+                "historical_metrics",
+                {},
+            )
+            recent_start_rate = numeric(
+                historical_metrics.get("historical_start_rate")
+            )
+        starting_status_confirmed = bool(
+            calibration.get("starting_status_confirmed")
+        )
+        current_role_qualified = (
+            player.role_context.get("evidence_confidence")
+            in {"medium", "high"}
+            and expected_probability >= 75.0
+            and (
+                recent_start_rate >= 0.78
+                or starting_status_confirmed
+            )
+            and numeric(player.form_summary.get("latest_season_score"), 50)
+            >= 68.0
+            and numeric(player_usage_weights.get(player.player_id)) >= 0.12
+        )
+        potential_qualified = (
+            player.player_id in competitive_potential_ids
+            and numeric(player_usage_weights.get(player.player_id)) >= 0.12
+        )
+        excess_cost = player.cost - minimum_cost
+        flexibility_credit = numeric(
+            flexibility_credits.get(player.player_id)
+        )
+        required_flexibility_credit = max(
+            4.0,
+            excess_cost / 200_000.0,
+        )
+        flexibility_qualified = (
+            flexibility_credit >= required_flexibility_credit
+        )
+        justified = (
+            current_role_qualified
+            or potential_qualified
+            or flexibility_qualified
+        )
+        if not justified:
+            unjustified_ids.append(player.player_id)
+            penalty += min(18.0, 1.2 * excess_cost / 100_000.0)
+        evaluated.append(
+            {
+                "player_id": player.player_id,
+                "excess_cost": excess_cost,
+                "expected_start_probability": expected_probability,
+                "recent_start_rate": recent_start_rate,
+                "current_role_qualified": current_role_qualified,
+                "potential_qualified": potential_qualified,
+                "formation_flexibility_credit": round(
+                    flexibility_credit,
+                    3,
+                ),
+                "required_flexibility_credit": round(
+                    required_flexibility_credit,
+                    3,
+                ),
+                "justified": justified,
+            }
+        )
+    return {
+        "model_version": "paid-reserve-justification-v1",
+        "enforced": enforced,
+        "evaluated": evaluated,
+        "unjustified_ids": sorted(unjustified_ids),
+        "violation_score": len(unjustified_ids) if enforced else 0,
+        "adjustment": -penalty if enforced else 0.0,
+        "passes": not enforced or not unjustified_ids,
+    }
+
+
 def premium_starter_candidate_ids(
     candidates: list[Player],
     raw_scores: Mapping[str, float],
@@ -3325,6 +3474,7 @@ def squad_architecture_metrics(
     squad: Squad,
     raw_scores: Mapping[str, float],
     *,
+    potential_comparison_players: Iterable[Player] | None = None,
     competition: str | None = None,
     maintenance: str,
     min_reliable_anchors: int,
@@ -3364,6 +3514,15 @@ def squad_architecture_metrics(
         for player in squad.players
     }
     available_potential_count = len(qualified_potential_ids)
+    competitive_potential_ids = quality_competitive_potential_player_ids(
+        (
+            potential_comparison_players
+            if potential_comparison_players is not None
+            else squad.players
+        ),
+        raw_scores,
+        qualified_potential_ids,
+    )
     effective_potential_minimum = min(
         min_qualified_potential_core,
         available_potential_count,
@@ -3378,6 +3537,7 @@ def squad_architecture_metrics(
     effective_potential_starter_minimum = min(
         1,
         effective_potential_minimum,
+        len(competitive_potential_ids),
     )
     audit = reliable_core_audit(
         squad,
@@ -3386,7 +3546,7 @@ def squad_architecture_metrics(
         min_attacking_anchors,
         min_core_budget_share,
         min_offensive_premium_anchors,
-        qualified_potential_ids,
+        competitive_potential_ids,
         effective_potential_starter_minimum,
     )
     core_ids = set(audit["player_ids"])
@@ -3497,6 +3657,15 @@ def squad_architecture_metrics(
         effective_potential_starter_minimum
         - int(audit["qualified_potential_starter_count"]),
     )
+    selected_competitive_potential_starters = set(
+        audit["player_ids"]
+    ).intersection(competitive_potential_ids)
+    potential_starter_opportunity_adjustment = (
+        -6.0
+        if competitive_potential_ids
+        and not selected_competitive_potential_starters
+        else 0.0
+    )
     variation_distances = [
         len(squad.ids.symmetric_difference(frozenset(reference_ids))) // 2
         for reference_ids in variation_reference_squads
@@ -3561,6 +3730,16 @@ def squad_architecture_metrics(
         core_ids,
         competition,
     )
+    paid_reserve_audit = paid_reserve_justification_audit(
+        squad,
+        core_ids,
+        maintenance=maintenance,
+        player_usage_weights=player_usage_weights,
+        position_minimum_costs=position_minimum_costs,
+        formation_flexibility=formation_flexibility,
+        competitive_potential_ids=competitive_potential_ids,
+    )
+    hard_violation_score += int(paid_reserve_audit["violation_score"])
     formation_policy_adjustment = (
         -20.0
         if (
@@ -3744,6 +3923,7 @@ def squad_architecture_metrics(
         and bool(defender_audit["passes"])
         and bool(midfield_audit["passes"])
         and bool(forward_audit["passes"])
+        and bool(paid_reserve_audit["passes"])
     )
     diversity_adjustment = -max(0.0, variation_exposure_strength) * sum(
         int((variation_exposure or {}).get(player.player_id, 0))
@@ -3767,10 +3947,12 @@ def squad_architecture_metrics(
         + premium_starter_adjustment
         + elite_rebound_reallocation_adjustment
         + potential_core_adjustment
+        + potential_starter_opportunity_adjustment
         + defensive_overspend_adjustment
         + formation_flexibility["adjustment"]
         + formation_policy_adjustment
         + bench_budget_adjustment
+        + float(paid_reserve_audit["adjustment"])
         - 50.0 * int(defender_audit["violation_score"])
         - 50.0 * int(midfield_audit["violation_score"])
         - 50.0 * int(forward_audit["violation_score"])
@@ -3846,6 +4028,7 @@ def squad_architecture_metrics(
         ),
         "formation_flexibility": formation_flexibility,
         "formation_policy_adjustment": formation_policy_adjustment,
+        "paid_reserve_justification": paid_reserve_audit,
         "competition_architecture_policy": {
             "competition": competition,
             "model_version": competition_policy["model_version"],
@@ -3867,6 +4050,9 @@ def squad_architecture_metrics(
         "qualified_potential_candidate_ids": sorted(
             qualified_potential_ids
         ),
+        "quality_competitive_potential_starter_ids": sorted(
+            competitive_potential_ids
+        ),
         "qualified_potential_core_ids": selected_potential_core_ids,
         "qualified_potential_available": available_potential_count,
         "qualified_potential_core_count": len(
@@ -3886,6 +4072,9 @@ def squad_architecture_metrics(
             potential_starter_deficit
         ),
         "potential_core_adjustment": potential_core_adjustment,
+        "potential_starter_opportunity_adjustment": (
+            potential_starter_opportunity_adjustment
+        ),
         "squad_average_age": (
             sum(squad_ages) / len(squad_ages) if squad_ages else None
         ),
@@ -3968,6 +4157,7 @@ def finalized_squad_objective(
     metrics = squad_architecture_metrics(
         squad,
         raw_scores,
+        potential_comparison_players=candidates,
         competition=getattr(args, "competition", None),
         maintenance=args.maintenance,
         min_reliable_anchors=args.min_reliable_anchors,
@@ -4607,6 +4797,7 @@ def optimize_joint_squad_architecture(
         metrics = squad_architecture_metrics(
             candidate,
             raw_scores,
+            potential_comparison_players=candidates,
             competition=competition,
             maintenance=maintenance,
             min_reliable_anchors=min_reliable_anchors,
@@ -5368,6 +5559,9 @@ def optimize_joint_squad_architecture(
         "qualified_potential_candidate_ids": current_metrics[
             "qualified_potential_candidate_ids"
         ],
+        "quality_competitive_potential_starter_ids": current_metrics[
+            "quality_competitive_potential_starter_ids"
+        ],
         "qualified_potential_core_ids": current_metrics[
             "qualified_potential_core_ids"
         ],
@@ -5407,6 +5601,9 @@ def optimize_joint_squad_architecture(
         "potential_core_adjustment": current_metrics[
             "potential_core_adjustment"
         ],
+        "potential_starter_opportunity_adjustment": current_metrics[
+            "potential_starter_opportunity_adjustment"
+        ],
         "scorer_leverage": current_metrics["scorer_leverage"],
         "starting_scorer_leverage": current_metrics[
             "starting_scorer_leverage"
@@ -5435,6 +5632,9 @@ def optimize_joint_squad_architecture(
         ],
         "formation_policy_adjustment": current_metrics[
             "formation_policy_adjustment"
+        ],
+        "paid_reserve_justification": current_metrics[
+            "paid_reserve_justification"
         ],
         "competition_architecture_policy": current_metrics[
             "competition_architecture_policy"
@@ -9029,8 +9229,21 @@ def output_payload(
             True,
         ):
             warnings.append(
-                "The extended sporting core meets its minimum youth floor, "
-                "but remains below the evidence-qualified U23 target."
+                "The extended sporting core remains below its soft, "
+                "quality-dependent U23 opportunity target."
+            )
+        paid_reserve_audit = architecture_audit.get(
+            "paid_reserve_justification",
+            {},
+        )
+        if (
+            isinstance(paid_reserve_audit, dict)
+            and not paid_reserve_audit.get("passes", True)
+        ):
+            warnings.append(
+                "At least one paid outfield reserve lacks a sufficiently "
+                "current starting-role, competitive potential case or "
+                "cost-efficient formation benefit."
             )
         defender_architecture = architecture_audit.get(
             "defender_architecture",
@@ -9743,9 +9956,10 @@ def parse_args() -> argparse.Namespace:
         "--min-qualified-potential-core",
         type=int,
         help=(
-            "Minimum qualified U23 potential players in the extended core; "
-            "a positive minimum also requires one of them in the starting "
-            "eleven. Default 1 for a final reliable low-maintenance squad"
+            "Optional hard minimum of qualified U23 potential players in "
+            "the extended core. The default is 0; the normal target remains "
+            "a soft opportunity so talent cannot displace materially better "
+            "current performers."
         ),
     )
     parser.add_argument(
@@ -9924,15 +10138,7 @@ def parse_args() -> argparse.Namespace:
             else 0
         )
     if args.min_qualified_potential_core is None:
-        args.min_qualified_potential_core = (
-            1
-            if (
-                args.profile == "reliable"
-                and args.maintenance == "low"
-                and not args.allow_unannotated
-            )
-            else 0
-        )
+        args.min_qualified_potential_core = 0
     if args.target_qualified_potential_core is None:
         args.target_qualified_potential_core = (
             2
