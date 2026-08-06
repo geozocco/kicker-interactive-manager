@@ -373,7 +373,7 @@ class TransferResearchTests(unittest.TestCase):
                     "id": "incumbent",
                     "name": "Dimitrios Beispiel",
                     "club": "FC Beispiel",
-                    "position": "DEFENDER",
+                    "position": "GOALKEEPER",
                     "market_value": 1_600_000,
                 }
             ]
@@ -468,7 +468,7 @@ class TransferResearchTests(unittest.TestCase):
         self.assertEqual(2, audit["requests"])
         self.assertEqual(2, abstentions["p1"]["verification_passes"])
         self.assertEqual(
-            "2026-07-29T12:00:00Z",
+            "2026-07-29T22:00:00Z",
             abstentions["p1"]["refresh_after"],
         )
         second_request = json.loads(calls[1]["input"][1]["content"])
@@ -511,7 +511,9 @@ class TransferResearchTests(unittest.TestCase):
         self.assertEqual({}, abstentions)
         self.assertEqual(2, audit["requests"])
 
-    def test_unannotated_critical_targets_remain_batched(self) -> None:
+    def test_unannotated_targets_are_prioritized_without_becoming_critical(
+        self,
+    ) -> None:
         market = {
             "players": [
                 {
@@ -529,11 +531,74 @@ class TransferResearchTests(unittest.TestCase):
         selected = transfer.select_transfer_targets(market, {}, {})
 
         self.assertTrue(
-            all(item["research_priority"] == "critical" for item in selected)
+            all(item["research_priority"] == "elevated" for item in selected)
         )
         self.assertTrue(
             all(not item["individual_research"] for item in selected)
         )
+
+    def test_completed_low_risk_transfer_is_not_researched_as_critical(
+        self,
+    ) -> None:
+        market = {
+            "players": [
+                {
+                    "id": "completed-inbound",
+                    "name": "Completed Inbound",
+                    "club": "Current Club",
+                    "position": "MIDFIELDER",
+                    "market_value": 1_000_000,
+                    "available": True,
+                },
+                {
+                    "id": "active-rumour",
+                    "name": "Active Rumour",
+                    "club": "Current Club",
+                    "position": "MIDFIELDER",
+                    "market_value": 1_000_000,
+                    "available": True,
+                },
+            ]
+        }
+        quality = {
+            "annotations": {
+                player_id: {"risks": {"transfer": 0}}
+                for player_id in ("completed-inbound", "active-rumour")
+            }
+        }
+        news = {
+            "role_profiles": {},
+            "players": {
+                "completed-inbound": {
+                    "signals": [{"kind": "transfer_confirmed"}],
+                    "consensus": {"transfer": 10, "exclude": False},
+                },
+                "active-rumour": {
+                    "signals": [{"kind": "transfer_rumour"}],
+                    "consensus": {"transfer": 45, "exclude": False},
+                },
+            },
+        }
+
+        selected = {
+            item["player_id"]: item
+            for item in transfer.select_transfer_targets(
+                market,
+                quality,
+                news,
+            )
+        }
+
+        self.assertEqual(
+            "routine",
+            selected["completed-inbound"]["research_priority"],
+        )
+        self.assertFalse(selected["completed-inbound"]["individual_research"])
+        self.assertEqual(
+            "elevated",
+            selected["active-rumour"]["research_priority"],
+        )
+        self.assertFalse(selected["active-rumour"]["individual_research"])
 
     def test_multiple_batches_use_bounded_workers(self) -> None:
         targets = []

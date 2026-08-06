@@ -117,6 +117,7 @@ def select_transfer_targets(
 
     priority_scores: dict[str, float] = {}
     individual_research: dict[str, bool] = {}
+    critical_research: dict[str, bool] = {}
 
     def priority(player: dict[str, Any]) -> tuple[float, int, str]:
         player_id = str(player["id"])
@@ -124,7 +125,12 @@ def select_transfer_targets(
         score = 0.0
         transfer_risk = 0.0
         if not isinstance(annotation, dict) or not annotation:
-            score += 1_000.0
+            # Missing from the intentionally compact quality shortlist makes
+            # a player worth eventual research, not an emergency. Treating
+            # every unannotated market player as critical bypasses the urgent
+            # delta cache and turns each scheduled refresh into a full-market
+            # web search.
+            score += 500.0
         else:
             transfer_risk = float(
                 (annotation.get("risks", {}) or {}).get("transfer", 0) or 0
@@ -135,12 +141,31 @@ def select_transfer_targets(
             if annotation.get("reliable_anchor"):
                 score += 150.0
         news = news_players.get(player_id, {})
-        existing_transfer_signal = isinstance(news, dict) and any(
+        transfer_signals_present = isinstance(news, dict) and any(
             str(signal.get("kind", "")).startswith("transfer")
             for signal in news.get("signals", [])
             if isinstance(signal, dict)
         )
-        if existing_transfer_signal:
+        consensus = (
+            news.get("consensus", {}) if isinstance(news, dict) else {}
+        )
+        consensus_transfer_risk = float(
+            consensus.get("transfer", 0) or 0
+        )
+        active_transfer_concern = transfer_signals_present and (
+            consensus_transfer_risk >= 35.0
+            or bool(consensus.get("selection_blocked"))
+            or bool(consensus.get("exclude"))
+        )
+        if active_transfer_concern:
+            score += 350.0
+        hard_transfer_concern = bool(
+            consensus_transfer_risk >= 55.0
+            or consensus.get("selection_blocked")
+            or consensus.get("exclude")
+            or transfer_risk >= 70.0
+        )
+        if hard_transfer_concern:
             score += 800.0
         role_profile = role_profiles.get(player_id, {})
         open_competition = False
@@ -156,11 +181,30 @@ def select_transfer_targets(
             if open_competition:
                 score += 550.0
             score += 5.0 * external_signing_risk
+        goalkeeper_hierarchy_concern = bool(
+            player.get("position") == "GOALKEEPER"
+            and (
+                open_competition
+                or external_signing_risk >= 35.0
+            )
+        )
+        force_critical = bool(
+            hard_transfer_concern
+            or goalkeeper_hierarchy_concern
+        )
+        critical_research[player_id] = force_critical
         individual_research[player_id] = bool(
-            existing_transfer_signal
-            or open_competition
+            force_critical
+            or (
+                active_transfer_concern
+                and consensus_transfer_risk >= 55.0
+            )
+            or (
+                player.get("position") == "GOALKEEPER"
+                and open_competition
+            )
             or external_signing_risk >= 35.0
-            or transfer_risk >= 50.0
+            or transfer_risk >= 70.0
         )
         score += min(200.0, float(player.get("market_value", 0)) / 10_000)
         priority_scores[player_id] = score
@@ -177,7 +221,7 @@ def select_transfer_targets(
             "market_value": int(float(player["market_value"])),
             "research_priority": (
                 "critical"
-                if priority_scores.get(str(player["id"]), 0.0) >= 800.0
+                if critical_research.get(str(player["id"]), False)
                 else "elevated"
                 if priority_scores.get(str(player["id"]), 0.0) >= 300.0
                 else "routine"
@@ -679,7 +723,7 @@ def _cache_record(
 ) -> dict[str, Any]:
     priority = str(target.get("research_priority", "routine"))
     no_signal_hours = (
-        2 if priority == "critical" else 24 if priority == "elevated" else 72
+        12 if priority == "critical" else 24 if priority == "elevated" else 72
     )
     refresh_after = (
         now + timedelta(hours=no_signal_hours)
