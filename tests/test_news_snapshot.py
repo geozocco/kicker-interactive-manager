@@ -209,6 +209,47 @@ class ConsensusTests(unittest.TestCase):
         self.assertTrue(consensus["selection_blocked"])
         self.assertFalse(consensus["exclude"])
 
+    def test_editorial_evidence_loader_audits_player_removed_from_market(
+        self,
+    ) -> None:
+        evidence = {
+            "schema_version": 1,
+            "entries": [
+                {
+                    "competition": "Bundesliga",
+                    "season": "2026/27",
+                    "player_id": "departed-player",
+                    "name": "Departed Player",
+                    "club": "Former Club",
+                    "stage": "agreement",
+                    "evidence": [
+                        {
+                            "claim": "The outbound transfer is advanced.",
+                            "source_url": "https://example.com/transfer",
+                        }
+                    ],
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "editorial.json"
+            path.write_text(json.dumps(evidence), encoding="utf-8")
+            reports, audit = refresh.load_editorial_transfer_evidence(
+                path,
+                market={"players": []},
+                competition="Bundesliga",
+                season="2026/27",
+                now=datetime(2026, 8, 6, 12, tzinfo=timezone.utc),
+                model="gpt-5.6-luna",
+            )
+
+        self.assertEqual({}, reports)
+        self.assertEqual(1, audit["ignored_stale_market_players"])
+        self.assertEqual(
+            ["departed-player"],
+            audit["stale_market_player_ids"],
+        )
+
     def test_critical_inconclusive_research_is_not_zero_risk(self) -> None:
         consensus = refresh.apply_transfer_research_caution(
             refresh.consensus_for([]),

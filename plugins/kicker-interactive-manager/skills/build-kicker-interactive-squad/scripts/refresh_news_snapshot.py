@@ -83,6 +83,7 @@ def load_editorial_transfer_evidence(
     }
     reports: dict[str, dict[str, Any]] = {}
     ignored = 0
+    stale_market_player_ids: list[str] = []
     for index, entry in enumerate(entries):
         if not isinstance(entry, dict):
             raise RuntimeError(f"editorial transfer evidence entry {index} is invalid")
@@ -95,9 +96,12 @@ def load_editorial_transfer_evidence(
         player_id = str(entry.get("player_id", "")).strip()
         target_player = market_players.get(player_id)
         if target_player is None:
-            raise RuntimeError(
-                f"editorial transfer evidence player {player_id!r} is not in the market"
-            )
+            # A completed outbound move removes the player from the next
+            # Kicker market refresh before the curated warning is cleaned up.
+            # That row is no longer selectable and therefore safely stale;
+            # preserve it in the audit instead of blocking every league feed.
+            stale_market_player_ids.append(player_id)
+            continue
         if (
             str(entry.get("name", "")).strip() != str(target_player.get("name", "")).strip()
             or str(entry.get("club", "")).strip() != str(target_player.get("club", "")).strip()
@@ -154,6 +158,8 @@ def load_editorial_transfer_evidence(
         "source": str(path),
         "records": len(reports),
         "ignored_other_competitions": ignored,
+        "ignored_stale_market_players": len(stale_market_player_ids),
+        "stale_market_player_ids": sorted(stale_market_player_ids),
     }
 
 
