@@ -135,7 +135,7 @@ VARIATION_STATE_SCHEMA_VERSION = 2
 OPTIMIZER_CACHE_ENV = "KICKER_OPTIMIZER_CACHE"
 OPTIMIZER_CACHE_SCHEMA_VERSION = 1
 OPTIMIZER_ALGORITHM_VERSION = "exact-dp-v7-depth-diversity"
-ARCHITECTURE_MODEL_VERSION = "joint-xi-bench-v16-scorer-defense-gates"
+ARCHITECTURE_MODEL_VERSION = "joint-xi-bench-v17-current-role-gates"
 COMPETITION_BUDGETS = {
     "Bundesliga": 42_500_000,
     "2. Bundesliga": 10_000_000,
@@ -619,6 +619,7 @@ ELITE_REBOUND_MINIMUM_SAMPLE_MINUTES = 1_200
 ELITE_REBOUND_MINIMUM_GOALS_PER_90 = 0.40
 ELITE_REBOUND_MINIMUM_CONTRIBUTIONS_PER_90 = 0.70
 ELITE_REBOUND_REALLOCATION_PENALTY = 24.0
+CURRENT_ELITE_SCORER_PENALTY = 60.0
 TOP_SCORER_MINIMUM_PROVEN_SEASONS = 3
 TOP_SCORER_MINIMUM_SAMPLE_MINUTES = 1_200
 TOP_SCORER_MINIMUM_GOALS_PER_90 = 0.35
@@ -1819,6 +1820,68 @@ def is_genuine_top_scorer(player: Player) -> bool:
     return bool(genuine_top_scorer_evidence(player)["qualified"])
 
 
+def current_starter_role_supported(player: Player) -> bool:
+    """Require present-club evidence, not reputation, for a safe starter."""
+
+    role = player.role_context
+    if role.get("current_starter_support") is not None:
+        return bool(role.get("current_starter_support"))
+    availability = str(role.get("availability_status", "unknown"))
+    exit_status = str(role.get("exit_status", "unknown"))
+    recent_role = role.get("recent_competitive_role", {})
+    if not isinstance(recent_role, dict):
+        recent_role = {}
+    if (
+        availability in {"rehab", "unavailable"}
+        or exit_status in {"possible", "advanced", "confirmed"}
+        or str(recent_role.get("decisive_match_preference", "unknown"))
+        == "competitor_preferred"
+    ):
+        return False
+    return (
+        str(role.get("evidence_confidence", "none"))
+        in {"medium", "high"}
+        and numeric(role.get("expected_start_probability")) >= 70.0
+    )
+
+
+def current_elite_scorer_candidate_ids(
+    players: Iterable[Player],
+) -> frozenset[str]:
+    """Keep the league's very strongest current scorer paths distinct.
+
+    The threshold is relative to the live candidate pool, so no famous name is
+    hard-coded. It prevents a merely good cheaper scorer from satisfying the
+    same architecture slot as the current production leaders.
+    """
+
+    qualified = [
+        player
+        for player in players
+        if is_genuine_top_scorer(player)
+        and current_starter_role_supported(player)
+        and numeric(player.form_summary.get("latest_season_score"), 75.0)
+        >= 72.0
+    ]
+    if not qualified:
+        return frozenset()
+    def production_index(player: Player) -> float:
+        return (
+            starting_scorer_leverage(player)
+            + 6.0 * numeric(player.scorer_profile.get("goals_per_90"))
+            + 4.0
+            * numeric(player.scorer_profile.get("contributions_per_90"))
+        )
+
+    maximum_index = max(production_index(player) for player in qualified)
+    index_floor = max(12.0, 0.90 * maximum_index)
+    return frozenset(
+        player.player_id
+        for player in qualified
+        if production_index(player) + 1e-9 >= index_floor
+    )
+
+
 def elite_rebound_striker_evidence(
     player: Player,
 ) -> dict[str, Any]:
@@ -2903,8 +2966,25 @@ def paid_reserve_justification_audit(
             4.0,
             excess_cost / 200_000.0,
         )
+        flexibility_playable = (
+            player.role_context.get("evidence_confidence")
+            in {"medium", "high"}
+            and expected_probability >= 60.0
+            and player.components["fitness"] >= 65.0
+            and player.risks["transfer"] <= 45.0
+            and player.risks["injury"] <= 45.0
+            and player.risks["rotation"] <= 45.0
+            and player.risks["unknown_role"] <= 45.0
+            and str(
+                player.role_context.get("availability_status", "unknown")
+            )
+            not in {"rehab", "unavailable"}
+            and str(player.role_context.get("exit_status", "unknown"))
+            not in {"possible", "advanced", "confirmed"}
+        )
         flexibility_qualified = (
             flexibility_credit >= required_flexibility_credit
+            and flexibility_playable
         )
         justified = (
             current_role_qualified
@@ -2930,17 +3010,56 @@ def paid_reserve_justification_audit(
                     required_flexibility_credit,
                     3,
                 ),
+                "flexibility_playable": flexibility_playable,
                 "justified": justified,
             }
         )
     return {
-        "model_version": "paid-reserve-justification-v1",
+        "model_version": "paid-reserve-justification-v2-role-ready",
         "enforced": enforced,
         "evaluated": evaluated,
         "unjustified_ids": sorted(unjustified_ids),
         "violation_score": len(unjustified_ids) if enforced else 0,
         "adjustment": -penalty if enforced else 0.0,
         "passes": not enforced or not unjustified_ids,
+    }
+
+
+def current_role_starter_audit(
+    squad: Squad,
+    core_ids: AbstractSet[str],
+    *,
+    maintenance: str,
+    position_minimum_costs: Mapping[str, int] | None,
+    competitive_potential_ids: AbstractSet[str],
+) -> dict[str, Any]:
+    """Block paid core players whose current starting role is unresolved."""
+
+    enforced = maintenance == "low"
+    minimums = position_minimum_costs or {}
+    evaluated_ids: list[str] = []
+    unsupported_ids: list[str] = []
+    for player in squad.players:
+        if (
+            player.position == "GOALKEEPER"
+            or player.player_id not in core_ids
+            or player.cost <= int(minimums.get(player.position, player.cost))
+            or player.player_id in competitive_potential_ids
+            or not str(player.role_context.get("model_version", "")).startswith(
+                "expected-role-"
+            )
+        ):
+            continue
+        evaluated_ids.append(player.player_id)
+        if not current_starter_role_supported(player):
+            unsupported_ids.append(player.player_id)
+    return {
+        "model_version": "current-role-starter-gate-v1",
+        "enforced": enforced,
+        "evaluated_ids": sorted(evaluated_ids),
+        "unsupported_ids": sorted(unsupported_ids),
+        "violation_score": len(unsupported_ids) if enforced else 0,
+        "passes": not enforced or not unsupported_ids,
     }
 
 
@@ -3513,12 +3632,18 @@ def squad_architecture_metrics(
         )
         for player in squad.players
     }
+    comparison_players = list(
+        potential_comparison_players
+        if potential_comparison_players is not None
+        else squad.players
+    )
+    current_elite_scorer_ids = current_elite_scorer_candidate_ids(
+        comparison_players
+    )
     available_potential_count = len(qualified_potential_ids)
     competitive_potential_ids = quality_competitive_potential_player_ids(
         (
-            potential_comparison_players
-            if potential_comparison_players is not None
-            else squad.players
+            comparison_players
         ),
         raw_scores,
         qualified_potential_ids,
@@ -3625,6 +3750,13 @@ def squad_architecture_metrics(
             defender_audit["direct_backup_ready"]
         ),
     )
+    current_role_audit = current_role_starter_audit(
+        squad,
+        core_ids,
+        maintenance=maintenance,
+        position_minimum_costs=position_minimum_costs,
+        competitive_potential_ids=competitive_potential_ids,
+    )
     reliable_anchor_deficit = max(
         0,
         min_reliable_anchors - int(audit["reliable_anchors"]),
@@ -3695,6 +3827,7 @@ def squad_architecture_metrics(
         + int(defender_audit["violation_score"])
         + int(midfield_audit["violation_score"])
         + int(forward_audit["violation_score"])
+        + int(current_role_audit["violation_score"])
     )
     potential_core_adjustment = -8.0 * max(
         0,
@@ -3828,6 +3961,26 @@ def squad_architecture_metrics(
         0,
         premium_starter_target - len(premium_starters),
     )
+    current_elite_scorer_core_ids = sorted(
+        core_ids.intersection(current_elite_scorer_ids)
+    )
+    current_elite_scorer_target = int(bool(current_elite_scorer_ids))
+    current_elite_scorer_adjustment = (
+        -CURRENT_ELITE_SCORER_PENALTY
+        * max(
+            0,
+            current_elite_scorer_target
+            - len(current_elite_scorer_core_ids),
+        )
+        if maintenance == "low"
+        else 0.0
+    )
+    if maintenance == "low":
+        hard_violation_score += max(
+            0,
+            current_elite_scorer_target
+            - len(current_elite_scorer_core_ids),
+        )
     elite_rebound_costs = dict(elite_rebound_striker_costs or {})
     elite_rebound_ids = set(elite_rebound_costs)
     elite_rebound_core_ids = sorted(core_ids.intersection(elite_rebound_ids))
@@ -3924,6 +4077,12 @@ def squad_architecture_metrics(
         and bool(midfield_audit["passes"])
         and bool(forward_audit["passes"])
         and bool(paid_reserve_audit["passes"])
+        and bool(current_role_audit["passes"])
+        and (
+            maintenance != "low"
+            or not current_elite_scorer_ids
+            or bool(current_elite_scorer_core_ids)
+        )
     )
     diversity_adjustment = -max(0.0, variation_exposure_strength) * sum(
         int((variation_exposure or {}).get(player.player_id, 0))
@@ -3945,6 +4104,7 @@ def squad_architecture_metrics(
         + concentration_adjustment
         + position_concentration_adjustment
         + premium_starter_adjustment
+        + current_elite_scorer_adjustment
         + elite_rebound_reallocation_adjustment
         + potential_core_adjustment
         + potential_starter_opportunity_adjustment
@@ -3964,6 +4124,7 @@ def squad_architecture_metrics(
         "defender_architecture": defender_audit,
         "midfield_architecture": midfield_audit,
         "forward_reserve_architecture": forward_audit,
+        "current_role_starter_gate": current_role_audit,
         "expected_contribution": expected_contribution,
         "concentration_adjustment": concentration_adjustment,
         "position_concentration_adjustment": (
@@ -3987,6 +4148,18 @@ def squad_architecture_metrics(
             len(premium_starters) >= premium_starter_target
         ),
         "premium_starter_adjustment": premium_starter_adjustment,
+        "current_elite_scorer_candidate_ids": sorted(
+            current_elite_scorer_ids
+        ),
+        "current_elite_scorer_core_ids": current_elite_scorer_core_ids,
+        "current_elite_scorer_target": current_elite_scorer_target,
+        "current_elite_scorer_target_met": (
+            not current_elite_scorer_ids
+            or bool(current_elite_scorer_core_ids)
+        ),
+        "current_elite_scorer_adjustment": (
+            current_elite_scorer_adjustment
+        ),
         "elite_rebound_striker_candidate_ids": sorted(
             elite_rebound_ids
         ),
@@ -10224,7 +10397,7 @@ def parse_args() -> argparse.Namespace:
 def exclude_unresolved_role_research(
     players: list[Player],
 ) -> tuple[list[Player], list[dict[str, Any]]]:
-    """Keep one unresolved transfer role from blocking the entire league."""
+    """Exclude unresolved transfers and grounded short-term blockers."""
 
     unresolved = [
         player
@@ -10235,7 +10408,21 @@ def exclude_unresolved_role_research(
             == "high"
         )
     ]
-    unresolved_ids = {player.player_id for player in unresolved}
+    short_term_blocked = [
+        player
+        for player in players
+        if (
+            str(
+                player.role_context.get("availability_status", "unknown")
+            )
+            in {"rehab", "unavailable"}
+            or str(player.role_context.get("exit_status", "unknown"))
+            in {"possible", "advanced", "confirmed"}
+        )
+    ]
+    unresolved_ids = {
+        player.player_id for player in (*unresolved, *short_term_blocked)
+    }
     exclusions = [
         {
             "annotation_key": player.player_id,
@@ -10252,6 +10439,24 @@ def exclude_unresolved_role_research(
         }
         for player in unresolved
     ]
+    exclusions.extend(
+        {
+            "annotation_key": player.player_id,
+            "reason": (
+                "Vorübergehend nicht auswählbar: Die aktuelle Rollenrecherche "
+                "belegt Rehabilitation, Nichtverfügbarkeit oder einen "
+                "konkreten möglichen Abgang."
+            ),
+            "benchmark": player.benchmark,
+            "evidence": list(player.evidence),
+            "temporary_current_status_exclusion": True,
+            "player_name": player.name,
+            "club": player.club,
+        }
+        for player in short_term_blocked
+        if player.player_id
+        not in {item["annotation_key"] for item in exclusions}
+    )
     return (
         [
             player

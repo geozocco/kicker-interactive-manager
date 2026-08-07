@@ -23,8 +23,8 @@ from openai_usage import empty_usage, merge_usage, response_usage
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEFAULT_MODEL = "gpt-5.6-luna"
-MODEL_VERSION = "openai-role-web-v2"
-PROMPT_VERSION = "role-research-2026-07-28-v2"
+MODEL_VERSION = "openai-role-web-v3"
+PROMPT_VERSION = "role-research-2026-08-07-v3"
 USER_AGENT = "kicker-interactive-manager-role-research/1"
 ROLE_RESPONSIBILITIES = {
     "penalties",
@@ -74,6 +74,27 @@ ROLE_ENVIRONMENT = {
         "2700_plus",
     },
     "role_stability": {"unknown", "fragile", "uncertain", "stable"},
+}
+DECISIVE_MATCH_PREFERENCES = {
+    "unknown",
+    "player_preferred",
+    "mixed",
+    "competitor_preferred",
+}
+AVAILABILITY_STATUSES = {
+    "unknown",
+    "available",
+    "managed",
+    "reintegration",
+    "rehab",
+    "unavailable",
+}
+EXIT_STATUSES = {
+    "unknown",
+    "none",
+    "possible",
+    "advanced",
+    "confirmed",
 }
 
 
@@ -522,6 +543,41 @@ def _schema() -> dict[str, Any]:
                 },
                 "required": sorted(ROLE_ENVIRONMENT),
             },
+            "recent_competitive_role": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "sample_matches": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 12,
+                    },
+                    "starts": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 12,
+                    },
+                    "decisive_match_preference": {
+                        "type": "string",
+                        "enum": sorted(DECISIVE_MATCH_PREFERENCES),
+                    },
+                    "direct_competitor": {"type": "string"},
+                },
+                "required": [
+                    "sample_matches",
+                    "starts",
+                    "decisive_match_preference",
+                    "direct_competitor",
+                ],
+            },
+            "availability_status": {
+                "type": "string",
+                "enum": sorted(AVAILABILITY_STATUSES),
+            },
+            "exit_status": {
+                "type": "string",
+                "enum": sorted(EXIT_STATUSES),
+            },
             "confidence": {
                 "type": "string",
                 "enum": ["low", "medium", "high"],
@@ -543,6 +599,9 @@ def _schema() -> dict[str, Any]:
             "external_signing_risk",
             "responsibilities",
             "role_environment",
+            "recent_competitive_role",
+            "availability_status",
+            "exit_status",
             "confidence",
             "contradiction",
             "note",
@@ -585,16 +644,26 @@ def build_request(
         "offensive focal-point status, captaincy, and aerial set-piece target status "
         "only when a source supports it. Separately capture coach trust, current squad "
         "status, tactical fit in the coach's likely system, positional competition, "
-        "an expected league-minutes band, and role stability. Use unknown whenever "
+        "an expected league-minutes band, and role stability. Examine the most recent "
+        "competitive lineups, especially direct selection decisions against the same "
+        "positional competitor and decisive late-season or knockout matches. These "
+        "recent decisions are more informative than full-season minute totals. Also "
+        "search for current surgery, rehabilitation, reintegration or unavailability "
+        "reports and for concrete reports that the club intends to sell or loan the "
+        "player. Classify possible, advanced and confirmed exits separately. Use "
+        "unknown whenever "
         "the evidence does not support one of those environment fields. Do not infer "
         "a role after a transfer from the old club. For players marked force_refresh, "
         "explicitly search the official transfer announcement, current coach or "
         "sporting-director statements and latest preparation or lineup reports before "
         "abstaining. Do not weaken the evidence standard for these players. Do not infer "
-        "fitness from role reporting; injuries and training readiness are handled by "
-        "separate feeds. Evidence must be current, player-specific, "
+        "fitness from silence or from role reporting alone; only classify medical "
+        "availability when a current source explicitly supports it. Evidence must be "
+        "current, player-specific, "
         "and use a URL actually found by web search. Use has_role_signal=false and "
-        "an empty evidence list when the available evidence is insufficient. Never "
+        "an empty evidence list when the available evidence is insufficient. A "
+        "grounded current medical-availability or exit signal is sufficient for "
+        "has_role_signal=true even when the remaining role fields stay unknown. Never "
         "infer a role merely from price, age, fame, or prior-season points."
     )
     user_payload = {
@@ -863,6 +932,51 @@ def normalize_profile(
             for key, value in role_environment.items()
         }
 
+    raw_recent_role = raw.get("recent_competitive_role")
+    if not isinstance(raw_recent_role, dict):
+        raw_recent_role = {}
+    sample_matches = max(
+        0,
+        min(
+            12,
+            int(optional_float(raw_recent_role.get("sample_matches")) or 0),
+        ),
+    )
+    recent_starts = max(
+        0,
+        min(
+            sample_matches,
+            int(optional_float(raw_recent_role.get("starts")) or 0),
+        ),
+    )
+    decisive_preference = str(
+        raw_recent_role.get("decisive_match_preference", "unknown")
+    )
+    if decisive_preference not in DECISIVE_MATCH_PREFERENCES:
+        decisive_preference = "unknown"
+    availability_status = str(raw.get("availability_status", "unknown"))
+    if availability_status not in AVAILABILITY_STATUSES:
+        availability_status = "unknown"
+    exit_status = str(raw.get("exit_status", "unknown"))
+    if exit_status not in EXIT_STATUSES:
+        exit_status = "unknown"
+    if confidence == "low":
+        decisive_preference = "unknown"
+        availability_status = "unknown"
+        exit_status = "unknown"
+    recent_competitive_role = {
+        "sample_matches": sample_matches,
+        "starts": recent_starts,
+        "start_share": round(
+            recent_starts / sample_matches if sample_matches else 0.0,
+            3,
+        ),
+        "decisive_match_preference": decisive_preference,
+        "direct_competitor": str(
+            raw_recent_role.get("direct_competitor", "")
+        ).strip()[:120],
+    }
+
     observed_at = max(
         parsed_timestamp(item["observed_at"]) for item in evidence
     )
@@ -905,6 +1019,9 @@ def normalize_profile(
         "external_signing_risk": round(external_risk, 2),
         "responsibilities": responsibilities,
         "role_environment": role_environment,
+        "recent_competitive_role": recent_competitive_role,
+        "availability_status": availability_status,
+        "exit_status": exit_status,
         "confidence": confidence,
         "observed_at": iso_timestamp(observed_at),
         "refresh_after": iso_timestamp(now + timedelta(days=refresh_days)),

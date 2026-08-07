@@ -56,10 +56,10 @@ from refresh_news_snapshot import (
 from advanced_signals import apply_advanced_signals
 
 
-MODEL_VERSION = "multi-season-v17-current-level-retention"
+MODEL_VERSION = "multi-season-v18-current-role-gates"
 PRESEASON_MODEL_VERSION = "preseason-readiness-v3-role-responsibilities"
 FORM_MODEL_VERSION = "recency-context-v5-current-level-retention"
-EXPECTED_ROLE_MODEL_VERSION = "expected-role-v4-start-rate-calibration"
+EXPECTED_ROLE_MODEL_VERSION = "expected-role-v5-recent-competition"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
 COMPETITION_SLUGS = {
     "Bundesliga": "bundesliga",
@@ -1203,6 +1203,13 @@ def cached_role_evidence(
         ),
         "responsibilities": dict(profile.get("responsibilities", {})),
         "role_environment": dict(profile.get("role_environment", {})),
+        "recent_competitive_role": dict(
+            profile.get("recent_competitive_role", {})
+        ),
+        "availability_status": str(
+            profile.get("availability_status", "unknown")
+        ),
+        "exit_status": str(profile.get("exit_status", "unknown")),
         "designation": str(profile.get("designation", "")),
         "note": str(profile.get("note", "")),
         "evidence": evidence,
@@ -1749,6 +1756,25 @@ def expected_role_profile(
     if not evidence_items:
         raw_expected_start_probability = 0.0
     latest_domestic_role = latest_domestic_role_sample(history_player or {})
+    if latest_domestic_role["sample_appearances"] < 8:
+        for season in histories:
+            sample_appearances = int(numeric(season.get("appearances")))
+            sample_starts = int(
+                numeric(season.get("lineups", season.get("starts")))
+            )
+            if sample_appearances < 8:
+                continue
+            latest_domestic_role = {
+                "sample_season": season.get("season"),
+                "sample_appearances": sample_appearances,
+                "sample_starts": sample_starts,
+                "start_rate": round(
+                    min(1.0, sample_starts / sample_appearances),
+                    3,
+                ),
+                "sample_source": "latest_api_sports_league",
+            }
+            break
     starting_status_confirmed = evidence_confirms_starting_status(
         evidence_items
     )
@@ -1774,6 +1800,83 @@ def expected_role_profile(
             expected_start_probability,
             probability_cap,
         )
+    raw_recent_role = evidence.get("recent_competitive_role", {})
+    if not isinstance(raw_recent_role, dict) or not evidence_items:
+        raw_recent_role = {}
+    recent_matches = max(
+        0,
+        min(12, int(numeric(raw_recent_role.get("sample_matches")))),
+    )
+    recent_starts = max(
+        0,
+        min(
+            recent_matches,
+            int(numeric(raw_recent_role.get("starts"))),
+        ),
+    )
+    recent_start_share = (
+        recent_starts / recent_matches if recent_matches else 0.0
+    )
+    decisive_preference = str(
+        raw_recent_role.get("decisive_match_preference", "unknown")
+    )
+    if decisive_preference not in {
+        "unknown",
+        "player_preferred",
+        "mixed",
+        "competitor_preferred",
+    }:
+        decisive_preference = "unknown"
+    if recent_matches >= 3:
+        recent_probability = 100.0 * recent_start_share
+        if decisive_preference == "player_preferred":
+            recent_probability = max(75.0, recent_probability)
+        elif decisive_preference == "competitor_preferred":
+            recent_probability = min(45.0, recent_probability)
+        expected_start_probability = (
+            min(expected_start_probability, recent_probability)
+            if decisive_preference == "competitor_preferred"
+            else max(expected_start_probability, recent_probability)
+        )
+    availability_status = str(
+        evidence.get("availability_status", "unknown")
+    ).casefold()
+    if availability_status not in {
+        "unknown",
+        "available",
+        "managed",
+        "reintegration",
+        "rehab",
+        "unavailable",
+    } or not evidence_items:
+        availability_status = "unknown"
+    exit_status = str(evidence.get("exit_status", "unknown")).casefold()
+    if exit_status not in {
+        "unknown",
+        "none",
+        "possible",
+        "advanced",
+        "confirmed",
+    } or not evidence_items:
+        exit_status = "unknown"
+    current_starter_support = (
+        availability_status not in {"rehab", "unavailable"}
+        and exit_status not in {"advanced", "confirmed"}
+        and decisive_preference != "competitor_preferred"
+        and (
+            (
+                bool(evidence_items)
+                and str(evidence.get("confidence", "none"))
+                in {"medium", "high"}
+                and expected_start_probability >= 70.0
+            )
+            or (
+                club_changed is not True
+                and latest_domestic_role["sample_appearances"] >= 8
+                and latest_domestic_role["start_rate"] >= 0.75
+            )
+        )
+    )
     team_quality_delta = max(
         -30.0,
         min(30.0, numeric(evidence.get("team_quality_delta"))),
@@ -1790,6 +1893,19 @@ def expected_role_profile(
             else "none"
         ),
         "expected_start_probability": round(expected_start_probability, 2),
+        "club_changed": club_changed,
+        "current_starter_support": current_starter_support,
+        "recent_competitive_role": {
+            "sample_matches": recent_matches,
+            "starts": recent_starts,
+            "start_share": round(recent_start_share, 3),
+            "decisive_match_preference": decisive_preference,
+            "direct_competitor": str(
+                raw_recent_role.get("direct_competitor", "")
+            ).strip()[:120],
+        },
+        "availability_status": availability_status,
+        "exit_status": exit_status,
         "probability_calibration": {
             "raw_probability": round(raw_expected_start_probability, 2),
             "calibrated_probability": round(
@@ -3273,6 +3389,33 @@ def build_annotation(
         role_evidence=resolved_role_evidence,
         club_changed=form_summary["club_changed"],
     )
+    availability_status = str(
+        role_context.get("availability_status", "unknown")
+    )
+    injury_floor, role_fitness_cap = {
+        "unknown": (0.0, 100.0),
+        "available": (0.0, 100.0),
+        "managed": (25.0, 80.0),
+        "reintegration": (45.0, 68.0),
+        "rehab": (70.0, 55.0),
+        "unavailable": (95.0, 10.0),
+    }.get(availability_status, (0.0, 100.0))
+    injury_risk = max(injury_risk, injury_floor)
+    fitness = min(fitness, role_fitness_cap)
+    transfer_risk = max(
+        transfer_risk,
+        {
+            "unknown": 0.0,
+            "none": 0.0,
+            "possible": 50.0,
+            "advanced": 80.0,
+            "confirmed": 100.0,
+        }.get(str(role_context.get("exit_status", "unknown")), 0.0),
+    )
+    stability = min(
+        stability,
+        clamp(82 - 0.55 * transfer_risk - 0.25 * rotation_risk),
+    )
     loan_pathway = loan_pathway_profile(
         history_player,
         transfer_profile,
@@ -3457,6 +3600,7 @@ def build_annotation(
         and transfer_risk < 45
         and injury_risk < 45
         and float(form_summary["context_transfer_factor"]) >= 0.75
+        and bool(role_context["current_starter_support"])
     )
     provider_id = optional_int(
         news_player.get("mapping", {}).get("api_sports_player_id")

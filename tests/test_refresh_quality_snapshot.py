@@ -1567,6 +1567,87 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
         self.assertLessEqual(strong["adjustments"]["role"], 14)
         self.assertGreaterEqual(fragile["adjustments"]["role"], -14)
 
+    def test_recent_direct_competition_outweighs_season_aggregate(
+        self,
+    ) -> None:
+        role = quality.expected_role_profile(
+            position="DEFENDER",
+            histories=[],
+            history_player={
+                "seasons": [
+                    {
+                        "season": 2025,
+                        "competitions": [
+                            {
+                                "kind": "domestic_league",
+                                "rated": True,
+                                "appearances": 28,
+                                "starts": 22,
+                                "minutes": 2_000,
+                            }
+                        ],
+                    }
+                ]
+            },
+            role_evidence={
+                "continuity": "confirmed",
+                "confidence": "high",
+                "expected_start_probability": 88,
+                "recent_competitive_role": {
+                    "sample_matches": 6,
+                    "starts": 2,
+                    "decisive_match_preference": "competitor_preferred",
+                    "direct_competitor": "Rivale",
+                },
+                "availability_status": "available",
+                "exit_status": "none",
+                "evidence": [
+                    {
+                        "claim": "The direct competitor started the decisive games.",
+                        "source_url": "https://example.com/recent-lineups",
+                        "checked_at": "2026-08-06",
+                    }
+                ],
+            },
+            club_changed=False,
+        )
+
+        self.assertLessEqual(role["expected_start_probability"], 45.0)
+        self.assertFalse(role["current_starter_support"])
+        self.assertEqual(
+            "competitor_preferred",
+            role["recent_competitive_role"][
+                "decisive_match_preference"
+            ],
+        )
+
+    def test_rehab_and_possible_exit_are_preserved_as_hard_signals(
+        self,
+    ) -> None:
+        role = quality.expected_role_profile(
+            position="MIDFIELDER",
+            histories=[],
+            role_evidence={
+                "continuity": "confirmed",
+                "confidence": "high",
+                "expected_start_probability": 90,
+                "availability_status": "rehab",
+                "exit_status": "possible",
+                "evidence": [
+                    {
+                        "claim": "The player is rehabilitating and may leave.",
+                        "source_url": "https://example.com/status",
+                        "checked_at": "2026-08-06",
+                    }
+                ],
+            },
+            club_changed=False,
+        )
+
+        self.assertEqual("rehab", role["availability_status"])
+        self.assertEqual("possible", role["exit_status"])
+        self.assertFalse(role["current_starter_support"])
+
     def test_unknown_training_status_does_not_reduce_fitness(self) -> None:
         adjustment = quality.preseason_adjustment(
             {
@@ -2084,6 +2165,38 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
         )
         self.assertFalse(lower_level_only["reliable_anchor"])
         self.assertEqual(0, lower_level_only["proven_seasons"])
+
+    def test_grounded_rehab_and_exit_status_apply_risk_floors(self) -> None:
+        annotation = quality.build_annotation(
+            market_player(),
+            "news-1",
+            news_player(),
+            api_history(),
+            transfermarkt_history(proven_seasons=3),
+            role_evidence={
+                "continuity": "confirmed",
+                "confidence": "high",
+                "expected_start_probability": 90,
+                "availability_status": "rehab",
+                "exit_status": "possible",
+                "evidence": [
+                    {
+                        "claim": "Operation with rehabilitation and a possible exit.",
+                        "source_url": "https://example.com/current-status",
+                        "checked_at": "2026-08-06",
+                    }
+                ],
+            },
+            competition="2. Bundesliga",
+            points_pct=90,
+            price_pct=70,
+            generated_at="2026-08-07T12:00:00Z",
+        )
+
+        self.assertGreaterEqual(annotation["risks"]["injury"], 70.0)
+        self.assertGreaterEqual(annotation["risks"]["transfer"], 50.0)
+        self.assertLessEqual(annotation["components"]["fitness"], 55.0)
+        self.assertFalse(annotation["reliable_anchor"])
 
     def test_verified_club_change_resets_anchor_role_confidence(self) -> None:
         stable_history = api_history()

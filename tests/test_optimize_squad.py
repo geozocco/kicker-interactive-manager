@@ -5471,6 +5471,91 @@ class NewsHardeningIntegrationTests(unittest.TestCase):
         self.assertEqual([reserve.player_id], rejected["unjustified_ids"])
         self.assertTrue(accepted["passes"])
 
+    def test_flexibility_alone_cannot_justify_low_probability_paid_bench(
+        self,
+    ) -> None:
+        starter = player("core-mid", "Core", "MIDFIELDER", 2_000_000)
+        reserve = optimizer.replace(
+            player("unclear-mid", "Unclear", "MIDFIELDER", 900_000),
+            role_context={
+                "evidence_confidence": "high",
+                "expected_start_probability": 35.0,
+            },
+        )
+        audit = optimizer.paid_reserve_justification_audit(
+            optimizer.Squad([starter, reserve], 0.0),
+            {starter.player_id},
+            maintenance="low",
+            player_usage_weights={starter.player_id: 1.0, reserve.player_id: 0.25},
+            position_minimum_costs={"MIDFIELDER": 100_000},
+            formation_flexibility={
+                "player_credits": {reserve.player_id: 100.0}
+            },
+            competitive_potential_ids=frozenset(),
+        )
+
+        self.assertFalse(audit["passes"])
+        self.assertFalse(audit["evaluated"][0]["flexibility_playable"])
+
+    def test_role_status_excludes_rehab_and_concrete_exit(self) -> None:
+        rehab = optimizer.replace(
+            player("rehab", "Club A", "DEFENDER", 500),
+            role_context={"availability_status": "rehab"},
+        )
+        exit_case = optimizer.replace(
+            player("exit", "Club B", "MIDFIELDER", 500),
+            role_context={"exit_status": "possible"},
+        )
+        safe = player("safe", "Club C", "FORWARD", 500)
+
+        eligible, exclusions = optimizer.exclude_unresolved_role_research(
+            [rehab, exit_case, safe]
+        )
+
+        self.assertEqual({safe.player_id}, {item.player_id for item in eligible})
+        self.assertEqual(
+            {rehab.player_id, exit_case.player_id},
+            {item["annotation_key"] for item in exclusions},
+        )
+
+    def test_current_elite_scorer_tier_is_not_satisfied_by_merely_good_peer(
+        self,
+    ) -> None:
+        def scorer(player_id: str, goals: float, contributions: float):
+            return optimizer.replace(
+                player(
+                    player_id,
+                    f"Club {player_id}",
+                    "FORWARD",
+                    1_000,
+                    reliable_anchor=True,
+                    role_context={
+                        "current_starter_support": True,
+                        "responsibilities": {
+                            "penalties": "primary",
+                            "offensive_focal_point": "primary",
+                        },
+                    },
+                ),
+                proven_seasons=5,
+                components={key: 90.0 for key in optimizer.COMPONENTS},
+                scorer_profile={
+                    "sample_minutes": 7_000,
+                    "goals_per_90": goals,
+                    "contributions_per_90": contributions,
+                },
+                form_summary={"latest_season_score": 88.0},
+            )
+
+        elite = scorer("elite", 0.75, 0.95)
+        merely_good = scorer("good", 0.36, 0.61)
+        ids = optimizer.current_elite_scorer_candidate_ids(
+            [elite, merely_good]
+        )
+
+        self.assertIn(elite.player_id, ids)
+        self.assertNotIn(merely_good.player_id, ids)
+
 
 if __name__ == "__main__":
     unittest.main()

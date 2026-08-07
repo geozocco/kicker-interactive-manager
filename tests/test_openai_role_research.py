@@ -73,6 +73,14 @@ def raw_profile(
             "expected_minutes_band": "2700_plus",
             "role_stability": "stable",
         },
+        "recent_competitive_role": {
+            "sample_matches": 6,
+            "starts": 5,
+            "decisive_match_preference": "player_preferred",
+            "direct_competitor": "Direkter Konkurrent",
+        },
+        "availability_status": "available",
+        "exit_status": "none",
         "confidence": "high",
         "contradiction": contradiction,
         "note": "Der Trainer plant mit ihm als zentraler Offensivkraft.",
@@ -254,6 +262,14 @@ class GroundingTests(unittest.TestCase):
             "strong",
             normalized["role_environment"]["tactical_fit"],
         )
+        self.assertEqual(
+            "player_preferred",
+            normalized["recent_competitive_role"][
+                "decisive_match_preference"
+            ],
+        )
+        self.assertEqual("available", normalized["availability_status"])
+        self.assertEqual("none", normalized["exit_status"])
 
     def test_contradiction_fails_closed_to_open_competition(self) -> None:
         normalized = role.normalize_profile(

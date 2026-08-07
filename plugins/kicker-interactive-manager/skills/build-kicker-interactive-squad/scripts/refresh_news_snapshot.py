@@ -41,7 +41,7 @@ from quality_snapshot import load_snapshot as load_quality_snapshot
 
 
 USER_AGENT = "kicker-interactive-manager-news-refresh/1"
-ROLE_CACHE_MODEL_VERSION = "news-role-cache-v1"
+ROLE_CACHE_MODEL_VERSION = "news-role-cache-v2"
 ROLE_CACHE_TTL_DAYS = 45
 ROLE_RESPONSIBILITIES = {
     "penalties",
@@ -563,6 +563,18 @@ def cached_role_profiles(
                 min(30.0, float(profile.get("team_quality_delta", 0) or 0)),
             ),
             "responsibilities": responsibilities,
+            "role_environment": dict(
+                profile.get("role_environment", {})
+            ),
+            "recent_competitive_role": dict(
+                profile.get("recent_competitive_role", {})
+            ),
+            "availability_status": str(
+                profile.get("availability_status", "unknown")
+            ).strip().casefold(),
+            "exit_status": str(
+                profile.get("exit_status", "unknown")
+            ).strip().casefold(),
             "confidence": str(
                 profile.get("confidence", "medium")
             ).strip().casefold(),
