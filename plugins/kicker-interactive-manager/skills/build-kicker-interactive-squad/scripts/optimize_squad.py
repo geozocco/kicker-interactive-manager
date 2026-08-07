@@ -2383,6 +2383,7 @@ def best_starting_lineup(
     min_offensive_premium_anchors: int = 0,
     qualified_potential_ids: AbstractSet[str] = frozenset(),
     min_qualified_potential_starters: int = 0,
+    offensive_premium_anchor_ids: AbstractSet[str] | None = None,
 ) -> tuple[str, frozenset[str]]:
     """Infer the strongest legal eleven while keeping the reliable core."""
 
@@ -2419,6 +2420,14 @@ def best_starting_lineup(
         key=lambda player: player.player_id,
     ):
         position_index = field_position_index[player.position]
+        player_is_premium_anchor = (
+            player.player_id in offensive_premium_anchor_ids
+            if offensive_premium_anchor_ids is not None
+            else is_offensive_premium_anchor(player)
+        )
+        player_is_qualified_potential = (
+            player.player_id in qualified_potential_ids
+        )
         next_states = dict(states)
         for key, (score, ids) in states.items():
             counts = list(key[:3])
@@ -2431,11 +2440,11 @@ def best_starting_lineup(
             )
             premium_anchors = min(
                 min_offensive_premium_anchors,
-                key[4] + int(is_offensive_premium_anchor(player)),
+                key[4] + int(player_is_premium_anchor),
             )
             potential_starters = min(
                 min_qualified_potential_starters,
-                key[5] + int(player.player_id in qualified_potential_ids),
+                key[5] + int(player_is_qualified_potential),
             )
             new_key = (
                 counts[0],
@@ -2654,6 +2663,7 @@ def reliable_core_audit(
     min_offensive_premium_anchors: int = 0,
     qualified_potential_ids: AbstractSet[str] = frozenset(),
     min_qualified_potential_starters: int = 0,
+    offensive_premium_anchor_ids: AbstractSet[str] | None = None,
 ) -> dict[str, Any]:
     """Measure whether a conservative squad actually funds its scoring core."""
 
@@ -2666,6 +2676,7 @@ def reliable_core_audit(
         min_offensive_premium_anchors,
         qualified_potential_ids,
         min_qualified_potential_starters,
+        offensive_premium_anchor_ids,
     )
     core_players = [
         player for player in squad.players if player.player_id in core_ids
@@ -3604,6 +3615,8 @@ def squad_architecture_metrics(
     premium_starter_ids: frozenset[str] = frozenset(),
     elite_rebound_striker_costs: Mapping[str, int] | None = None,
     qualified_potential_ids: frozenset[str] = frozenset(),
+    current_elite_scorer_ids: frozenset[str] | None = None,
+    competitive_potential_ids: frozenset[str] | None = None,
     min_qualified_potential_core: int = 0,
     target_qualified_potential_core: int = 0,
     position_minimum_costs: Mapping[str, int] | None = None,
@@ -3637,17 +3650,17 @@ def squad_architecture_metrics(
         if potential_comparison_players is not None
         else squad.players
     )
-    current_elite_scorer_ids = current_elite_scorer_candidate_ids(
-        comparison_players
-    )
-    available_potential_count = len(qualified_potential_ids)
-    competitive_potential_ids = quality_competitive_potential_player_ids(
-        (
+    if current_elite_scorer_ids is None:
+        current_elite_scorer_ids = current_elite_scorer_candidate_ids(
             comparison_players
-        ),
-        raw_scores,
-        qualified_potential_ids,
-    )
+        )
+    available_potential_count = len(qualified_potential_ids)
+    if competitive_potential_ids is None:
+        competitive_potential_ids = quality_competitive_potential_player_ids(
+            comparison_players,
+            raw_scores,
+            qualified_potential_ids,
+        )
     effective_potential_minimum = min(
         min_qualified_potential_core,
         available_potential_count,
@@ -3673,6 +3686,7 @@ def squad_architecture_metrics(
         min_offensive_premium_anchors,
         competitive_potential_ids,
         effective_potential_starter_minimum,
+        premium_starter_ids,
     )
     core_ids = set(audit["player_ids"])
     player_usage_weights = bench_player_usage_weights(
@@ -4327,6 +4341,12 @@ def finalized_squad_objective(
         )
     candidate_minimum_costs = minimum_costs_by_position(candidates)
     qualified_potential_ids = qualified_potential_player_ids(candidates)
+    current_elite_scorer_ids = current_elite_scorer_candidate_ids(candidates)
+    competitive_potential_ids = quality_competitive_potential_player_ids(
+        candidates,
+        raw_scores,
+        qualified_potential_ids,
+    )
     metrics = squad_architecture_metrics(
         squad,
         raw_scores,
@@ -4352,6 +4372,8 @@ def finalized_squad_objective(
             if is_elite_rebound_striker(player)
         },
         qualified_potential_ids=qualified_potential_ids,
+        current_elite_scorer_ids=current_elite_scorer_ids,
+        competitive_potential_ids=competitive_potential_ids,
         min_qualified_potential_core=int(
             getattr(args, "min_qualified_potential_core", 0)
         ),
@@ -4690,6 +4712,12 @@ def optimize_joint_squad_architecture(
         if is_elite_rebound_striker(player)
     }
     qualified_potential_ids = qualified_potential_player_ids(candidates)
+    current_elite_scorer_ids = current_elite_scorer_candidate_ids(candidates)
+    competitive_potential_ids = quality_competitive_potential_player_ids(
+        candidates,
+        raw_scores,
+        qualified_potential_ids,
+    )
     position_minimum_costs = minimum_costs_by_position(candidates)
     defender_ready_reserve_available_count = sum(
         player.position == "DEFENDER"
@@ -4981,6 +5009,8 @@ def optimize_joint_squad_architecture(
             premium_starter_ids=premium_starter_ids,
             elite_rebound_striker_costs=elite_rebound_striker_costs,
             qualified_potential_ids=qualified_potential_ids,
+            current_elite_scorer_ids=current_elite_scorer_ids,
+            competitive_potential_ids=competitive_potential_ids,
             min_qualified_potential_core=min_qualified_potential_core,
             target_qualified_potential_core=target_qualified_potential_core,
             position_minimum_costs=position_minimum_costs,
@@ -6763,6 +6793,7 @@ def outfield_options(
     budget: int,
     scores: dict[str, float],
     min_reliable_anchors: int = 0,
+    minimum_spend: int = 0,
 ) -> dict[tuple[int, int], tuple[float, tuple[Player, ...]]]:
     """Return the exact best cap-compliant outfield selection per cost.
 
@@ -6785,7 +6816,41 @@ def outfield_options(
         slots["MIDFIELDER"],
         slots["FORWARD"],
     )
-    for club in sorted(by_club):
+    ordered_clubs = sorted(by_club)
+    remaining_counts: list[Counter[str]] = [
+        Counter() for _ in range(len(ordered_clubs) + 1)
+    ]
+    remaining_cost_bounds: list[
+        dict[str, tuple[tuple[int, ...], tuple[int, ...]]]
+    ] = [{} for _ in range(len(ordered_clubs) + 1)]
+    remaining_cost_bounds[-1] = {
+        position: ((0,), (0,))
+        for position in ("DEFENDER", "MIDFIELDER", "FORWARD")
+    }
+    suffix_costs: dict[str, list[int]] = {
+        position: []
+        for position in ("DEFENDER", "MIDFIELDER", "FORWARD")
+    }
+    for index in range(len(ordered_clubs) - 1, -1, -1):
+        remaining_counts[index] = remaining_counts[index + 1].copy()
+        for player in by_club[ordered_clubs[index]]:
+            remaining_counts[index][player.position] += 1
+            suffix_costs[player.position].append(player.cost)
+        bounds: dict[str, tuple[tuple[int, ...], tuple[int, ...]]] = {}
+        for position, costs in suffix_costs.items():
+            ordered_costs = sorted(costs)
+            maximum_count = target_counts[
+                ("DEFENDER", "MIDFIELDER", "FORWARD").index(position)
+            ]
+            cheapest = [0]
+            priciest = [0]
+            for count in range(1, maximum_count + 1):
+                cheapest.append(sum(ordered_costs[:count]))
+                priciest.append(sum(ordered_costs[-count:]))
+            bounds[position] = (tuple(cheapest), tuple(priciest))
+        remaining_cost_bounds[index] = bounds
+
+    for club_index, club in enumerate(ordered_clubs):
         local_options = club_outfield_options(
             by_club[club],
             slots,
@@ -6829,7 +6894,34 @@ def outfield_options(
                         total_score,
                         base_players + local_players,
                     )
-        states = next_states
+        future_counts = remaining_counts[club_index + 1]
+        future_cost_bounds = remaining_cost_bounds[club_index + 1]
+        states = {}
+        for key, value in next_states.items():
+            needed_counts = {
+                position: target_counts[position_index] - key[position_index]
+                for position_index, position in enumerate(
+                    ("DEFENDER", "MIDFIELDER", "FORWARD")
+                )
+            }
+            if any(
+                future_counts[position] < needed
+                for position, needed in needed_counts.items()
+            ):
+                continue
+            minimum_completion_cost = sum(
+                future_cost_bounds[position][0][needed]
+                for position, needed in needed_counts.items()
+            )
+            maximum_completion_cost = sum(
+                future_cost_bounds[position][1][needed]
+                for position, needed in needed_counts.items()
+            )
+            if key[3] + minimum_completion_cost > budget:
+                continue
+            if key[3] + maximum_completion_cost < minimum_spend:
+                continue
+            states[key] = value
         if not states:
             return {}
 
@@ -7099,9 +7191,10 @@ def optimize(
         players,
         slots,
         club_cap,
-        budget,
+        budget - min(gk_options),
         scores,
         min_reliable_anchors,
+        max(0, minimum_spend - max(gk_options)),
     )
     if not field_options:
         raise ValueError(
@@ -7347,6 +7440,7 @@ def distance_outfield_options(
     reference_ids: frozenset[str],
     distance_cap: int,
     min_reliable_anchors: int = 0,
+    minimum_spend: int = 0,
 ) -> dict[tuple[int, int, int], tuple[float, tuple[Player, ...]]]:
     """Return exact outfield options up to the requested distance."""
 
@@ -7372,6 +7466,17 @@ def distance_outfield_options(
         Counter() for _ in range(len(ordered_clubs) + 1)
     ]
     remaining_anchor_counts = [0] * (len(ordered_clubs) + 1)
+    remaining_cost_bounds: list[
+        dict[str, tuple[tuple[int, ...], tuple[int, ...]]]
+    ] = [{} for _ in range(len(ordered_clubs) + 1)]
+    remaining_cost_bounds[-1] = {
+        position: ((0,), (0,))
+        for position in ("DEFENDER", "MIDFIELDER", "FORWARD")
+    }
+    suffix_costs: dict[str, list[int]] = {
+        position: []
+        for position in ("DEFENDER", "MIDFIELDER", "FORWARD")
+    }
     for index in range(len(ordered_clubs) - 1, -1, -1):
         club_players = by_club[ordered_clubs[index]]
         remaining_counts[index] = remaining_counts[index + 1].copy()
@@ -7381,10 +7486,24 @@ def distance_outfield_options(
         remaining_anchor_counts[index] = remaining_anchor_counts[index + 1]
         for player in club_players:
             remaining_counts[index][player.position] += 1
+            suffix_costs[player.position].append(player.cost)
             if player.player_id in reference_ids:
                 remaining_reference_counts[index][player.position] += 1
             if player.reliable_anchor:
                 remaining_anchor_counts[index] += 1
+        bounds: dict[str, tuple[tuple[int, ...], tuple[int, ...]]] = {}
+        for position, costs in suffix_costs.items():
+            ordered_costs = sorted(costs)
+            maximum_count = target_counts[
+                ("DEFENDER", "MIDFIELDER", "FORWARD").index(position)
+            ]
+            cheapest = [0]
+            priciest = [0]
+            for count in range(1, maximum_count + 1):
+                cheapest.append(sum(ordered_costs[:count]))
+                priciest.append(sum(ordered_costs[-count:]))
+            bounds[position] = (tuple(cheapest), tuple(priciest))
+        remaining_cost_bounds[index] = bounds
 
     for club_index, club in enumerate(ordered_clubs):
         local_options = distance_club_outfield_options(
@@ -7439,6 +7558,7 @@ def distance_outfield_options(
         future_counts = remaining_counts[club_index + 1]
         future_reference_counts = remaining_reference_counts[club_index + 1]
         future_anchor_count = remaining_anchor_counts[club_index + 1]
+        future_cost_bounds = remaining_cost_bounds[club_index + 1]
         states = {}
         for key, value in next_states.items():
             needed_counts = {
@@ -7466,6 +7586,18 @@ def distance_outfield_options(
                 key[5] < min_reliable_anchors
                 and key[5] + future_anchor_count < min_reliable_anchors
             ):
+                continue
+            minimum_completion_cost = sum(
+                future_cost_bounds[position][0][needed]
+                for position, needed in needed_counts.items()
+            )
+            maximum_completion_cost = sum(
+                future_cost_bounds[position][1][needed]
+                for position, needed in needed_counts.items()
+            )
+            if key[3] + minimum_completion_cost > budget:
+                continue
+            if key[3] + maximum_completion_cost < minimum_spend:
                 continue
             states[key] = value
         if not states:
@@ -7572,11 +7704,15 @@ def optimize_distance_buckets(
         players,
         slots,
         club_cap,
-        budget,
+        budget - min(cost for cost, _ in gk_options),
         scores,
         reference_ids,
         distance_cap,
         min_reliable_anchors,
+        max(
+            0,
+            minimum_spend - max(cost for cost, _ in gk_options),
+        ),
     )
     if not field_options:
         raise ValueError(
