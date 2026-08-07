@@ -56,10 +56,11 @@ from refresh_news_snapshot import (
 from advanced_signals import apply_advanced_signals
 
 
-MODEL_VERSION = "multi-season-v18-current-role-gates"
+MODEL_VERSION = "multi-season-v19-goalkeeper-role-conflicts"
 PRESEASON_MODEL_VERSION = "preseason-readiness-v3-role-responsibilities"
 FORM_MODEL_VERSION = "recency-context-v5-current-level-retention"
-EXPECTED_ROLE_MODEL_VERSION = "expected-role-v5-recent-competition"
+EXPECTED_ROLE_MODEL_VERSION = "expected-role-v6-current-hierarchy"
+OPENAI_ROLE_MODEL_VERSION = "openai-role-web-v4"
 POSITIONS = ("GOALKEEPER", "DEFENDER", "MIDFIELDER", "FORWARD")
 COMPETITION_SLUGS = {
     "Bundesliga": "bundesliga",
@@ -1176,7 +1177,11 @@ def cached_role_evidence(
 
     profiles = news_payload.get("role_profiles", {})
     profile = profiles.get(player_id, {}) if isinstance(profiles, dict) else {}
-    if not isinstance(profile, dict) or not profile.get("fresh", False):
+    if (
+        not isinstance(profile, dict)
+        or not profile.get("fresh", False)
+        or profile.get("model_version") != OPENAI_ROLE_MODEL_VERSION
+    ):
         return dict(fallback) if isinstance(fallback, dict) else {}
     evidence = [
         {
@@ -1238,9 +1243,13 @@ def cached_transfer_profile(
 
 
 def goalkeeper_role_cache_adjustment(profile: dict[str, Any] | None) -> float:
-    if not isinstance(profile, dict) or not profile.get("fresh", False):
+    if (
+        not isinstance(profile, dict)
+        or not profile.get("fresh", False)
+        or profile.get("model_version") != OPENAI_ROLE_MODEL_VERSION
+    ):
         return 0.0
-    return {
+    adjustment = {
         "confirmed_starter": 60.0,
         "key_starter": 45.0,
         "expected_starter": 30.0,
@@ -1249,6 +1258,22 @@ def goalkeeper_role_cache_adjustment(profile: dict[str, Any] | None) -> float:
         "rotation": -25.0,
         "perspective": -55.0,
     }.get(str(profile.get("designation", "")), 0.0)
+    adjustment += {
+        "possible": -70.0,
+        "advanced": -95.0,
+        "confirmed": -100.0,
+    }.get(str(profile.get("exit_status", "unknown")), 0.0)
+    adjustment += {
+        "rehab": -65.0,
+        "unavailable": -95.0,
+    }.get(str(profile.get("availability_status", "unknown")), 0.0)
+    recent_role = profile.get("recent_competitive_role", {})
+    if isinstance(recent_role, dict) and (
+        recent_role.get("decisive_match_preference")
+        == "competitor_preferred"
+    ):
+        adjustment -= 45.0
+    return adjustment
 
 
 def manual_news_clearance_profile(
@@ -1861,7 +1886,7 @@ def expected_role_profile(
         exit_status = "unknown"
     current_starter_support = (
         availability_status not in {"rehab", "unavailable"}
-        and exit_status not in {"advanced", "confirmed"}
+        and exit_status not in {"possible", "advanced", "confirmed"}
         and decisive_preference != "competitor_preferred"
         and (
             (
@@ -3482,25 +3507,43 @@ def build_annotation(
             or points_pct >= 88
         )
     )
-    current_role_is_resolved = (
-        role_context["continuity"] in {"confirmed", "expanded", "reduced"}
-        and bool(role_context["evidence"])
-        and role_context["evidence_confidence"] in {"low", "medium", "high"}
+    grounded_current_role_signal = (
+        bool(role_context["evidence"])
+        and role_context["evidence_confidence"] in {"medium", "high"}
     )
-    role_research_required = (
+    current_role_is_resolved = grounded_current_role_signal and (
+        role_context["continuity"] in {"confirmed", "expanded", "reduced"}
+        or role_context.get("availability_status", "unknown") != "unknown"
+        or role_context.get("exit_status", "unknown") != "unknown"
+    )
+    premium_transfer_role_unresolved = (
         form_summary["club_changed"] is True
         and repeatable_attacking_scorer
         and not current_role_is_resolved
     )
+    premium_goalkeeper_role_unresolved = (
+        position == "GOALKEEPER"
+        and price_pct >= 55
+        and not current_role_is_resolved
+    )
+    role_research_required = (
+        premium_transfer_role_unresolved
+        or premium_goalkeeper_role_unresolved
+    )
     role_research = {
-        "model_version": "premium-transfer-role-gate-v1",
+        "model_version": "current-role-research-gate-v2",
         "required": role_research_required,
         "priority": "high" if role_research_required else "none",
         "reason": (
             "A proven attacking scorer changed clubs, but the current "
             "starting probability and responsibilities are not evidenced."
-            if role_research_required
-            else ""
+            if premium_transfer_role_unresolved
+            else (
+                "A premium goalkeeper lacks a current, grounded hierarchy, "
+                "availability and exit assessment."
+                if premium_goalkeeper_role_unresolved
+                else ""
+            )
         ),
     }
     manual_clearance = manual_news_clearance_profile(
@@ -3994,6 +4037,66 @@ def apply_goalkeeper_hierarchy(
         if not ranked:
             continue
 
+        role_profiles = (
+            news_payload.get("role_profiles", {})
+            if isinstance(news_payload.get("role_profiles"), dict)
+            else {}
+        )
+        designation_priority = {
+            "confirmed_starter": 3,
+            "key_starter": 2,
+            "expected_starter": 1,
+        }
+        current_role_favourites: list[tuple[int, float, str, str]] = []
+        for player_id in player_ids:
+            profile = role_profiles.get(player_id, {})
+            if (
+                not isinstance(profile, dict)
+                or not profile.get("fresh", False)
+                or profile.get("model_version")
+                != OPENAI_ROLE_MODEL_VERSION
+            ):
+                continue
+            designation = str(profile.get("designation", ""))
+            priority = designation_priority.get(designation, 0)
+            if (
+                priority == 0
+                or str(profile.get("confidence", "")) not in {"medium", "high"}
+                or str(profile.get("exit_status", "unknown"))
+                in {"possible", "advanced", "confirmed"}
+                or str(profile.get("availability_status", "unknown"))
+                in {"rehab", "unavailable"}
+            ):
+                continue
+            current_role_favourites.append(
+                (
+                    priority,
+                    clamp(profile.get("expected_start_probability"), 0),
+                    player_id,
+                    designation,
+                )
+            )
+        current_role_favourites.sort(
+            key=lambda item: (-item[0], -item[1], item[2])
+        )
+        role_leader_id = ""
+        role_leader_designation = ""
+        if current_role_favourites and (
+            len(current_role_favourites) == 1
+            or current_role_favourites[0][:2]
+            != current_role_favourites[1][:2]
+        ):
+            role_leader_id = current_role_favourites[0][2]
+            role_leader_designation = current_role_favourites[0][3]
+            ranked.sort(
+                key=lambda item: (
+                    item[1] != role_leader_id,
+                    -item[0],
+                    -item[2],
+                    item[1],
+                )
+            )
+
         provider_goalkeepers = [
             item
             for team_id in team_ids_by_club.get(club, set())
@@ -4060,6 +4163,8 @@ def apply_goalkeeper_hierarchy(
         if (
             isinstance(top_cached_profile, dict)
             and top_cached_profile.get("fresh", False)
+            and top_cached_profile.get("model_version")
+            == OPENAI_ROLE_MODEL_VERSION
         ):
             cached_external_risk = top_cached_profile.get(
                 "external_signing_risk"
@@ -4068,10 +4173,19 @@ def apply_goalkeeper_hierarchy(
                 cached_external_risk,
                 bool,
             ):
-                external_signing_risk = max(
-                    external_signing_risk,
-                    clamp(cached_external_risk),
-                )
+                if (
+                    top_id == role_leader_id
+                    and str(top_cached_profile.get("confidence", ""))
+                    in {"medium", "high"}
+                    and str(top_cached_profile.get("designation", ""))
+                    in {"confirmed_starter", "key_starter"}
+                ):
+                    external_signing_risk = clamp(cached_external_risk)
+                else:
+                    external_signing_risk = max(
+                        external_signing_risk,
+                        clamp(cached_external_risk),
+                    )
         if isinstance(club_override, dict):
             override_note = str(club_override.get("note", "")).strip()
             override_evidence = club_override.get("evidence", [])
@@ -4124,14 +4238,12 @@ def apply_goalkeeper_hierarchy(
                 if isinstance(player_overrides, dict)
                 else {}
             )
-            cached_profile = (
-                news_payload.get("role_profiles", {}).get(player_id, {})
-                if isinstance(news_payload.get("role_profiles"), dict)
-                else {}
-            )
-            if isinstance(cached_profile, dict) and cached_profile.get(
-                "fresh",
-                False,
+            cached_profile = role_profiles.get(player_id, {})
+            if (
+                isinstance(cached_profile, dict)
+                and cached_profile.get("fresh", False)
+                and cached_profile.get("model_version")
+                == OPENAI_ROLE_MODEL_VERSION
             ):
                 cached_probability = clamp(
                     cached_profile.get("expected_start_probability"),
@@ -4185,6 +4297,40 @@ def apply_goalkeeper_hierarchy(
                             ).strip(),
                         }
                     )
+                if role_leader_id and player_id != role_leader_id:
+                    competitor_cap, competitor_status = {
+                        "confirmed_starter": (12.0, "backup"),
+                        "key_starter": (25.0, "backup"),
+                        "expected_starter": (40.0, "challenger"),
+                    }[role_leader_designation]
+                    player_probability = min(
+                        player_probability,
+                        competitor_cap,
+                    )
+                    status = competitor_status
+
+                exit_status = str(
+                    cached_profile.get("exit_status", "unknown")
+                )
+                availability_status = str(
+                    cached_profile.get("availability_status", "unknown")
+                )
+                if exit_status in {"possible", "advanced", "confirmed"}:
+                    player_probability = min(
+                        player_probability,
+                        {
+                            "possible": 10.0,
+                            "advanced": 3.0,
+                            "confirmed": 0.0,
+                        }[exit_status],
+                    )
+                    status = "backup"
+                if availability_status in {"rehab", "unavailable"}:
+                    player_probability = min(
+                        player_probability,
+                        15.0 if availability_status == "rehab" else 5.0,
+                    )
+                    status = "backup"
             if isinstance(player_override, dict):
                 if "starter_probability" in player_override:
                     player_probability = clamp(

@@ -766,7 +766,7 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             {
                 "role_profiles": {
                     "player-1": {
-                        "model_version": "news-role-cache-v1",
+                        "model_version": quality.OPENAI_ROLE_MODEL_VERSION,
                         "fresh": True,
                         "designation": "immediate_help",
                         "continuity": "confirmed",
@@ -804,6 +804,7 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             quality.goalkeeper_role_cache_adjustment(
                 {
                     "fresh": True,
+                    "model_version": quality.OPENAI_ROLE_MODEL_VERSION,
                     "designation": "confirmed_starter",
                 }
             ),
@@ -813,6 +814,7 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             quality.goalkeeper_role_cache_adjustment(
                 {
                     "fresh": True,
+                    "model_version": quality.OPENAI_ROLE_MODEL_VERSION,
                     "designation": "perspective",
                 }
             ),
@@ -822,6 +824,7 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             quality.goalkeeper_role_cache_adjustment(
                 {
                     "fresh": False,
+                    "model_version": quality.OPENAI_ROLE_MODEL_VERSION,
                     "designation": "confirmed_starter",
                 }
             ),
@@ -849,6 +852,7 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
                 global_price_percentile=100,
                 role_profile={
                     "fresh": True,
+                    "model_version": quality.OPENAI_ROLE_MODEL_VERSION,
                     "designation": "confirmed_starter",
                 },
             ),
@@ -860,6 +864,7 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
                 global_price_percentile=0,
                 role_profile={
                     "fresh": True,
+                    "model_version": quality.OPENAI_ROLE_MODEL_VERSION,
                     "designation": "perspective",
                 },
             ),
@@ -1946,6 +1951,101 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
         self.assertGreaterEqual(leader["starter_probability"], 80)
         self.assertEqual(80.0, leader["club_price_share"])
 
+    def test_current_number_one_and_exit_signal_override_old_hierarchy(
+        self,
+    ) -> None:
+        market = {
+            "players": [
+                {
+                    "id": "incumbent",
+                    "name": "Previous Number One",
+                    "club": "Example Club",
+                    "position": "GOALKEEPER",
+                    "market_value": 800_000,
+                    "available": True,
+                },
+                {
+                    "id": "successor",
+                    "name": "New Number One",
+                    "club": "Example Club",
+                    "position": "GOALKEEPER",
+                    "market_value": 500_000,
+                    "available": True,
+                },
+            ]
+        }
+        annotations = {}
+        for player in market["players"]:
+            incumbent = player["id"] == "incumbent"
+            annotations[player["id"]] = {
+                "position": "GOALKEEPER",
+                "club": "Example Club",
+                "components": {
+                    key: 95 if incumbent else 35
+                    for key in (
+                        "confirmed_performance",
+                        "minutes",
+                        "role",
+                        "stability",
+                        "context",
+                        "fitness",
+                        "upside",
+                        "value",
+                    )
+                },
+                "risks": {
+                    key: 5 if incumbent else 40
+                    for key in (
+                        "transfer",
+                        "injury",
+                        "rotation",
+                        "outlier",
+                        "unknown_role",
+                    )
+                },
+                "proven_seasons": 3 if incumbent else 0,
+                "evidence": [],
+                "note": "",
+            }
+        profile_base = {
+            "fresh": True,
+            "model_version": quality.OPENAI_ROLE_MODEL_VERSION,
+            "confidence": "high",
+            "external_signing_risk": 0,
+            "evidence": [],
+        }
+        news = {
+            "players": {},
+            "role_profiles": {
+                "incumbent": {
+                    **profile_base,
+                    "designation": "expected_starter",
+                    "expected_start_probability": 85,
+                    "availability_status": "unavailable",
+                    "exit_status": "possible",
+                },
+                "successor": {
+                    **profile_base,
+                    "designation": "confirmed_starter",
+                    "expected_start_probability": 95,
+                    "availability_status": "available",
+                    "exit_status": "none",
+                },
+            },
+        }
+
+        quality.apply_goalkeeper_hierarchy(annotations, market, news, {})
+
+        successor = annotations["successor"]["goalkeeper_outlook"]
+        incumbent = annotations["incumbent"]["goalkeeper_outlook"]
+        self.assertEqual(1, successor["club_rank"])
+        self.assertEqual("confirmed_starter", successor["status"])
+        self.assertGreaterEqual(successor["starter_probability"], 92)
+        self.assertEqual(0, successor["external_signing_risk"])
+        self.assertEqual(2, incumbent["club_rank"])
+        self.assertEqual("backup", incumbent["status"])
+        self.assertLessEqual(incumbent["starter_probability"], 5)
+
     def test_unpriced_incoming_keeper_blocks_false_starter_certainty(self) -> None:
         market = {
             "players": [
@@ -2247,6 +2347,26 @@ class RefreshQualitySnapshotTests(unittest.TestCase):
             transferred["risks"]["unknown_role"],
             stable["risks"]["unknown_role"],
         )
+
+    def test_premium_goalkeeper_without_current_hierarchy_requires_research(
+        self,
+    ) -> None:
+        player = market_player()
+        player["position"] = "GOALKEEPER"
+        annotation = quality.build_annotation(
+            player,
+            "news-1",
+            news_player(),
+            api_history(),
+            transfermarkt_history(proven_seasons=2),
+            competition="Bundesliga",
+            points_pct=80,
+            price_pct=90,
+            generated_at="2026-08-07T12:00:00Z",
+        )
+
+        self.assertTrue(annotation["role_research"]["required"])
+        self.assertIn("premium goalkeeper", annotation["role_research"]["reason"])
 
     def test_confirmed_transfer_role_keeps_quality_but_not_news_rotation(
         self,

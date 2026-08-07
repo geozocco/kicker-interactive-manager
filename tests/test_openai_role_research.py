@@ -233,6 +233,41 @@ class TargetSelectionTests(unittest.TestCase):
                 f"missing offensive coverage for club {club}",
             )
 
+    def test_goalkeeper_target_contains_competitors_and_invalidates_cache(
+        self,
+    ) -> None:
+        market = {
+            "players": [
+                {
+                    "id": player_id,
+                    "name": name,
+                    "club": "A",
+                    "position": "GOALKEEPER",
+                    "market_value": value,
+                    "available": True,
+                }
+                for player_id, name, value in (
+                    ("g1", "Keeper One", 800_000),
+                    ("g2", "Keeper Two", 500_000),
+                )
+            ]
+        }
+        selected = role.select_role_targets(market, None, max_players=0)
+        first = next(item for item in selected if item["player_id"] == "g1")
+        self.assertEqual(
+            [{"player_id": "g2", "name": "Keeper Two"}],
+            first["club_position_competitors"],
+        )
+        changed = dict(first)
+        changed["club_position_competitors"] = [
+            *first["club_position_competitors"],
+            {"player_id": "g3", "name": "New Keeper"},
+        ]
+        self.assertNotEqual(
+            role.target_fingerprint(first),
+            role.target_fingerprint(changed),
+        )
+
 
 class GroundingTests(unittest.TestCase):
     def test_ungrounded_model_url_is_rejected(self) -> None:
@@ -296,6 +331,28 @@ class GroundingTests(unittest.TestCase):
         )
         assert normalized is not None
         self.assertEqual(72, normalized["external_signing_risk"])
+
+    def test_roster_listing_alone_does_not_prove_goalkeeper_role(self) -> None:
+        profile = raw_profile()
+        profile["evidence"] = [
+            {
+                "claim": (
+                    "The player remains listed in the first-team "
+                    "goalkeeper group."
+                ),
+                "source_url": "https://testverein.de/team/player",
+                "observed_at": "2026-07-26",
+                "source_authority": "official_club",
+            }
+        ]
+        normalized = role.normalize_profile(
+            profile,
+            target=target(position="GOALKEEPER"),
+            grounded_urls={"https://testverein.de/team/player"},
+            now=NOW,
+            model="gpt-5.6-luna",
+        )
+        self.assertIsNone(normalized)
 
 
 class ResearchCacheTests(unittest.TestCase):
